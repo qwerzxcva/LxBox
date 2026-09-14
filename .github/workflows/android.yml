@@ -1,0 +1,124 @@
+# LxBox Android — Kotlin/Compose build
+#
+# Boots the Gradle wrapper for android/ and runs assembleDebug. Triggers on
+# any push or PR that touches the Android subtree; Flutter changes go
+# through .github/workflows/ci.yml, this one is decoupled.
+#
+# The Flutter `ci.yml` only triggers its `android` job on tag pushes or
+# workflow_dispatch, so without this file our Kotlin sources would have no
+# PR-time validation — every regression would slip through to the release
+# tag. This workflow plugs that gap.
+#
+# We stay debug-only for now: signed release APKs require an upload keystore
+# secret (Flutter ci.yml already uses ANDROID_KEYSTORE_BASE64 for that, and
+# we can plug into the same secret when we're ready).
+
+name: Android
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle
+        # Speeds up successive runs by ~30s on warm caches. Keyed on the lock
+        # files so a libs.versions.toml bump invalidates the cache cleanly.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            android/.gradle
+            android/app/build
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/libs.versions.toml', 'android/build.gradle.kts', 'android/app/build.gradle.kts') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Set up Android SDK
+        # We need API 36 (compileSdk) + build-tools 35.0.0 (aapt2). The
+        # Flutter-side ci.yml uses subosito/flutter-action which brings its
+        # own SDK; we don't have Flutter here, so install explicitly.
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '11076708'
+          packages: |
+            platform-tools
+            platforms;android-36
+            build-tools;35.0.0
+
+      - name: Fetch libbox AAR
+        # The AAR isn't vendored (~110 MB) and isn't committed (see
+        # android/.gitignore). scripts/fetch-libbox.sh pulls from the
+        # upstream Asterisk4Magisk/AndroidLibBoxLite release, with a
+        # mirror fallback for environments where the GitHub release host
+        # is slow.
+        run: bash android/scripts/fetch-libbox.sh
+
+      - name: Verify libbox AAR
+        # Cheap integrity check — fail fast with a useful message rather
+        # than letting Gradle choke on a 1 KB HTML error page from a mirror
+        # outage. Size ≈110 MB ± 5 MB.
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -c%s android/app/libs/libbox.aar)
+          echo "libbox.aar size: $SIZE bytes"
+          if [ "$SIZE" -lt 50000000 ]; then
+            echo "::error::libbox.aar is suspiciously small — likely a downloaded HTML error page, not a real AAR."
+            exit 1
+          fi
+
+      - name: Assemble debug APK
+        # AGP downloads an x86_64 aapt2 on x86_64 runners automatically — no
+        # override needed here. The arm64 dev-machine workaround lives in
+        # android/README.md.
+        working-directory: android
+        run: gradle :app:assembleDebug --no-daemon --stacktrace --console=plain
+
+      - name: Smoke-test the APK
+        # aapt2 dump badging is a cheap sanity check that the build produced
+        # a valid APK and that the manifest still references our entry
+        # points. Catches the kind of failure where the build "succeeds"
+        # but emits a half-merged APK after a resource conflict.
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK" || { echo "::error::APK missing or empty: $APK"; exit 1; }
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | head -1)
+          "$AAPT" dump badging "$APK" | head -20
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lxbox-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
