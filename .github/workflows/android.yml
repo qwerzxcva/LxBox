@@ -39,6 +39,13 @@ jobs:
     name: Build debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # AGP reads ANDROID_HOME / ANDROID_SDK_ROOT from the env at task
+      # start. We set them at the job level so assembleDebug and the
+      # smoke-test step don't have to repeat the export. The path matches
+      # where ubuntu-latest runners ship their preinstalled cmdline-tools.
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -64,24 +71,60 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Set up Android SDK
-        # We need API 36 (compileSdk) + build-tools 35.0.0 (aapt2). The
-        # Flutter-side ci.yml uses subosito/flutter-action which brings its
-        # own SDK; we don't have Flutter here, so install explicitly.
+        # The runner images ship cmdline-tools 20.0 at
+        # /usr/local/lib/android/sdk/cmdline-tools/20.0 — which means we
+        # only need to install the platform packages, not the tools. We
+        # avoid android-actions/setup-android entirely because both v3 and
+        # v4 fail the license-accept step on the preinstalled cmdline-tools
+        # binaries:
         #
-        # v4 uses cmdline-tools 20.0 (long 14742923) by default, which has
-        # a fixed silent license acceptance. Earlier attempts with
-        # android-actions/setup-android@v3 + cmdline-tools-version pinned to
-        # the runner's preinstalled 12.0 fell into a known v3 license bug
-        # (`6 of 7 SDK package licenses not accepted` + non-interactive
-        # hang on the 7th), so the install step exited 1 without ever
-        # finding platform-tools / platforms / build-tools. Letting v4
-        # bring its own 20.0 sidesteps that path entirely.
-        uses: android-actions/setup-android@v4
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;35.0.0
+        #   `6 of 7 SDK package licenses not accepted.`
+        #   `Review licenses that have not been accepted (y/N)?`
+        #
+        # The action pipes stdin to sdkmanager to accept licenses, but
+        # cmdline-tools 12.0/20.0 still hangs after the 6th prompt on the
+        # google-tv addon license; the action then never gets a chance to
+        # install our requested packages. Piping `yes` ourselves works
+        # because each `y\n` consumed corresponds to one of the licenses
+        # sdkmanager prints.
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          # Hard-code the SDK root: the preinstalled cmdline-tools path is
+          # stable across ubuntu-latest runners, and using the absolute
+          # path means we don't have to rely on whichever of ANDROID_HOME /
+          # ANDROID_SDK_ROOT the runner happened to pre-populate.
+          ANDROID_SDK="/usr/local/lib/android/sdk"
+          export ANDROID_HOME="$ANDROID_SDK"
+          export ANDROID_SDK_ROOT="$ANDROID_SDK"
+          SDKMANAGER="$ANDROID_SDK/cmdline-tools/20.0/bin/sdkmanager"
+          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not at $SDKMANAGER"; ls -la "$ANDROID_SDK/cmdline-tools/"; exit 1; }
+          # Pre-create the licenses dir so the first run doesn't fail on a
+          # missing parent when writing the license-hash files.
+          mkdir -p "$ANDROID_HOME/licenses"
+          echo "==> Accepting SDK licenses"
+          # `yes` keeps streaming y's after sdkmanager stops reading, so the
+          # pipe eventually gets SIGPIPE on yes — not an error for our
+          # purposes. `set -o pipefail` is on, so we wrap in `|| true` and
+          # then check that the licenses directory now contains entries
+          # (the only real success signal for this command).
+          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null || true
+          if ! ls "$ANDROID_HOME/licenses/" 2>/dev/null | grep -q .; then
+            echo "::error::No license files written under \$ANDROID_HOME/licenses — license acceptance likely failed."
+            exit 1
+          fi
+          echo "==> Installing platforms;android-36 + build-tools;35.0.0 + platform-tools"
+          # Same caveat: when sdkmanager finishes early, yes gets SIGPIPE.
+          yes 2>/dev/null | "$SDKMANAGER" \
+              "platform-tools" \
+              "platforms;android-36" \
+              "build-tools;35.0.0" \
+              >/dev/null || true
+          # Sanity check that the install actually landed.
+          test -d "$ANDROID_HOME/platforms/android-36" || { echo "::error::platforms/android-36 missing after install"; exit 1; }
+          test -d "$ANDROID_HOME/build-tools/35.0.0" || { echo "::error::build-tools/35.0.0 missing after install"; exit 1; }
+          echo "==> SDK ready:"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       - name: Fetch libbox AAR
         # The AAR isn't vendored (~110 MB) and isn't committed (see
@@ -116,6 +159,12 @@ jobs:
         # a valid APK and that the manifest still references our entry
         # points. Catches the kind of failure where the build "succeeds"
         # but emits a half-merged APK after a resource conflict.
+        env:
+          # AGP picks up ANDROID_HOME / ANDROID_SDK_ROOT from the env; the
+          # SDK setup step only exports them inside its own run block, so
+          # re-export here for the smoke test.
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
           set -euo pipefail
           APK=android/app/build/outputs/apk/debug/app-debug.apk
