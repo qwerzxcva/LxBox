@@ -112,15 +112,26 @@ fun RoutesScreen() {
             val cached = remember(rs.id, rs.lastUpdatedEpochMillis) {
                 java.io.File(context.filesDir, "box/ruleset/${rs.id}.${rs.extension}").isFile
             }
+            // One line per rule set, matching the rule rows above: tag,
+            // format, cache state, then the actions. The URL is truncated
+            // rather than wrapped so every row keeps the same height.
             Card(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(rs.tag, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("${rs.format} · ${rs.url}", style = MaterialTheme.typography.bodySmall)
                         Text(
-                            stringResource(if (cached) R.string.rulesets_cached else R.string.rulesets_not_cached),
+                            text = rs.tag + "  ·  " + rs.format,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = stringResource(if (cached) R.string.rulesets_cached else R.string.rulesets_not_cached) +
+                                "  ·  " + rs.url,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
                         )
                     }
                     IconButton(onClick = { editingRuleSet = rs }) {
