@@ -167,7 +167,12 @@ jobs:
         # override needed here. The arm64 dev-machine workaround lives in
         # android/README.md.
         working-directory: android
-        run: gradle :app:assembleDebug --no-daemon --stacktrace --console=plain
+        # Use ./gradlew rather than a globally-installed gradle: ubuntu-latest
+        # runner images ship gradle-wrapper.jar but no `gradle` binary in
+        # PATH, so `gradle ...` would fail with 'command not found'. The
+        # wrapper bootstraps a fresh 8.14.3 on first run (~25s) and caches
+        # it under ~/.gradle/wrapper/dists/ for subsequent runs.
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --console=plain
 
       - name: Smoke-test the APK
         # aapt2 dump badging is a cheap sanity check that the build produced

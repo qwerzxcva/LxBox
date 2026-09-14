@@ -1,0 +1,11 @@
+# Keep the gradle wrapper script executable on Linux/macOS checkouts.
+# Without this, Windows contributors checking out the repo through git
+# can strip the +x bit (or rewrite CRLF), and `chmod +x gradlew` becomes
+# a step everyone has to remember to run locally.
+gradlew          text eol=lf
+gradlew.bat      text eol=crlf
+
+# GitHub Actions YAML must be LF, otherwise CI rejects it with
+# 'found character '\t' that cannot start any token' on the first line.
+.github/**/*.yml text eol=lf
+.github/**/*.yaml text eol=lf
