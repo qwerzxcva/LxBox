@@ -1,6 +1,7 @@
 package com.leadaxe.lxbox.engine.vpn
 
 import android.content.Context
+import android.util.Log
 import com.leadaxe.lxbox.app.AppState
 import com.leadaxe.lxbox.engine.singbox.ConfigCompiler
 import io.nekohasekai.libbox.CommandServer
@@ -193,6 +194,51 @@ class BoxEngine internal constructor(
         runCatching { client.connect() }
             .onFailure { Log.w(TAG, "status client connect failed", it) }
     }
+
+    // ----------------- CommandClientHandler callbacks -----------------
+
+    override fun connected() {
+        // Fired once the CommandClient attaches to the running CommandServer.
+        // Nothing to do here — the engine state machine is the source of
+        // truth for the UI; runtime counters follow via writeStatus().
+    }
+
+    override fun disconnected(message: String?) {
+        Log.d(TAG, "status client disconnected: ${message.orEmpty()}")
+    }
+
+    override fun writeStatus(status: io.nekohasekai.libbox.StatusMessage) {
+        _runtime.value = BoxRuntimeSnapshot(
+            uplinkBytes = status.uplink,
+            downlinkBytes = status.downlink,
+            uplinkTotalBytes = status.uplinkTotal,
+            downlinkTotalBytes = status.downlinkTotal,
+            goroutines = status.goroutines,
+            memoryBytes = status.memory,
+            connectionsIn = status.connectionsIn,
+            connectionsOut = status.connectionsOut,
+        )
+    }
+
+    override fun initializeClashMode(modes: io.nekohasekai.libbox.StringIterator, current: String?) {
+        // Clash mode is owned by AppState; ignore the kernel echo for now.
+    }
+
+    override fun updateClashMode(mode: String?) {
+        // Same as initializeClashMode — AppState drives this, not libbox.
+    }
+
+    override fun setDefaultLogLevel(level: Int) = Unit
+
+    override fun clearLogs() = Unit
+
+    override fun writeLogs(logs: io.nekohasekai.libbox.LogIterator) = Unit
+
+    override fun writeGroups(groups: io.nekohasekai.libbox.OutboundGroupIterator) = Unit
+
+    override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) = Unit
+
+    override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) = Unit
 
     private fun filesDir(): File = context.filesDir
     private fun workDir(): File = File(context.filesDir, "box").apply { mkdirs() }
