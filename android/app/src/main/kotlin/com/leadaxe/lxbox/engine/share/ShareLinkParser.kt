@@ -42,14 +42,13 @@ object ShareLinkParser {
     fun parse(line: String): Result {
         val trimmed = line.trim()
         if (trimmed.isEmpty()) return Result.Err("empty", line)
-        // Some upstream encoders emit multiple links per line or wrap them
-        // in base64 (e.g. V2RayN subscription format). Try a base64 decode
-        // first; if it produces a non-base64-looking string, fall through
-        // to the URL parser.
-        val candidate = if (looksLikeBase64(trimmed)) {
-            runCatching { String(Base64.getDecoder().decode(trimmed), StandardCharsets.UTF_8) }
-                .getOrDefault(trimmed)
-        } else trimmed
+        // A single line may itself be a base64-wrapped link (vmess:// is the
+        // classic case; some panels wrap vless/trojan the same way). Decode
+        // first and fall through to the URL parser.
+        val candidate = runCatching { decodeBase64(trimmed) }
+            .getOrNull()
+            ?.takeIf { it.contains("://") }
+            ?: trimmed
         return try {
             when {
                 candidate.startsWith("vless://") -> parseVless(candidate)
@@ -66,21 +65,69 @@ object ShareLinkParser {
         }
     }
 
-    fun parseMany(text: String): List<Result> =
-        text.lineSequence()
+    /**
+     * Parses a subscription body.
+     *
+     * Two shapes are common in the wild:
+     *  1. Plain text: one share link per line (plus optional `#` comments).
+     *  2. Whole-body base64 (V2RayN, most commercial panels): a single
+     *     opaque blob that decodes to shape 1.
+     *
+     * The old implementation only handled the per-line variant, so shape-2
+     * subscriptions produced zero nodes. We now detect a whole-body base64
+     * blob, decode it, and recurse into the line parser.
+     */
+    fun parseMany(text: String): List<Result> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        // Shape 2: the entire body is one base64 blob. Require a `://` in
+        // the decoded result so random base64-looking noise is not treated
+        // as a subscription.
+        if (!trimmed.contains('\n')) {
+            val decoded = runCatching { decodeBase64(trimmed) }.getOrNull()
+            if (decoded != null && decoded.contains("://")) {
+                return parseMany(decoded)
+            }
+        } else {
+            // Multi-line bodies occasionally still carry a base64 blob split
+            // across lines with whitespace padding (panels that wrap at 76
+            // chars). Try the whitespace-stripped whole body too.
+            val stripped = trimmed.filterNot { it.isWhitespace() }
+            if (stripped.length > 32) {
+                val decoded = runCatching { decodeBase64(stripped) }.getOrNull()
+                if (decoded != null && decoded.contains("://")) {
+                    return parseMany(decoded)
+                }
+            }
+        }
+
+        return trimmed.lineSequence()
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("#") }
             .map(::parse)
             .toList()
+    }
 
-    private fun looksLikeBase64(s: String): Boolean {
-        if (s.length < 16) return false
-        if (s.startsWith("vless://") || s.startsWith("vmess://") ||
-            s.startsWith("trojan://") || s.startsWith("ss://") ||
-            s.startsWith("hy2://") || s.startsWith("hysteria2://") ||
-            s.startsWith("tuic://") || s.startsWith("{") || s.startsWith("[")
-        ) return false
-        return s.all { it.isLetterOrDigit() || it in "+/=" }
+    /**
+     * Decodes [s] as base64, accepting the URL-safe alphabet and missing
+     * padding — both variants show up in real subscriptions. Returns null
+     * when [s] is not valid base64 at all.
+     */
+    private fun decodeBase64(s: String): String? {
+        val compact = s.filterNot { it.isWhitespace() }
+        if (compact.length < 8) return null
+        if (!compact.all { it.isLetterOrDigit() || it in "+/=_-." }) return null
+        val canonical = compact.replace('-', '+').replace('_', '/')
+        val padded = when (canonical.length % 4) {
+            2 -> "$canonical=="
+            3 -> "$canonical="
+            0 -> canonical
+            else -> return null
+        }
+        return runCatching {
+            String(Base64.getDecoder().decode(padded), StandardCharsets.UTF_8)
+        }.getOrNull()
     }
 
     private fun URI.queryParams(): Map<String, String> {

@@ -45,6 +45,27 @@ object ConfigCompiler {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
+     * Localhost port of the mixed inbound used for subscription fetching.
+     * Fixed so [com.leadaxe.lxbox.engine.share.SubscriptionFetcher] can dial
+     * it without having to ask the box at runtime. 0 = the last compiled
+     * config did not include the inbound (no box running / older config).
+     */
+    @Volatile
+    private var localProxyPort: Int = 0
+
+    /** Port handed to the fetcher; null when no box is running. */
+    fun currentLocalProxyPort(): Int? = localProxyPort.takeIf { it > 0 }
+
+    private fun compileLocalProxyInbound(): JsonObject = buildJsonObject {
+        put("type", "mixed")
+        put("tag", LocalProxyInboundTag)
+        put("listen", "127.0.0.1")
+        put("listen_port", SubscriptionFetchPort)
+        // No sniffing here — this inbound only carries the app's own
+        // subscription fetches, which are plain HTTP(S) to the panel.
+    }
+
+    /**
      * @param ruleSetDir directory where downloaded rule-set caches live
      *        (`<id>.srs` / `<id>.json`).
      */
@@ -63,7 +84,13 @@ object ConfigCompiler {
             }
         }
         put("dns", compileDns(state, ruleSetDir))
-        putJsonArray("inbounds") { add(compileTunInbound(state)) }
+        putJsonArray("inbounds") {
+            add(compileTunInbound(state))
+            // Subscription fetches ride the same DNS/routing rules as normal
+            // traffic when the user picks "proxy" (or when auto falls back).
+            add(compileLocalProxyInbound())
+        }
+        localProxyPort = SubscriptionFetchPort
         putJsonArray("outbounds") { compileOutbounds(state).forEach(::add) }
         putJsonObject("route") {
             putJsonArray("rules") { compileRouteRules(state).forEach(::add) }
@@ -595,4 +622,10 @@ object ConfigCompiler {
 
     private const val MIN_TUN_MTU = 1280
     private const val MAX_TUN_MTU = 9000
+
+    /** Tag of the localhost mixed inbound used by subscription fetches. */
+    const val LocalProxyInboundTag = "sub-fetch-in"
+
+    /** Port the box listens on for subscription fetches (loopback only). */
+    const val SubscriptionFetchPort = 2080
 }

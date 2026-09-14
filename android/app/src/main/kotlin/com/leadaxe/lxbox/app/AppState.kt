@@ -15,6 +15,8 @@ data class AppState(
     /** UrlTest / selector groups built on top of [outbounds]. */
     val outboundGroups: List<OutboundGroup> = emptyList(),
     val subscriptions: List<Subscription> = emptyList(),
+    /** Folders that group [subscriptions] in the UI. */
+    val subscriptionGroups: List<SubscriptionGroup> = emptyList(),
     val routeRules: List<RouteRule> = emptyList(),
     val ruleSets: List<RuleSetResource> = emptyList(),
 
@@ -137,13 +139,46 @@ data class OutboundProfile(
     val tag: String get() = "node-$id"
 }
 
+/**
+ * Remote node source.
+ *
+ * [groupId] optionally files the subscription under a user-created group so
+ * the Subscriptions tab can render folders; null = ungrouped.
+ */
 @Serializable
 data class Subscription(
     val id: String,
     val name: String,
     val url: String,
     val lastUpdatedEpochMillis: Long = 0,
+    val groupId: String? = null,
+    /**
+     * How to reach the subscription endpoint.
+     * "direct" / "proxy" / "auto" (try direct, fall back to proxy).
+     */
+    val fetchVia: String = FetchViaAuto,
+    /**
+     * Resolver used while fetching this subscription; a DNS server tag from
+     * [AppState.dnsServers]. Empty = system resolver.
+     */
+    val dnsServer: String = "",
+    /** Drop duplicate nodes (same type + server + port + credentials) on import. */
+    val deduplicate: Boolean = true,
 )
+
+/** A folder that groups subscriptions in the UI. Purely presentational. */
+@Serializable
+data class SubscriptionGroup(
+    val id: String,
+    val name: String,
+    val enabled: Boolean = true,
+)
+
+const val FetchViaAuto = "auto"
+const val FetchViaDirect = "direct"
+const val FetchViaProxy = "proxy"
+
+val FetchViaOptions = listOf(FetchViaAuto, FetchViaDirect, FetchViaProxy)
 
 /**
  * Routing rule. Exactly two kinds (spec: the old inline/srs/json trio becomes two):

@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Refresh
@@ -65,6 +66,7 @@ fun SubscriptionsScreen() {
     val scope = rememberCoroutineScope()
     var addDialog by remember { mutableStateOf(false) }
     var pasteDialog by remember { mutableStateOf(false) }
+    var creatingFolder by remember { mutableStateOf(false) }
     var editingGroup: com.leadaxe.lxbox.app.OutboundGroup? by remember { mutableStateOf(null) }
     var creatingGroup by remember { mutableStateOf(false) }
 
@@ -82,7 +84,7 @@ fun SubscriptionsScreen() {
                     }
                     FilledTonalButton(onClick = {
                         scope.launch {
-                            val r = fetcher.refreshAll(state.subscriptions)
+                            val r = fetcher.refreshAll(state.subscriptions, state.dnsServers)
                             store.update { current ->
                                 current.copy(
                                     outbounds = r.outbounds,
@@ -91,10 +93,13 @@ fun SubscriptionsScreen() {
                                     },
                                 )
                             }
-                            val msg = if (r.failures.isEmpty())
+                            val base = if (r.failures.isEmpty())
                                 context.getString(R.string.subs_refreshed, r.outbounds.size)
                             else
                                 context.getString(R.string.subs_refreshed_with_failures, r.failures.size)
+                            val msg = if (r.duplicates > 0)
+                                "$base · " + context.getString(R.string.subs_duplicates_dropped, r.duplicates)
+                            else base
                             snackbar.showSnackbar(msg)
                         }
                     }) {
@@ -104,6 +109,44 @@ fun SubscriptionsScreen() {
                     FilledTonalButton(onClick = { pasteDialog = true }) {
                         Icon(Icons.Outlined.ContentPaste, contentDescription = null)
                         Text(stringResource(R.string.subs_paste_link))
+                    }
+                    FilledTonalButton(onClick = { creatingFolder = true }) {
+                        Icon(Icons.Outlined.CreateNewFolder, contentDescription = null)
+                        Text(stringResource(R.string.subs_group_add))
+                    }
+                }
+            }
+
+            if (state.subscriptionGroups.isNotEmpty()) {
+                item { SectionHeader(stringResource(R.string.subs_groups_section, state.subscriptionGroups.size)) }
+                items(state.subscriptionGroups, key = { it.id }) { folder ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    folder.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    "${state.subscriptions.count { it.groupId == folder.id }}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            IconButton(onClick = {
+                                store.update { st ->
+                                    st.copy(
+                                        subscriptionGroups = st.subscriptionGroups.filterNot { it.id == folder.id },
+                                        // Orphaned subscriptions become ungrouped rather than disappearing.
+                                        subscriptions = st.subscriptions.map {
+                                            if (it.groupId == folder.id) it.copy(groupId = null) else it
+                                        },
+                                    )
+                                }
+                            }) {
+                                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
+                            }
+                        }
                     }
                 }
             }
@@ -122,7 +165,7 @@ fun SubscriptionsScreen() {
                     },
                     onRefresh = {
                         scope.launch {
-                            runCatching { fetcher.fetch(sub) }
+                            runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers) }
                                 .onSuccess { r ->
                                     store.update { st ->
                                         st.copy(
@@ -177,24 +220,26 @@ fun SubscriptionsScreen() {
 
     if (addDialog) {
         AddSubscriptionDialog(
+            state = state,
             onDismiss = { addDialog = false },
-            onAdd = { name, url ->
-                val id = UUID.randomUUID().toString()
+            onAdd = { sub ->
                 store.update { st ->
-                    st.copy(
-                        subscriptions = st.subscriptions + Subscription(
-                            id = id, name = name.ifBlank { url }, url = url,
-                        ),
-                    )
+                    st.copy(subscriptions = st.subscriptions + sub)
                 }
                 scope.launch {
-                    runCatching { fetcher.fetch(Subscription(id = id, name = name, url = url)) }
+                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers) }
                         .onSuccess { r ->
                             store.update { st ->
                                 st.copy(outbounds = st.outbounds + r.outbounds)
                             }
+                            val msg = if (r.outbounds.isEmpty()) {
+                                context.getString(R.string.subs_no_nodes_hint)
+                            } else {
+                                context.getString(R.string.subs_nodes_added, sub.name.ifBlank { sub.url }, r.outbounds.size)
+                            }
+                            snackbar.showSnackbar(msg)
                         }
-                        .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, name, it.message ?: "fetch failed")) }
+                        .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, sub.name.ifBlank { sub.url }, it.message ?: "fetch failed")) }
                 }
                 addDialog = false
             },
@@ -221,6 +266,25 @@ fun SubscriptionsScreen() {
                 store.update { st -> st.copy(outbounds = st.outbounds + ok) }
                 scope.launch { snackbar.showSnackbar(context.getString(R.string.subs_paste_result, ok.size, errs)) }
                 pasteDialog = false
+            },
+        )
+    }
+
+    if (creatingFolder) {
+        NameDialog(
+            title = stringResource(R.string.subs_group_add),
+            label = stringResource(R.string.subs_group_name),
+            onDismiss = { creatingFolder = false },
+            onConfirm = { folderName ->
+                store.update { st ->
+                    st.copy(
+                        subscriptionGroups = st.subscriptionGroups + com.leadaxe.lxbox.app.SubscriptionGroup(
+                            id = UUID.randomUUID().toString(),
+                            name = folderName,
+                        ),
+                    )
+                }
+                creatingFolder = false
             },
         )
     }
@@ -307,22 +371,105 @@ private fun NodeRow(
 
 @Composable
 private fun AddSubscriptionDialog(
+    state: com.leadaxe.lxbox.app.AppState,
     onDismiss: () -> Unit,
-    onAdd: (String, String) -> Unit,
+    onAdd: (com.leadaxe.lxbox.app.Subscription) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var fetchVia by remember { mutableStateOf(com.leadaxe.lxbox.app.FetchViaAuto) }
+    var resolver by remember { mutableStateOf("") }
+    var deduplicate by remember { mutableStateOf(true) }
+    var groupId by remember { mutableStateOf<String?>(null) }
+
+    // Only DoH-capable servers can be used for the pinned-resolver path.
+    val resolverOptions = remember(state.dnsServers) {
+        state.dnsServers.filter { it.type == "https" || it.type == "h3" }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.subs_add)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.subs_name)) })
-                OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text(stringResource(R.string.subs_url)) })
+            FormBody {
+                StringField(
+                    label = stringResource(R.string.subs_name),
+                    value = name,
+                    onValueChange = { name = it },
+                )
+                StringField(
+                    label = stringResource(R.string.subs_url),
+                    value = url,
+                    onValueChange = { url = it },
+                    placeholder = "https://panel.example/sub",
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_fetch_via),
+                    options = com.leadaxe.lxbox.app.FetchViaOptions,
+                    selected = fetchVia,
+                    onSelect = { fetchVia = it },
+                    display = {
+                        when (it) {
+                            com.leadaxe.lxbox.app.FetchViaDirect -> stringResource(R.string.subs_fetch_via_direct)
+                            com.leadaxe.lxbox.app.FetchViaProxy -> stringResource(R.string.subs_fetch_via_proxy)
+                            else -> stringResource(R.string.subs_fetch_via_auto)
+                        }
+                    },
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_resolver),
+                    options = listOf("") + resolverOptions.map { it.tag },
+                    selected = resolver,
+                    onSelect = { resolver = it },
+                    display = { tag ->
+                        if (tag.isEmpty()) stringResource(R.string.subs_resolver_system)
+                        else resolverOptions.firstOrNull { s -> s.tag == tag }?.name?.ifBlank { tag } ?: tag
+                    },
+                )
+                if (resolverOptions.isEmpty()) {
+                    Text(
+                        stringResource(R.string.subs_resolver_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                SwitchRow(
+                    label = stringResource(R.string.subs_deduplicate),
+                    supporting = stringResource(R.string.subs_deduplicate_desc),
+                    checked = deduplicate,
+                    onCheckedChange = { deduplicate = it },
+                )
+                if (state.subscriptionGroups.isNotEmpty()) {
+                    SingleChoiceChips(
+                        label = stringResource(R.string.subs_group),
+                        options = listOf("") + state.subscriptionGroups.map { g -> g.id },
+                        selected = groupId ?: "",
+                        onSelect = { groupId = it.ifBlank { null } },
+                        display = { id ->
+                            if (id.isEmpty()) stringResource(R.string.subs_group_none)
+                            else state.subscriptionGroups.firstOrNull { g -> g.id == id }?.name ?: id
+                        },
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(name, url) }, enabled = url.isNotBlank()) { Text(stringResource(R.string.subs_add_action)) }
+            Button(
+                onClick = {
+                    onAdd(
+                        com.leadaxe.lxbox.app.Subscription(
+                            id = UUID.randomUUID().toString(),
+                            name = name.ifBlank { url },
+                            url = url,
+                            groupId = groupId,
+                            fetchVia = fetchVia,
+                            dnsServer = resolver,
+                            deduplicate = deduplicate,
+                        ),
+                    )
+                },
+                enabled = url.isNotBlank(),
+            ) { Text(stringResource(R.string.subs_add_action)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.subs_cancel)) } },
     )
@@ -355,6 +502,36 @@ private fun PasteLinkDialog(
 }
 
 // ----------------------------------------------------------- outbound groups
+
+/** Minimal single-field dialog reused by the folder creator. */
+@Composable
+private fun NameDialog(
+    title: String,
+    label: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var value by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = value,
+                onValueChange = { value = it },
+                label = { Text(label) },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(value.trim()) },
+                enabled = value.isNotBlank(),
+            ) { Text(stringResource(R.string.common_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
+}
 
 @Composable
 private fun GroupRow(
@@ -427,10 +604,7 @@ private fun GroupEditor(
             )
         },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            FormBody {
                 StringField(
                     label = stringResource(R.string.groups_name),
                     value = name,

@@ -2,10 +2,14 @@ package com.leadaxe.lxbox.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -23,6 +27,27 @@ fun SectionHeader(text: String) {
         text = text,
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(vertical = 8.dp),
+    )
+}
+
+/**
+ * Scrollable form body for long editors.
+ *
+ * `AlertDialog` puts its `text` slot in a fixed-height box with no scroll;
+ * anything past the viewport is simply unreachable (the clipped lower fields
+ * also render on top of the buttons, which is the overlap that showed up in
+ * the rule editor). Wrapping the form in this column gives it a bounded
+ * height *and* a scrollbar, so every field stays reachable.
+ */
+@Composable
+fun FormBody(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.85f)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        content = content,
     )
 }
 

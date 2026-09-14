@@ -53,6 +53,8 @@ fun RoutesScreen() {
 
     var editing: RouteRule? by remember { mutableStateOf(null) }
     var creating by remember { mutableStateOf(false) }
+    var editingRuleSet: com.leadaxe.lxbox.app.RuleSetResource? by remember { mutableStateOf(null) }
+    var creatingRuleSet by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -99,12 +101,36 @@ fun RoutesScreen() {
             )
         }
 
+        item {
+            FilledTonalButton(onClick = { creatingRuleSet = true }) {
+                Icon(Icons.Outlined.Add, contentDescription = null)
+                Text(stringResource(R.string.rulesets_add))
+            }
+        }
         item { SectionHeader(stringResource(R.string.routes_section_rulesets, state.ruleSets.size)) }
         items(state.ruleSets, key = { it.id }) { rs ->
+            val cached = remember(rs.id, rs.lastUpdatedEpochMillis) {
+                java.io.File(context.filesDir, "box/ruleset/${rs.id}.${rs.extension}").isFile
+            }
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(rs.tag, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("${rs.format} · ${rs.url}", style = MaterialTheme.typography.bodySmall)
+                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(rs.tag, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("${rs.format} · ${rs.url}", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            stringResource(if (cached) R.string.rulesets_cached else R.string.rulesets_not_cached),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { editingRuleSet = rs }) {
+                        Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
+                    }
+                    IconButton(onClick = {
+                        store.update { st -> st.copy(ruleSets = st.ruleSets.filterNot { it.id == rs.id }) }
+                    }) {
+                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
+                    }
                 }
             }
         }
@@ -131,6 +157,29 @@ fun RoutesScreen() {
                     st.copy(routeRules = st.routeRules.map { if (it.id == updated.id) updated else it })
                 }
                 editing = null
+            },
+        )
+    }
+
+    if (creatingRuleSet) {
+        RuleSetEditor(
+            initial = null,
+            onDismiss = { creatingRuleSet = false },
+            onSave = { rs ->
+                store.update { st -> st.copy(ruleSets = st.ruleSets + rs) }
+                creatingRuleSet = false
+            },
+        )
+    }
+    editingRuleSet?.let { rs ->
+        RuleSetEditor(
+            initial = rs,
+            onDismiss = { editingRuleSet = null },
+            onSave = { updated ->
+                store.update { st ->
+                    st.copy(ruleSets = st.ruleSets.map { if (it.id == updated.id) updated else it })
+                }
+                editingRuleSet = null
             },
         )
     }
@@ -269,10 +318,7 @@ private fun RuleEditor(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(if (initial == null) R.string.routes_new_rule else R.string.routes_edit_rule)) },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            FormBody {
                 StringField(
                     label = stringResource(R.string.routes_name),
                     value = name,
@@ -441,6 +487,81 @@ private fun RuleEditor(
                         ),
                     )
                 },
+            ) { Text(stringResource(R.string.common_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
+}
+/**
+ * Editor for a managed rule-set (.srs / source .json) resource. The tag is
+ * what inline route and DNS rules reference via `rule_set`; the URL is
+ * downloaded to `filesDir/box/ruleset/<id>.<ext>` and reused as a local
+ * rule set when the cache exists.
+ */
+@Composable
+private fun RuleSetEditor(
+    initial: com.leadaxe.lxbox.app.RuleSetResource?,
+    onDismiss: () -> Unit,
+    onSave: (com.leadaxe.lxbox.app.RuleSetResource) -> Unit,
+) {
+    var tag by remember { mutableStateOf(initial?.tag.orEmpty()) }
+    var format by remember { mutableStateOf(initial?.format ?: "binary") }
+    var url by remember { mutableStateOf(initial?.url.orEmpty()) }
+    var interval by remember { mutableStateOf((initial?.updateIntervalHours ?: 168).toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(if (initial == null) R.string.rulesets_new else R.string.rulesets_edit))
+        },
+        text = {
+            FormBody {
+                StringField(
+                    label = stringResource(R.string.rulesets_tag),
+                    value = tag,
+                    onValueChange = { tag = it },
+                    placeholder = stringResource(R.string.rulesets_tag_hint),
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.rulesets_format),
+                    options = listOf("binary", "source"),
+                    selected = format,
+                    onSelect = { format = it },
+                    display = {
+                        if (it == "source") stringResource(R.string.rulesets_format_source)
+                        else stringResource(R.string.rulesets_format_binary)
+                    },
+                )
+                StringField(
+                    label = stringResource(R.string.rulesets_url),
+                    value = url,
+                    onValueChange = { url = it },
+                    placeholder = stringResource(R.string.rulesets_url_hint),
+                )
+                StringField(
+                    label = stringResource(R.string.rulesets_interval),
+                    value = interval,
+                    onValueChange = { interval = it.filter { c -> c.isDigit() } },
+                    placeholder = stringResource(R.string.rulesets_interval_hint),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        (initial ?: com.leadaxe.lxbox.app.RuleSetResource(
+                            id = java.util.UUID.randomUUID().toString(),
+                            tag = "",
+                        )).copy(
+                            tag = tag.trim(),
+                            format = format,
+                            url = url.trim(),
+                            updateIntervalHours = interval.toIntOrNull() ?: 0,
+                        ),
+                    )
+                },
+                enabled = tag.isNotBlank() && url.isNotBlank(),
             ) { Text(stringResource(R.string.common_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },

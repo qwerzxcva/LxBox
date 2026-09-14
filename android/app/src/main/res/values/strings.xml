@@ -38,6 +38,22 @@
     <string name="subs_section_nodes">Nodes (%1$d)</string>
     <string name="subs_name">Name</string>
     <string name="subs_url">Subscription URL</string>
+    <string name="subs_fetch_via">Fetch nodes via</string>
+    <string name="subs_fetch_via_auto">Auto (direct, then proxy)</string>
+    <string name="subs_fetch_via_direct">Direct</string>
+    <string name="subs_fetch_via_proxy">Proxy (through VPN)</string>
+    <string name="subs_resolver">DNS resolver</string>
+    <string name="subs_resolver_system">System default</string>
+    <string name="subs_resolver_hint">Only https/h3 DNS servers can be used for fetching.</string>
+    <string name="subs_deduplicate">Remove duplicate nodes</string>
+    <string name="subs_deduplicate_desc">Drop nodes with the same protocol, server, port and credentials.</string>
+    <string name="subs_group">Folder</string>
+    <string name="subs_group_none">No folder</string>
+    <string name="subs_groups_section">Folders (%1$d)</string>
+    <string name="subs_group_add">Add folder</string>
+    <string name="subs_group_name">Folder name</string>
+    <string name="subs_duplicates_dropped">%1$d duplicate(s) dropped</string>
+    <string name="subs_no_nodes_hint">No nodes imported. Check the subscription URL, or switch the fetch path to proxy.</string>
     <string name="subs_add_action">Add</string>
     <string name="subs_cancel">Cancel</string>
     <string name="subs_refresh">Refresh</string>
@@ -122,6 +138,22 @@
     <string name="routes_save">Save</string>
     <string name="routes_move_up">Move up</string>
     <string name="routes_move_down">Move down</string>
+
+    <!-- rule sets (srs) -->
+    <string name="rulesets_add">Add rule set</string>
+    <string name="rulesets_new">New rule set</string>
+    <string name="rulesets_edit">Edit rule set</string>
+    <string name="rulesets_tag">Tag (referenced by rules)</string>
+    <string name="rulesets_tag_hint">e.g. geosite-cn</string>
+    <string name="rulesets_format">Format</string>
+    <string name="rulesets_format_binary">Binary (.srs)</string>
+    <string name="rulesets_format_source">Source (.json)</string>
+    <string name="rulesets_url">Download URL</string>
+    <string name="rulesets_url_hint">https://example.com/rules.srs</string>
+    <string name="rulesets_interval">Auto-update interval (hours)</string>
+    <string name="rulesets_interval_hint">0 = never</string>
+    <string name="rulesets_cached">cached</string>
+    <string name="rulesets_not_cached">not downloaded yet</string>
 
     <!-- dns -->
     <string name="dns_section_servers">DNS servers (%1$d)</string>

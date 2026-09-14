@@ -36,6 +36,22 @@
     <string name="subs_section_nodes">节点（%1$d）</string>
     <string name="subs_name">名称</string>
     <string name="subs_url">订阅地址</string>
+    <string name="subs_fetch_via">获取节点方式</string>
+    <string name="subs_fetch_via_auto">自动（先直连后代理）</string>
+    <string name="subs_fetch_via_direct">直连</string>
+    <string name="subs_fetch_via_proxy">代理（经 VPN）</string>
+    <string name="subs_resolver">DNS 解析器</string>
+    <string name="subs_resolver_system">系统默认</string>
+    <string name="subs_resolver_hint">仅 https/h3 类型的 DNS 服务器可用于抓取订阅。</string>
+    <string name="subs_deduplicate">节点去重</string>
+    <string name="subs_deduplicate_desc">按协议、服务器、端口与凭据去重，丢弃重复节点。</string>
+    <string name="subs_group">所属文件夹</string>
+    <string name="subs_group_none">不分组</string>
+    <string name="subs_groups_section">文件夹（%1$d）</string>
+    <string name="subs_group_add">添加文件夹</string>
+    <string name="subs_group_name">文件夹名称</string>
+    <string name="subs_duplicates_dropped">已去重 %1$d 个节点</string>
+    <string name="subs_no_nodes_hint">未导入任何节点。请检查订阅地址，或改用「代理」方式获取。</string>
     <string name="subs_add_action">添加</string>
     <string name="subs_cancel">取消</string>
     <string name="subs_refresh">刷新</string>
@@ -120,6 +136,22 @@
     <string name="routes_save">保存</string>
     <string name="routes_move_up">上移</string>
     <string name="routes_move_down">下移</string>
+
+    <!-- rule sets (srs) -->
+    <string name="rulesets_add">添加规则集</string>
+    <string name="rulesets_new">新建规则集</string>
+    <string name="rulesets_edit">编辑规则集</string>
+    <string name="rulesets_tag">标签（供规则引用）</string>
+    <string name="rulesets_tag_hint">例如 geosite-cn</string>
+    <string name="rulesets_format">格式</string>
+    <string name="rulesets_format_binary">二进制（.srs）</string>
+    <string name="rulesets_format_source">源文件（.json）</string>
+    <string name="rulesets_url">下载地址</string>
+    <string name="rulesets_url_hint">https://example.com/rules.srs</string>
+    <string name="rulesets_interval">自动更新间隔（小时）</string>
+    <string name="rulesets_interval_hint">0 = 从不更新</string>
+    <string name="rulesets_cached">已缓存</string>
+    <string name="rulesets_not_cached">尚未下载</string>
 
     <!-- dns -->
     <string name="dns_section_servers">DNS 服务器（%1$d）</string>

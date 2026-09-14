@@ -352,10 +352,7 @@ private fun DnsServerEditor(
             )
         },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            FormBody {
                 StringField(
                     label = stringResource(R.string.dns_name),
                     value = name,
@@ -621,10 +618,7 @@ private fun DnsRuleEditor(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(if (initial == null) R.string.dns_new_rule else R.string.dns_edit_rule)) },
         text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            FormBody {
                     StringField(
                         label = stringResource(R.string.dns_name),
                         value = name,
