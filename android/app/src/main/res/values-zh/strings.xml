@@ -128,6 +128,8 @@
     <string name="dns_cache_capacity">缓存容量</string>
     <string name="dns_independent_cache">独立缓存</string>
     <string name="dns_global_strategy">全局策略</string>
+    <string name="dns_final_server">兜底解析服务器</string>
+    <string name="dns_final_auto">自动</string>
     <string name="dns_delete">删除</string>
 
     <!-- fakeip -->

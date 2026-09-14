@@ -238,15 +238,20 @@ object ConfigCompiler {
     }
 
     /**
-     * The `final` DNS server: first enabled concrete server, preferring the
-     * fake-IP entry when the pool is on (queries that hit `final` after all
-     * rules should be resolved, not faked — so we deliberately skip fakeip
-     * here and use the first real server).
+     * The `final` DNS server. A non-empty [AppState.finalDnsServer] wins
+     * (the explicit "兜底" choice). Otherwise: first enabled concrete server,
+     * skipping fakeip — queries that reach `final` have already run the
+     * rule gauntlet and should be resolved, not faked.
      */
-    private fun pickFinalServer(state: AppState): String =
-        state.dnsServers.firstOrNull { it.enabled && it.type != "local" }?.tag
+    private fun pickFinalServer(state: AppState): String {
+        val explicit = state.finalDnsServer
+        if (explicit.isNotBlank() && state.dnsServers.any { it.enabled && it.tag == explicit }) {
+            return explicit
+        }
+        return state.dnsServers.firstOrNull { it.enabled && it.type != "local" }?.tag
             ?: state.dnsServers.firstOrNull { it.enabled }?.tag
             ?: FakeIpServerTag
+    }
 
     /**
      * Resolver handed to `route.default_domain_resolver`. Must be a concrete

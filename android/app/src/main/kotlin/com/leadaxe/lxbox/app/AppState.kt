@@ -27,6 +27,12 @@ data class AppState(
     val dnsIndependentCache: Boolean = true,
     /** SNI-based DNS rules should attach client subnet to queries. */
     val dnsClientSubnet: String = "",
+    /**
+     * Explicit fallback resolver tag. Empty = automatic (first enabled
+     * non-local server). Set this to pin the catch-all resolver — the
+     * "兜底" choice in the DNS group UI.
+     */
+    val finalDnsServer: String = "",
 
     // -------------------------------------------------------------- fake-ip
     /** Built-in fake-IP pool for the `dns.fakeip` server (see ConfigCompiler). */

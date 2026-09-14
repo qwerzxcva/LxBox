@@ -143,6 +143,16 @@ fun DnsScreen() {
                         onSelect = { v -> store.update { it.copy(dnsStrategy = v) } },
                         display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
                     )
+                    SingleChoiceChips(
+                        label = stringResource(R.string.dns_final_server),
+                        options = listOf("") + state.dnsServers.map { it.tag },
+                        selected = state.finalDnsServer,
+                        onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
+                        display = {
+                            if (it.isEmpty()) stringResource(R.string.dns_final_auto)
+                            else state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                        },
+                    )
                     SwitchRow(
                         label = stringResource(R.string.dns_independent_cache),
                         checked = state.dnsIndependentCache,

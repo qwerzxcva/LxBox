@@ -130,6 +130,8 @@
     <string name="dns_cache_capacity">Cache capacity</string>
     <string name="dns_independent_cache">Independent cache</string>
     <string name="dns_global_strategy">Global strategy</string>
+    <string name="dns_final_server">Fallback resolver</string>
+    <string name="dns_final_auto">Automatic</string>
     <string name="dns_delete">Delete</string>
 
     <!-- fakeip -->
