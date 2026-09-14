@@ -71,58 +71,73 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Set up Android SDK
-        # The runner images ship cmdline-tools 20.0 at
-        # /usr/local/lib/android/sdk/cmdline-tools/20.0 — which means we
-        # only need to install the platform packages, not the tools. We
-        # avoid android-actions/setup-android entirely because both v3 and
-        # v4 fail the license-accept step on the preinstalled cmdline-tools
-        # binaries:
+        # Per actions/runner-images Ubuntu 24.04 README, ubuntu-latest
+        # runners ship:
+        #   - ANDROID_HOME=/usr/local/lib/android/sdk (already exported)
+        #   - Android Command Line Tools 12.0
+        #   - build-tools up to 37.0.0 (including our 35.0.0)
+        #   - platform-tools 37.0.1
+        #   - android-36 platform
+        # That means we have *everything* we need preinstalled. The only
+        # manual step is accepting the SDK licenses once so AGP / sdkmanager
+        # write the hash files into $ANDROID_HOME/licenses/.
         #
-        #   `6 of 7 SDK package licenses not accepted.`
-        #   `Review licenses that have not been accepted (y/N)?`
-        #
-        # The action pipes stdin to sdkmanager to accept licenses, but
-        # cmdline-tools 12.0/20.0 still hangs after the 6th prompt on the
-        # google-tv addon license; the action then never gets a chance to
-        # install our requested packages. Piping `yes` ourselves works
-        # because each `y\n` consumed corresponds to one of the licenses
-        # sdkmanager prints.
+        # Earlier attempts to run android-actions/setup-android failed
+        # because its internal license-accept logic stalls on the
+        # google-tv addon license (the cmdline-tools prints '6 of 7 SDK
+        # package licenses not accepted. Review licenses that have not
+        # been accepted (y/N)?' and waits on stdin that the action never
+        # feeds enough). Doing it ourselves with 'yes | sdkmanager'
+        # works: each 'y\n' consumed answers one license.
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          # Hard-code the SDK root: the preinstalled cmdline-tools path is
-          # stable across ubuntu-latest runners, and using the absolute
-          # path means we don't have to rely on whichever of ANDROID_HOME /
-          # ANDROID_SDK_ROOT the runner happened to pre-populate.
-          ANDROID_SDK="/usr/local/lib/android/sdk"
-          export ANDROID_HOME="$ANDROID_SDK"
-          export ANDROID_SDK_ROOT="$ANDROID_SDK"
-          SDKMANAGER="$ANDROID_SDK/cmdline-tools/20.0/bin/sdkmanager"
-          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not at $SDKMANAGER"; ls -la "$ANDROID_SDK/cmdline-tools/"; exit 1; }
+          # Discover the preinstalled cmdline-tools version. The runner
+          # ships 12.0 in /usr/local/lib/android/sdk/cmdline-tools/12.0, but
+          # future images might upgrade to 13.0 or 20.0. Pick whatever's
+          # there rather than hard-coding.
+          ANDROID_SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          CMDLINE_DIR="$(ls -d "$ANDROID_SDK"/cmdline-tools/* 2>/dev/null | sort -V | tail -1)"
+          SDKMANAGER="$CMDLINE_DIR/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK/cmdline-tools/"
+            ls -la "$ANDROID_SDK/cmdline-tools/" || true
+            exit 1
+          fi
+          echo "==> Using sdkmanager: $SDKMANAGER"
           # Pre-create the licenses dir so the first run doesn't fail on a
           # missing parent when writing the license-hash files.
           mkdir -p "$ANDROID_HOME/licenses"
+          # Accept licenses. `yes` keeps streaming y's after sdkmanager
+          # stops reading, so the pipe gets SIGPIPE on the `yes` side —
+          # not an error for our purposes. Wrap in '|| true' and check
+          # that license-hash files actually landed under $ANDROID_HOME/licenses/.
           echo "==> Accepting SDK licenses"
-          # `yes` keeps streaming y's after sdkmanager stops reading, so the
-          # pipe eventually gets SIGPIPE on yes — not an error for our
-          # purposes. `set -o pipefail` is on, so we wrap in `|| true` and
-          # then check that the licenses directory now contains entries
-          # (the only real success signal for this command).
           yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null || true
           if ! ls "$ANDROID_HOME/licenses/" 2>/dev/null | grep -q .; then
             echo "::error::No license files written under \$ANDROID_HOME/licenses — license acceptance likely failed."
             exit 1
           fi
-          echo "==> Installing platforms;android-36 + build-tools;35.0.0 + platform-tools"
-          # Same caveat: when sdkmanager finishes early, yes gets SIGPIPE.
+          echo "==> License files:"
+          ls "$ANDROID_HOME/licenses/"
+          # The platform packages are already preinstalled on the runner.
+          # We still try the install command so the on-disk state matches
+          # what build.gradle.kts declares (compileSdk=36, targetSdk=36,
+          # buildToolsVersion=35.0.0). If a package is already installed,
+          # sdkmanager is a no-op for it.
+          echo "==> Reconciling installed packages (idempotent)"
           yes 2>/dev/null | "$SDKMANAGER" \
               "platform-tools" \
               "platforms;android-36" \
               "build-tools;35.0.0" \
               >/dev/null || true
-          # Sanity check that the install actually landed.
-          test -d "$ANDROID_HOME/platforms/android-36" || { echo "::error::platforms/android-36 missing after install"; exit 1; }
-          test -d "$ANDROID_HOME/build-tools/35.0.0" || { echo "::error::build-tools/35.0.0 missing after install"; exit 1; }
+          # Sanity check that AGP-required pieces are present.
+          for p in \
+            "$ANDROID_HOME/platform-tools" \
+            "$ANDROID_HOME/platforms/android-36" \
+            "$ANDROID_HOME/build-tools/35.0.0"; do
+            test -e "$p" || { echo "::error::required SDK path missing after install: $p"; exit 1; }
+          done
           echo "==> SDK ready:"
           ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
