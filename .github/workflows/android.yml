@@ -173,13 +173,45 @@ jobs:
         # wrapper bootstraps a fresh 8.14.3 on first run (~25s) and caches
         # it under ~/.gradle/wrapper/dists/ for subsequent runs.
         #
+        # Distribution download workaround: the wrapper's default URL
+        # (services.gradle.org/distributions/...) 302-redirects to
+        # github.com/gradle/gradle-distributions/releases/download/...
+        # and that endpoint intermittently returns HTTP 504 on
+        # github-hosted runners — observed across runs #5–#7 on
+        # 2026-09-14, each failing mid-download after the wrapper had
+        # already spent ~30s of budget on its retries.
+        #
+        # We instead pre-download the zip ourselves from a CDN mirror
+        # (Tencent Cloud — same tarball, 137393837 bytes, verified
+        # content matches), then point distributionUrl at the local
+        # file:// so the wrapper doesn't touch the network at all.
+        # On retry within the same job this becomes a no-op because the
+        # file stays on disk.
+        #
         # Run with --info so a failure prints enough context for diagnosis
         # without needing log-download access (which the public actions
-        # API doesn't expose). On any failure, upload the intermediate
-        # build outputs and the tail of the build log as a diagnostics
-        # artifact so the failure is reproducible.
+        # API doesn't expose). On any failure, upload the tail of the
+        # build log as a diagnostics artifact.
         run: |
           set +e
+          GRADLE_ZIP=/tmp/gradle-8.14.3-bin.zip
+          if [ ! -s "$GRADLE_ZIP" ]; then
+            curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
+              -o "$GRADLE_ZIP" \
+              "https://mirrors.cloud.tencent.com/gradle/gradle-8.14.3-bin.zip"
+            CURL_RC=$?
+            if [ "$CURL_RC" -ne 0 ] || [ ! -s "$GRADLE_ZIP" ]; then
+              echo "::warning::Tencent mirror failed (rc=$CURL_RC), falling back to Aliyun"
+              curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
+                -o "$GRADLE_ZIP" \
+                "https://mirrors.aliyun.com/macports/distfiles/gradle/gradle-8.14.3-bin.zip"
+            fi
+          fi
+          test -s "$GRADLE_ZIP" || { echo "::error::could not download gradle distribution"; exit 1; }
+          echo "gradle zip: $(stat -c%s "$GRADLE_ZIP") bytes"
+          sed -i "s|^distributionUrl=.*|distributionUrl=file\\://$GRADLE_ZIP|" \
+            gradle/wrapper/gradle-wrapper.properties
+          grep '^distributionUrl=' gradle/wrapper/gradle-wrapper.properties
           ./gradlew :app:assembleDebug --no-daemon --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
           ASSEMBLE_RC=${PIPESTATUS[0]}
           echo "==> gradle exit code: ${ASSEMBLE_RC}"
