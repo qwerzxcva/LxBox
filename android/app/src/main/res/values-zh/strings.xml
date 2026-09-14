@@ -8,7 +8,7 @@
     <string name="nav_settings">设置</string>
 
     <!-- home -->
-    <string name="home_title">L×Box</string>
+    <string name="home_title">AIBox</string>
     <string name="home_status_idle">未连接</string>
     <string name="home_status_starting">启动中…</string>
     <string name="home_status_connected">已连接</string>
@@ -212,6 +212,7 @@
     <string name="fakeip_filter_exclude_desc">名单内的域名跳过 Fake-IP，走正常解析。</string>
     <string name="fakeip_default_range4">198.18.0.0/15（默认）</string>
     <string name="fakeip_default_range6">fc00::/18（默认）</string>
+    <string name="fakeip_inet6_needs_ipv6">IPv6 未启用 — v6 地址池已保存，启用 IPv6 后才会生效。</string>
 
     <!-- settings -->
     <string name="settings_section_appearance">外观</string>
@@ -254,4 +255,66 @@
     <string name="common_none">无</string>
     <string name="common_yes">是</string>
     <string name="common_no">否</string>
+
+    <!-- 测速 / 节点列表 -->
+    <string name="subs_ping">测速</string>
+    <string name="subs_ping_all">全部测速</string>
+    <string name="subs_ping_running">测速中…</string>
+    <string name="subs_ping_result">%1$d 毫秒</string>
+    <string name="subs_ping_failed">失败</string>
+    <string name="subs_nodes_count">%1$d 个节点</string>
+    <string name="subs_nodes_expand">展开节点</string>
+    <string name="subs_nodes_collapse">收起节点</string>
+
+    <!-- 请求头伪装 -->
+    <string name="subs_http_masking">高级获取选项</string>
+    <string name="subs_user_agent">User-Agent</string>
+    <string name="subs_tls_fingerprint">TLS 指纹</string>
+    <string name="subs_mask_hwid">伪装设备 ID（x-hwid）</string>
+    <string name="subs_mask_hwid_desc">部分机场把订阅绑定到首次获取的设备；固定假 ID 可避免重装后无法导入。</string>
+    <string name="ua_singbox">sing-box</string>
+    <string name="ua_mihomo">mihomo</string>
+    <string name="ua_flclash">FlClash</string>
+    <string name="ua_v2rayng">v2rayNG</string>
+    <string name="ua_clashmeta">Clash Meta</string>
+    <string name="fp_auto">自动</string>
+    <string name="fp_chrome">Chrome</string>
+    <string name="fp_ios">iOS</string>
+    <string name="fp_firefox">Firefox</string>
+    <string name="fp_edge">Edge</string>
+
+    <!-- 文件夹操作 -->
+    <string name="subs_folder_add_url">向此文件夹添加订阅</string>
+    <string name="subs_move_to_folder">移动到文件夹</string>
+    <string name="subs_folder_none">不分组</string>
+    <string name="common_move">移动</string>
+
+    <!-- 逻辑规则 -->
+    <string name="routes_rule_structure">规则结构</string>
+    <string name="routes_rule_sub_rules">子规则（%1$d）</string>
+    <string name="routes_add_sub_rule">添加子规则</string>
+    <string name="routes_edit_sub_rule">编辑子规则</string>
+    <string name="routes_structure_help">「普通匹配」直接匹配下面的字段；「逻辑组合」把子规则按顶部的 与/或 方式合并，子规则自身只做匹配，动作由整组决定。</string>
+
+    <!-- 字段说明 -->
+    <string name="hint_domain_suffix">匹配该域名及其所有子域名：填 google.com 也会命中 mail.google.com。</string>
+    <string name="hint_domain">完整主机名精确匹配，不含子域名。</string>
+    <string name="hint_domain_keyword">主机名中包含该字即命中 — 例如 ads 命中 ads.example.com 与 tracker-ads.net。</string>
+    <string name="hint_domain_regex">正则表达式，按原样匹配。</string>
+    <string name="hint_ip_cidr">目标 IP 段，例如 8.8.8.8/32 或 10.0.0.0/8。</string>
+    <string name="hint_source_ip_cidr">连接来源地址 — 手机上多为局域网或 tun 地址。</string>
+    <string name="hint_port">目标端口列表，逗号分隔：443, 8443。</string>
+    <string name="hint_source_port">来源端口，移动端很少用到。</string>
+    <string name="hint_port_range">范围写法「起:止」，例如 1000:2000。</string>
+    <string name="hint_network">匹配的传输层：tcp、udp 或两者都选。</string>
+    <string name="hint_protocol">由嗅探器识别出的协议 — http、tls、quic 等，需开启嗅探。</string>
+    <string name="hint_package_name">Android 包名，例如 com.android.chrome。</string>
+    <string name="hint_rule_set">引用上方「规则集」列表中的一条 — geosite 风格列表就是这样接入的。</string>
+    <string name="hint_outbound">命中流量的去向：某个节点、出口组、主选择器或直连。</string>
+    <string name="hint_invert">反转匹配：命中的全部排除，未命中的才算匹配。</string>
+    <string name="hint_action">转发=送到出口；拒绝=丢弃连接；仅解析=只解析域名，交后续规则决定。</string>
+
+    <!-- 设置分区 -->
+    <string name="settings_section_advanced">高级</string>
+    <string name="settings_restart_hint">修改将在下次连接时生效。</string>
 </resources>

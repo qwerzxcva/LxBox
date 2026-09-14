@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,17 +8,27 @@ plugins {
 }
 
 android {
-    namespace = "com.leadaxe.lxbox"
+    namespace = "com.leadaxe.aibox"
     compileSdk = 36
 
-    
+    // Release signing: sourced from android/key.properties when present
+    // (CI writes it from the ANDROID_KEYSTORE_* repo secrets, matching the
+    // Flutter-side setup), otherwise release builds fall back to the debug
+    // keystore so a plain `./gradlew assembleRelease` still produces an
+    // installable APK on a dev machine.
+    val keystorePropsFile = rootProject.file("key.properties")
+    val keystoreProps = Properties().apply {
+        if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+    }
+    val hasUploadKey = keystoreProps.getProperty("storeFile") != null ||
+        System.getenv("ANDROID_KEYSTORE_BASE64") != null
 
     defaultConfig {
-        applicationId = "com.leadaxe.lxbox"
+        applicationId = "com.leadaxe.aibox"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "3.0.0-alpha01"
+        versionName = "3.0.0"
     }
 
     buildTypes {
@@ -30,6 +42,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (hasUploadKey && keystoreProps.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.create("upload") {
+                    storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                    storePassword = keystoreProps.getProperty("storePassword")
+                    keyAlias = keystoreProps.getProperty("keyAlias")
+                    keyPassword = keystoreProps.getProperty("keyPassword")
+                }
+            } else {
+                // Debug-sign the release build so it installs; CI sets the
+                // real key via key.properties before assembleRelease runs.
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 

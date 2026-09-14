@@ -212,7 +212,24 @@ jobs:
           sed -i "s|^distributionUrl=.*|distributionUrl=file\://$GRADLE_ZIP|" \
             gradle/wrapper/gradle-wrapper.properties
           grep '^distributionUrl=' gradle/wrapper/gradle-wrapper.properties
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
+          # Release keystore, when the repo has one configured. Same secret
+          # names as the Flutter-side ci.yml so both clients can share the
+          # upload key. Without the secret the release build falls back to
+          # debug signing (build.gradle.kts handles that) — installable,
+          # just not publishable.
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > key.jks
+            {
+              echo "storeFile=key.jks"
+              echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+              echo "keyAlias=$ANDROID_KEY_ALIAS"
+              echo "keyPassword=$ANDROID_KEY_PASSWORD"
+            } > key.properties
+            echo "==> upload keystore configured"
+          else
+            echo "==> no ANDROID_KEYSTORE_BASE64 secret; release build will use debug signing"
+          fi
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --info 2>&1 | tee /tmp/assembleRelease.log
           ASSEMBLE_RC=${PIPESTATUS[0]}
           echo "==> gradle exit code: ${ASSEMBLE_RC}"
           if [ "${ASSEMBLE_RC}" -ne 0 ]; then
@@ -227,20 +244,23 @@ jobs:
             # the tail is usually gradle worker stack frames, which hide
             # the actual error. Fall back to a tail only when no such
             # lines exist.
-            DIAG=$(grep -nE '^(e|w): |^error:|^ *error:|Caused by:|\.kt:[0-9]+:|\.java:[0-9]+:' /tmp/assembleDebug.log \
+            DIAG=$(grep -nE '^(e|w): |^error:|^ *error:|Caused by:|\.kt:[0-9]+:|\.java:[0-9]+:' /tmp/assembleRelease.log \
                     | head -n 80 | tr '\n' ' ' | tr -s ' ')
             if [ -z "$DIAG" ]; then
-              DIAG=$(tail -n 200 /tmp/assembleDebug.log | tr '\n' ' ' | tr -s ' ')
+              DIAG=$(tail -n 200 /tmp/assembleRelease.log | tr '\n' ' ' | tr -s ' ')
             fi
-            echo "::error title=assembleDebug failed (exit ${ASSEMBLE_RC})::${DIAG:0:14000}"
+            echo "::error title=assembleRelease failed (exit ${ASSEMBLE_RC})::${DIAG:0:14000}"
             mkdir -p android/build-diagnostics
-            # artifact gets a broader snapshot: grepped diagnostics + raw tail
-            { echo '== compiler diagnostics =='; grep -nE '^(e|w): |^error:|Caused by:|\.kt:[0-9]+:|\.java:[0-9]+:' /tmp/assembleDebug.log | head -n 300; echo; echo '== raw tail =='; tail -n 500 /tmp/assembleDebug.log; } > android/build-diagnostics/assembleDebug.log 2>/dev/null || tail -n 800 /tmp/assembleDebug.log > android/build-diagnostics/assembleDebug.log
+            { echo '== compiler diagnostics =='; grep -nE '^(e|w): |^error:|Caused by:|\.kt:[0-9]+:|\.java:[0-9]+:' /tmp/assembleRelease.log | head -n 300; echo; echo '== raw tail =='; tail -n 500 /tmp/assembleRelease.log; } > android/build-diagnostics/assembleRelease.log 2>/dev/null || tail -n 800 /tmp/assembleRelease.log > android/build-diagnostics/assembleRelease.log
             [ -d android/build/reports ] && cp -r android/build/reports android/build-diagnostics/reports
             exit "${ASSEMBLE_RC}"
           fi
         env:
           GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
 
       - name: Upload diagnostics on failure
         if: failure()
@@ -264,7 +284,7 @@ jobs:
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
           set -euo pipefail
-          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK" || { echo "::error::APK missing or empty: $APK"; exit 1; }
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | head -1)
           "$AAPT" dump badging "$APK" | head -20
@@ -272,7 +292,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: lxbox-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: aibox-android-release
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
