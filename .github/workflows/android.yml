@@ -184,10 +184,15 @@ jobs:
           ASSEMBLE_RC=${PIPESTATUS[0]}
           echo "==> gradle exit code: ${ASSEMBLE_RC}"
           if [ "${ASSEMBLE_RC}" -ne 0 ]; then
-            echo "::error::assembleDebug failed with exit code ${ASSEMBLE_RC} — last 80 lines of build log:"
-            tail -n 80 /tmp/assembleDebug.log >&2
+            # GitHub annotations cap message length and don't surface
+            # raw_details to the public API, so we compact the build log
+            # into a single-line message that's fully shown in the
+            # checks tab. The full log also lands in the artifact below
+            # for anyone who wants the unedited trace.
+            COMPACT=$(tail -n 200 /tmp/assembleDebug.log | tr '\n' ' ' | tr -s ' ')
+            echo "::error title=assembleDebug failed (exit ${ASSEMBLE_RC})::${COMPACT:0:12000}"
             mkdir -p android/build-diagnostics
-            tail -n 400 /tmp/assembleDebug.log > android/build-diagnostics/assembleDebug-tail.log
+            tail -n 500 /tmp/assembleDebug.log > android/build-diagnostics/assembleDebug-tail.log
             [ -d android/build/reports ] && cp -r android/build/reports android/build-diagnostics/reports
             exit "${ASSEMBLE_RC}"
           fi
