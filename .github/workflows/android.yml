@@ -67,9 +67,17 @@ jobs:
         # We need API 36 (compileSdk) + build-tools 35.0.0 (aapt2). The
         # Flutter-side ci.yml uses subosito/flutter-action which brings its
         # own SDK; we don't have Flutter here, so install explicitly.
-        uses: android-actions/setup-android@v3
+        #
+        # v4 uses cmdline-tools 20.0 (long 14742923) by default, which has
+        # a fixed silent license acceptance. Earlier attempts with
+        # android-actions/setup-android@v3 + cmdline-tools-version pinned to
+        # the runner's preinstalled 12.0 fell into a known v3 license bug
+        # (`6 of 7 SDK package licenses not accepted` + non-interactive
+        # hang on the 7th), so the install step exited 1 without ever
+        # finding platform-tools / platforms / build-tools. Letting v4
+        # bring its own 20.0 sidesteps that path entirely.
+        uses: android-actions/setup-android@v4
         with:
-          cmdline-tools-version: '11076708'
           packages: |
             platform-tools
             platforms;android-36
