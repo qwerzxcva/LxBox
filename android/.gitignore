@@ -1,0 +1,12 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+app/build/
+aapt2/aapt2
+
+# Local-only artifacts: libbox AAR is downloaded by CI from upstream release;
+# developers drop a copy into app/libs/libbox.aar manually and it's ignored.
+app/libs/libbox.aar
+
+# SDK path is per-machine — never commit
+local.properties
