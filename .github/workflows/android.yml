@@ -209,7 +209,7 @@ jobs:
           fi
           test -s "$GRADLE_ZIP" || { echo "::error::could not download gradle distribution"; exit 1; }
           echo "gradle zip: $(stat -c%s "$GRADLE_ZIP") bytes"
-          sed -i "s|^distributionUrl=.*|distributionUrl=file\\://$GRADLE_ZIP|" \
+          sed -i "s|^distributionUrl=.*|distributionUrl=file\://$GRADLE_ZIP|" \
             gradle/wrapper/gradle-wrapper.properties
           grep '^distributionUrl=' gradle/wrapper/gradle-wrapper.properties
           ./gradlew :app:assembleDebug --no-daemon --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
@@ -221,10 +221,21 @@ jobs:
             # into a single-line message that's fully shown in the
             # checks tab. The full log also lands in the artifact below
             # for anyone who wants the unedited trace.
-            COMPACT=$(tail -n 200 /tmp/assembleDebug.log | tr '\n' ' ' | tr -s ' ')
-            echo "::error title=assembleDebug failed (exit ${ASSEMBLE_RC})::${COMPACT:0:12000}"
+            #
+            # Prefer explicit compiler diagnostics (Kotlin emits lines
+            # starting 'e:', javac/kapt emit 'error:') over a raw tail:
+            # the tail is usually gradle worker stack frames, which hide
+            # the actual error. Fall back to a tail only when no such
+            # lines exist.
+            DIAG=$(grep -nE '^(e|w): |^error:|^ *error:|Caused by:|\.kt:[0-9]+:|\.java:[0-9]+:' /tmp/assembleDebug.log \
+                    | head -n 80 | tr '\n' ' ' | tr -s ' ')
+            if [ -z "$DIAG" ]; then
+              DIAG=$(tail -n 200 /tmp/assembleDebug.log | tr '\n' ' ' | tr -s ' ')
+            fi
+            echo "::error title=assembleDebug failed (exit ${ASSEMBLE_RC})::${DIAG:0:14000}"
             mkdir -p android/build-diagnostics
-            tail -n 500 /tmp/assembleDebug.log > android/build-diagnostics/assembleDebug-tail.log
+            # artifact gets a broader snapshot: grepped diagnostics + raw tail
+            { echo '== compiler diagnostics =='; grep -nE '^(e|w): |^error:|Caused by:|\.kt:[0-9]+:|\.java:[0-9]+:' /tmp/assembleDebug.log | head -n 300; echo; echo '== raw tail =='; tail -n 500 /tmp/assembleDebug.log; } > android/build-diagnostics/assembleDebug.log 2>/dev/null || tail -n 800 /tmp/assembleDebug.log > android/build-diagnostics/assembleDebug.log
             [ -d android/build/reports ] && cp -r android/build/reports android/build-diagnostics/reports
             exit "${ASSEMBLE_RC}"
           fi
