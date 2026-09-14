@@ -25,6 +25,7 @@ import com.leadaxe.lxbox.LxBoxApp
 import com.leadaxe.lxbox.engine.vpn.BoxController
 import com.leadaxe.lxbox.ui.Destination
 import com.leadaxe.lxbox.ui.LxBottomBar
+import com.leadaxe.lxbox.ui.LocalizedApp
 import com.leadaxe.lxbox.ui.screens.DnsScreen
 import com.leadaxe.lxbox.ui.screens.HomeScreen
 import com.leadaxe.lxbox.ui.screens.RoutesScreen
@@ -50,12 +51,14 @@ class MainActivity : ComponentActivity() {
         val app = application as LxBoxApp
         controller = BoxController(this, app.appStateStore)
         setContent {
-            val colorMode by app.appStateStore.state.collectAsState()
-            LxTheme(colorMode = colorMode.colorMode) {
-                RootScaffold(
-                    controller = controller,
-                    onRequestVpnConsent = { intent -> vpnLauncher.launch(intent) },
-                )
+            val state by app.appStateStore.state.collectAsState()
+            LocalizedApp(language = state.language) {
+                LxTheme(colorMode = state.colorMode) {
+                    RootScaffold(
+                        controller = controller,
+                        onRequestVpnConsent = { intent -> vpnLauncher.launch(intent) },
+                    )
+                }
             }
         }
     }

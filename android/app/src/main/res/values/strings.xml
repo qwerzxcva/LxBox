@@ -1,4 +1,187 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">L×Box</string>
+
+    <!-- bottom navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_subscriptions">Subscriptions</string>
+    <string name="nav_routes">Routes</string>
+    <string name="nav_dns">DNS</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- home -->
+    <string name="home_title">L×Box</string>
+    <string name="home_status_idle">Idle</string>
+    <string name="home_status_starting">Starting…</string>
+    <string name="home_status_connected">Connected</string>
+    <string name="home_status_stopping">Stopping…</string>
+    <string name="home_status_error">Error: %1$s</string>
+    <string name="home_via_node">via %1$s</string>
+    <string name="home_upload">Upload</string>
+    <string name="home_download">Download</string>
+    <string name="home_goroutines">Goroutines</string>
+    <string name="home_memory">Memory</string>
+    <string name="home_connect">Connect</string>
+    <string name="home_disconnect">Disconnect</string>
+    <string name="home_working">Working…</string>
+    <string name="home_mode_rule">Rule</string>
+    <string name="home_mode_global">Global</string>
+    <string name="home_mode_direct">Direct</string>
+    <string name="home_select_outbound">Select outbound</string>
+    <string name="home_no_nodes">No nodes yet — add a subscription on the Subscriptions tab.</string>
+
+    <!-- subscriptions -->
+    <string name="subs_add">Add subscription</string>
+    <string name="subs_refresh_all">Refresh all</string>
+    <string name="subs_paste_link">Paste link</string>
+    <string name="subs_section_subscriptions">Subscriptions (%1$d)</string>
+    <string name="subs_section_nodes">Nodes (%1$d)</string>
+    <string name="subs_name">Name</string>
+    <string name="subs_url">Subscription URL</string>
+    <string name="subs_add_action">Add</string>
+    <string name="subs_cancel">Cancel</string>
+    <string name="subs_refresh">Refresh</string>
+    <string name="subs_delete">Delete</string>
+    <string name="subs_selected">selected</string>
+    <string name="subs_tap_to_use">tap to use</string>
+    <string name="subs_refreshed">Refreshed %1$d node(s)</string>
+    <string name="subs_refreshed_with_failures">Refreshed with %1$d failure(s)</string>
+    <string name="subs_nodes_added">%1$s: %2$d node(s)</string>
+    <string name="subs_fetch_failed">%1$s: %2$s</string>
+    <string name="subs_paste_title">Paste share link</string>
+    <string name="subs_paste_hint">vless/vmess/trojan/ss/hy2/tuic, one per line or base64.</string>
+    <string name="subs_paste_label">Links</string>
+    <string name="subs_paste_result">Added %1$d node(s), %2$d skipped</string>
+
+    <!-- routes -->
+    <string name="routes_section_rules">Rules (%1$d)</string>
+    <string name="routes_section_rulesets">Rule sets (%1$d)</string>
+    <string name="routes_add_rule">Add rule</string>
+    <string name="routes_edit_rule">Edit rule</string>
+    <string name="routes_new_rule">New rule</string>
+    <string name="routes_json_hint">JSON · %1$d chars</string>
+    <string name="routes_empty_matcher">empty matcher</string>
+    <string name="routes_enabled">Enabled</string>
+    <string name="routes_name">Name</string>
+    <string name="routes_kind">Kind</string>
+    <string name="routes_kind_inline">Inline</string>
+    <string name="routes_kind_json">JSON</string>
+    <string name="routes_rule_type">Type</string>
+    <string name="routes_type_default">Default</string>
+    <string name="routes_type_logical">Logical</string>
+    <string name="routes_logical_mode">Combine</string>
+    <string name="routes_logical_and">AND</string>
+    <string name="routes_logical_or">OR</string>
+    <string name="routes_invert">Invert match</string>
+    <string name="routes_action">Action</string>
+    <string name="routes_action_route">Route to outbound</string>
+    <string name="routes_action_reject">Reject</string>
+    <string name="routes_action_resolve">Resolve only</string>
+    <string name="routes_outbound">Outbound</string>
+    <string name="routes_field_domain">Domain</string>
+    <string name="routes_field_domain_suffix">Domain suffix</string>
+    <string name="routes_field_domain_keyword">Domain keyword</string>
+    <string name="routes_field_domain_regex">Domain regex</string>
+    <string name="routes_field_ip_cidr">IP CIDR</string>
+    <string name="routes_field_source_ip_cidr">Source IP CIDR</string>
+    <string name="routes_field_port">Port</string>
+    <string name="routes_field_source_port">Source port</string>
+    <string name="routes_field_port_range">Port range</string>
+    <string name="routes_field_network">Network</string>
+    <string name="routes_field_protocol">Protocol</string>
+    <string name="routes_field_package">Package name</string>
+    <string name="routes_field_rule_set">Rule set</string>
+    <string name="routes_source_private">Match private source IP</string>
+    <string name="routes_ip_private">Match private destination IP</string>
+    <string name="routes_json_body">Rule JSON</string>
+    <string name="routes_save">Save</string>
+    <string name="routes_move_up">Move up</string>
+    <string name="routes_move_down">Move down</string>
+
+    <!-- dns -->
+    <string name="dns_section_servers">DNS servers (%1$d)</string>
+    <string name="dns_section_rules">DNS rules (%1$d)</string>
+    <string name="dns_add_server">Add server</string>
+    <string name="dns_edit_server">Edit server</string>
+    <string name="dns_new_server">New server</string>
+    <string name="dns_add_rule">Add rule</string>
+    <string name="dns_edit_rule">Edit rule</string>
+    <string name="dns_new_rule">New rule</string>
+    <string name="dns_name">Name</string>
+    <string name="dns_type">Type</string>
+    <string name="dns_address">Address</string>
+    <string name="dns_detour">Send queries via</string>
+    <string name="dns_detour_direct">Direct</string>
+    <string name="dns_detour_proxy">Proxy (main selector)</string>
+    <string name="dns_detour_node">Node: %1$s</string>
+    <string name="dns_strategy">Strategy</string>
+    <string name="dns_strategy_inherit">Inherit global</string>
+    <string name="dns_domain_resolver">Domain resolver</string>
+    <string name="dns_domain_resolver_none">None</string>
+    <string name="dns_client_subnet">Client subnet</string>
+    <string name="dns_tls_server_name">TLS server name</string>
+    <string name="dns_insecure">Allow insecure TLS</string>
+    <string name="dns_target_server">Target server</string>
+    <string name="dns_target_system">System default</string>
+    <string name="dns_query_type">Query type</string>
+    <string name="dns_options">Options</string>
+    <string name="dns_hijack">Hijack DNS</string>
+    <string name="dns_hijack_desc">Route port 53 through sing-box; required for fake-IP and tun DNS.</string>
+    <string name="dns_cache_capacity">Cache capacity</string>
+    <string name="dns_independent_cache">Independent cache</string>
+    <string name="dns_global_strategy">Global strategy</string>
+    <string name="dns_delete">Delete</string>
+
+    <!-- fakeip -->
+    <string name="fakeip_title">Fake IP</string>
+    <string name="fakeip_desc">Answer matching domains with synthetic addresses so routing can work before real DNS resolves.</string>
+    <string name="fakeip_enable">Enable Fake IP</string>
+    <string name="fakeip_inet4_range">IPv4 range</string>
+    <string name="fakeip_inet6_range">IPv6 range</string>
+    <string name="fakeip_filter">Filter (domain suffixes, comma separated)</string>
+    <string name="fakeip_filter_hint">empty = rewrite every domain</string>
+    <string name="fakeip_default_range4">198.18.0.0/15 (default)</string>
+    <string name="fakeip_default_range6">fc00::/18 (default)</string>
+
+    <!-- settings -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_tunnel">Tunnel</string>
+    <string name="settings_section_sniffer">Sniffer</string>
+    <string name="settings_section_logging">Logging</string>
+    <string name="settings_section_language">Language</string>
+    <string name="settings_color_mode">Color mode</string>
+    <string name="settings_color_system">System</string>
+    <string name="settings_color_light">Light</string>
+    <string name="settings_color_dark">Dark</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_system">System</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_zh">中文</string>
+    <string name="settings_ipv6">IPv6</string>
+    <string name="settings_ipv6_desc">Enable IPv6 routing through the tun interface.</string>
+    <string name="settings_mtu">MTU: %1$d</string>
+    <string name="settings_tun_addresses">TUN addresses</string>
+    <string name="settings_tun_ipv4">TUN IPv4 address</string>
+    <string name="settings_tun_ipv6">TUN IPv6 address</string>
+    <string name="settings_tun_dns">DNS address(s) advertised to system</string>
+    <string name="settings_tun_dns_hint">empty = derive from TUN subnet</string>
+    <string name="settings_enable_sniffer">Enable sniffer</string>
+    <string name="settings_enable_sniffer_desc">Detect protocol from traffic for finer rule matching.</string>
+    <string name="settings_sniffer_protocols">Protocols</string>
+    <string name="settings_log_level">Log level</string>
+    <string name="settings_append_log">Append logs to file</string>
+    <string name="settings_append_log_desc">Used for crash reports and post-mortem diagnostics.</string>
+    <string name="settings_cache_file">Persist cache to disk</string>
+    <string name="settings_cache_file_desc">Keeps fake-IP and rule-set caches between sessions.</string>
+
+    <!-- common -->
+    <string name="common_save">Save</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_add">Add</string>
+    <string name="common_edit">Edit</string>
+    <string name="common_enabled">Enabled</string>
+    <string name="common_none">None</string>
+    <string name="common_yes">Yes</string>
+    <string name="common_no">No</string>
 </resources>

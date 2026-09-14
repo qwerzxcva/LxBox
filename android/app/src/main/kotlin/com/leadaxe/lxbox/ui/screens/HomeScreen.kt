@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.AssistChip
@@ -27,10 +29,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.leadaxe.lxbox.LxBoxApp
+import com.leadaxe.lxbox.R
 import com.leadaxe.lxbox.app.ClashModeDirect
 import com.leadaxe.lxbox.app.ClashModeGlobal
 import com.leadaxe.lxbox.app.ClashModeRule
@@ -40,7 +44,6 @@ import com.leadaxe.lxbox.engine.vpn.BoxController
 import com.leadaxe.lxbox.engine.vpn.BoxEngine
 import com.leadaxe.lxbox.engine.vpn.BoxRuntimeSnapshot
 import com.leadaxe.lxbox.engine.vpn.BoxState
-import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun HomeScreen(
@@ -56,16 +59,21 @@ fun HomeScreen(
     val activity = context as? MainActivity
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
-            text = "L×Box",
+            text = stringResource(R.string.home_title),
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.SemiBold,
         )
 
-        StatusCard(state = boxState, runtime = runtime, selectedNode = appState.selectedOutbound)
+        StatusCard(
+            state = boxState,
+            runtime = runtime,
+            selectedNode = appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
+                ?.name?.ifBlank { appState.selectedOutbound } ?: appState.selectedOutbound,
+        )
 
         ClashModeRow(
             current = appState.clashMode,
@@ -100,12 +108,12 @@ private fun StatusCard(
     runtime: BoxRuntimeSnapshot,
     selectedNode: String,
 ) {
-    val (statusLabel, statusColor) = when (state) {
-        BoxState.Idle -> "Idle" to Color(0xFF6E7F8F)
-        BoxState.Starting -> "Starting…" to Color(0xFF9D5CFF)
-        is BoxState.Connected -> "Connected" to Color(0xFF1F6FEB)
-        BoxState.Stopping -> "Stopping…" to Color(0xFFB0B8C1)
-        is BoxState.Error -> "Error: ${state.message}" to Color(0xFFCC3344)
+    val statusLabel = when (state) {
+        BoxState.Idle -> stringResource(R.string.home_status_idle)
+        BoxState.Starting -> stringResource(R.string.home_status_starting)
+        is BoxState.Connected -> stringResource(R.string.home_status_connected)
+        BoxState.Stopping -> stringResource(R.string.home_status_stopping)
+        is BoxState.Error -> stringResource(R.string.home_status_error, state.message)
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -118,7 +126,7 @@ private fun StatusCard(
                 Spacer(Modifier.size(12.dp))
                 Text(
                     text = if (state is BoxState.Connected)
-                        "via ${selectedNode.ifBlank { "proxy" }}"
+                        stringResource(R.string.home_via_node, selectedNode.ifBlank { "proxy" })
                     else "—",
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -127,10 +135,18 @@ private fun StatusCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                TrafficColumn(label = "Upload", bytes = runtime.uplinkBytes, total = runtime.uplinkTotalBytes)
-                TrafficColumn(label = "Download", bytes = runtime.downlinkBytes, total = runtime.downlinkTotalBytes)
-                MetricColumn(label = "Goroutines", value = runtime.goroutines.toString())
-                MetricColumn(label = "Memory", value = formatBytes(runtime.memoryBytes))
+                TrafficColumn(
+                    label = stringResource(R.string.home_upload),
+                    bytes = runtime.uplinkBytes,
+                    total = runtime.uplinkTotalBytes,
+                )
+                TrafficColumn(
+                    label = stringResource(R.string.home_download),
+                    bytes = runtime.downlinkBytes,
+                    total = runtime.downlinkTotalBytes,
+                )
+                MetricColumn(label = stringResource(R.string.home_goroutines), value = runtime.goroutines.toString())
+                MetricColumn(label = stringResource(R.string.home_memory), value = formatBytes(runtime.memoryBytes))
             }
             if (state is BoxState.Connected) {
                 LinearProgressIndicator(
@@ -177,9 +193,9 @@ private fun ClashModeRow(
                 label = {
                     Text(
                         when (mode) {
-                            ClashModeRule -> "Rule"
-                            ClashModeGlobal -> "Global"
-                            ClashModeDirect -> "Direct"
+                            ClashModeRule -> stringResource(R.string.home_mode_rule)
+                            ClashModeGlobal -> stringResource(R.string.home_mode_global)
+                            ClashModeDirect -> stringResource(R.string.home_mode_direct)
                             else -> mode
                         },
                     )
@@ -206,9 +222,9 @@ private fun ConnectButton(
         Spacer(Modifier.size(8.dp))
         Text(
             text = when {
-                connected -> "Disconnect"
-                busy -> "Working…"
-                else -> "Connect"
+                connected -> stringResource(R.string.home_disconnect)
+                busy -> stringResource(R.string.home_working)
+                else -> stringResource(R.string.home_connect)
             },
             fontWeight = FontWeight.SemiBold,
         )
@@ -221,16 +237,23 @@ private fun NodePickerPreview(
     selected: String,
     onSelect: (String) -> Unit,
 ) {
-    if (outbounds.isEmpty()) return
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Select outbound", style = MaterialTheme.typography.titleMedium)
-            outbounds.take(5).forEach { node ->
-                FilterChip(
-                    selected = node.tag == selected,
-                    onClick = { onSelect(node.tag) },
-                    label = { Text(node.name.ifBlank { node.tag }) },
+            Text(stringResource(R.string.home_select_outbound), style = MaterialTheme.typography.titleMedium)
+            if (outbounds.isEmpty()) {
+                Text(
+                    stringResource(R.string.home_no_nodes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else {
+                outbounds.take(8).forEach { node ->
+                    FilterChip(
+                        selected = node.tag == selected,
+                        onClick = { onSelect(node.tag) },
+                        label = { Text(node.name.ifBlank { node.tag }) },
+                    )
+                }
             }
         }
     }

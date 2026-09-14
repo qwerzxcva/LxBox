@@ -5,7 +5,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import com.leadaxe.lxbox.ui.Destination
+import androidx.compose.ui.res.stringResource
+import com.leadaxe.lxbox.R
 
 @Composable
 fun LxBottomBar(
@@ -14,11 +15,12 @@ fun LxBottomBar(
 ) {
     NavigationBar {
         Destination.entries.forEach { dest ->
+            val label = stringResource(dest.labelRes)
             NavigationBarItem(
                 selected = dest == selected,
                 onClick = { onSelect(dest) },
-                icon = { Icon(dest.icon, contentDescription = dest.label) },
-                label = { Text(dest.label) },
+                icon = { Icon(dest.icon, contentDescription = label) },
+                label = { Text(label) },
             )
         }
     }

@@ -128,17 +128,29 @@ class LxVpnService : VpnService() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val ipv4 = parseCidr(state.tunInet4Address) ?: ParseResult("172.19.0.1", 30)
+        val ipv6 = parseCidr(state.tunInet6Address) ?: ParseResult("fdfe:dcba:9876::1", 126)
+
         val builder = Builder()
             .setSession(SESSION_NAME)
             .setMtu(state.tunMtu)
-            .addAddress(ADDRESS_IPV4, ADDRESS_PREFIX)
+            .addAddress(ipv4.address, ipv4.prefix)
             .addRoute(ROUTE_ALL, 0)
-            .addDnsServer(LOOPBACK_IPV4)
             .setBlocking(true)
             .setConfigureIntent(configureIntent)
 
+        // Advertised DNS: user override, else the peer address of the tun
+        // subnet — that address falls inside the tunnel route so the OS
+        // sends :53 into sing-box where `hijack-dns` picks it up.
+        val dnsForOs = state.tunDnsAddresses.map { it.trim() }.filter { it.isNotEmpty() }
+        if (dnsForOs.isNotEmpty()) {
+            dnsForOs.forEach { builder.addDnsServer(it) }
+        } else {
+            builder.addDnsServer(ipv4.peerAddress())
+        }
+
         if (state.enableIpv6) {
-            builder.addAddress(ADDRESS_IPV6, ADDRESS_PREFIX_IPV6)
+            builder.addAddress(ipv6.address, ipv6.prefix)
                 .addRoute(ROUTE_ALL_V6, 0)
         }
 
@@ -163,6 +175,39 @@ class LxVpnService : VpnService() {
             runCatching { SubscriptionFetcher(this@LxVpnService).refreshStaleRuleSets(state.ruleSets) }
         }
         observeState()
+    }
+
+    internal data class ParseResult(val address: String, val prefix: Int) {
+        /**
+         * The other usable host in a /30 or /126 point-to-point subnet.
+         * Used as the OS-advertised DNS address: it routes through the
+         * tunnel (hence into sing-box's DNS hijack) without colliding
+         * with the interface address itself.
+         */
+        fun peerAddress(): String {
+            if (prefix != 30 && prefix != 126) return address
+            val idx = address.lastIndexOf('.')
+            if (idx > 0) {
+                val last = address.substring(idx + 1).toIntOrNull() ?: return address
+                val peer = (last and 0xFC) + 2
+                return address.substring(0, idx + 1) + peer
+            }
+            // IPv6: bump the last group by 1 (::1 -> ::2), good enough for
+            // the /126 addresses we allow here.
+            val hexIdx = address.lastIndexOf(':') + 1
+            val group = address.substring(hexIdx).toIntOrNull(16) ?: return address
+            return address.substring(0, hexIdx) + (group + 1).toString(16)
+        }
+    }
+
+    private fun parseCidr(cidr: String): ParseResult? {
+        val s = cidr.trim()
+        if (s.isEmpty()) return null
+        val slash = s.lastIndexOf('/')
+        if (slash <= 0 || slash == s.length - 1) return null
+        val addr = s.substring(0, slash)
+        val prefix = s.substring(slash + 1).toIntOrNull() ?: return null
+        return ParseResult(addr, prefix)
     }
 
     private fun handleDisconnect() {
@@ -267,17 +312,7 @@ class LxVpnService : VpnService() {
         const val ACTION_DISCONNECT = "com.leadaxe.lxbox.engine.DISCONNECT"
         const val ACTION_RELOAD = "com.leadaxe.lxbox.engine.RELOAD"
 
-        // 10.0.0.0/8 — RFC1918 private block; sing-box uses the link-local 172.17.0.0/16
-        // address space by default in newer configs, but 10/8 is what every
-        // existing rule template we mirror uses.
-        private const val ADDRESS_IPV4 = "172.17.0.2"
-        private const val ADDRESS_PREFIX = 16
         private const val ROUTE_ALL = "0.0.0.0"
-        private const val LOOPBACK_IPV4 = "127.0.0.1"
-
-        // IPv6 — single /128 route via the documentation prefix.
-        private const val ADDRESS_IPV6 = "fdfe:dcba:9876::2"
-        private const val ADDRESS_PREFIX_IPV6 = 64
         private const val ROUTE_ALL_V6 = "::"
     }
 }

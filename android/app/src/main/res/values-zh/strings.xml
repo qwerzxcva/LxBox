@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- bottom navigation -->
+    <string name="nav_home">主页</string>
+    <string name="nav_subscriptions">订阅</string>
+    <string name="nav_routes">路由</string>
+    <string name="nav_dns">DNS</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- home -->
+    <string name="home_title">L×Box</string>
+    <string name="home_status_idle">未连接</string>
+    <string name="home_status_starting">启动中…</string>
+    <string name="home_status_connected">已连接</string>
+    <string name="home_status_stopping">停止中…</string>
+    <string name="home_status_error">错误：%1$s</string>
+    <string name="home_via_node">经由 %1$s</string>
+    <string name="home_upload">上传</string>
+    <string name="home_download">下载</string>
+    <string name="home_goroutines">协程数</string>
+    <string name="home_memory">内存</string>
+    <string name="home_connect">连接</string>
+    <string name="home_disconnect">断开</string>
+    <string name="home_working">处理中…</string>
+    <string name="home_mode_rule">规则</string>
+    <string name="home_mode_global">全局</string>
+    <string name="home_mode_direct">直连</string>
+    <string name="home_select_outbound">选择出口</string>
+    <string name="home_no_nodes">暂无节点 — 请在「订阅」页添加订阅。</string>
+
+    <!-- subscriptions -->
+    <string name="subs_add">添加订阅</string>
+    <string name="subs_refresh_all">全部刷新</string>
+    <string name="subs_paste_link">粘贴链接</string>
+    <string name="subs_section_subscriptions">订阅（%1$d）</string>
+    <string name="subs_section_nodes">节点（%1$d）</string>
+    <string name="subs_name">名称</string>
+    <string name="subs_url">订阅地址</string>
+    <string name="subs_add_action">添加</string>
+    <string name="subs_cancel">取消</string>
+    <string name="subs_refresh">刷新</string>
+    <string name="subs_delete">删除</string>
+    <string name="subs_selected">已选择</string>
+    <string name="subs_tap_to_use">点击使用</string>
+    <string name="subs_refreshed">已刷新 %1$d 个节点</string>
+    <string name="subs_refreshed_with_failures">刷新完成，%1$d 个失败</string>
+    <string name="subs_nodes_added">%1$s：%2$d 个节点</string>
+    <string name="subs_fetch_failed">%1$s：%2$s</string>
+    <string name="subs_paste_title">粘贴分享链接</string>
+    <string name="subs_paste_hint">vless/vmess/trojan/ss/hy2/tuic，每行一个或整体 base64。</string>
+    <string name="subs_paste_label">链接</string>
+    <string name="subs_paste_result">已添加 %1$d 个节点，跳过 %2$d 个</string>
+
+    <!-- routes -->
+    <string name="routes_section_rules">路由规则（%1$d）</string>
+    <string name="routes_section_rulesets">规则集（%1$d）</string>
+    <string name="routes_add_rule">添加规则</string>
+    <string name="routes_edit_rule">编辑规则</string>
+    <string name="routes_new_rule">新建规则</string>
+    <string name="routes_json_hint">JSON · %1$d 字符</string>
+    <string name="routes_empty_matcher">空匹配条件</string>
+    <string name="routes_enabled">启用</string>
+    <string name="routes_name">名称</string>
+    <string name="routes_kind">类型</string>
+    <string name="routes_kind_inline">界面编辑</string>
+    <string name="routes_kind_json">JSON</string>
+    <string name="routes_rule_type">规则结构</string>
+    <string name="routes_type_default">普通匹配</string>
+    <string name="routes_type_logical">逻辑组合</string>
+    <string name="routes_logical_mode">组合方式</string>
+    <string name="routes_logical_and">与（AND）</string>
+    <string name="routes_logical_or">或（OR）</string>
+    <string name="routes_invert">反转匹配</string>
+    <string name="routes_action">动作</string>
+    <string name="routes_action_route">转发到出口</string>
+    <string name="routes_action_reject">拒绝</string>
+    <string name="routes_action_resolve">仅解析</string>
+    <string name="routes_outbound">出口</string>
+    <string name="routes_field_domain">精确域名</string>
+    <string name="routes_field_domain_suffix">域名后缀</string>
+    <string name="routes_field_domain_keyword">域名关键字</string>
+    <string name="routes_field_domain_regex">域名正则</string>
+    <string name="routes_field_ip_cidr">目标 IP 段</string>
+    <string name="routes_field_source_ip_cidr">来源 IP 段</string>
+    <string name="routes_field_port">目标端口</string>
+    <string name="routes_field_source_port">来源端口</string>
+    <string name="routes_field_port_range">端口范围</string>
+    <string name="routes_field_network">网络类型</string>
+    <string name="routes_field_protocol">协议</string>
+    <string name="routes_field_package">应用包名</string>
+    <string name="routes_field_rule_set">规则集</string>
+    <string name="routes_source_private">匹配局域网来源 IP</string>
+    <string name="routes_ip_private">匹配局域网目标 IP</string>
+    <string name="routes_json_body">规则 JSON</string>
+    <string name="routes_save">保存</string>
+    <string name="routes_move_up">上移</string>
+    <string name="routes_move_down">下移</string>
+
+    <!-- dns -->
+    <string name="dns_section_servers">DNS 服务器（%1$d）</string>
+    <string name="dns_section_rules">DNS 规则（%1$d）</string>
+    <string name="dns_add_server">添加服务器</string>
+    <string name="dns_edit_server">编辑服务器</string>
+    <string name="dns_new_server">新建服务器</string>
+    <string name="dns_add_rule">添加规则</string>
+    <string name="dns_edit_rule">编辑规则</string>
+    <string name="dns_new_rule">新建规则</string>
+    <string name="dns_name">名称</string>
+    <string name="dns_type">协议类型</string>
+    <string name="dns_address">服务器地址</string>
+    <string name="dns_detour">查询出口</string>
+    <string name="dns_detour_direct">直连</string>
+    <string name="dns_detour_proxy">代理（主选择器）</string>
+    <string name="dns_detour_node">节点：%1$s</string>
+    <string name="dns_strategy">解析策略</string>
+    <string name="dns_strategy_inherit">跟随全局</string>
+    <string name="dns_domain_resolver">服务器域名解析器</string>
+    <string name="dns_domain_resolver_none">无</string>
+    <string name="dns_client_subnet">客户端子网</string>
+    <string name="dns_tls_server_name">TLS 服务器名</string>
+    <string name="dns_insecure">允许不安全的 TLS</string>
+    <string name="dns_target_server">目标服务器</string>
+    <string name="dns_target_system">系统默认</string>
+    <string name="dns_query_type">查询类型</string>
+    <string name="dns_options">选项</string>
+    <string name="dns_hijack">DNS 劫持</string>
+    <string name="dns_hijack_desc">将 53 端口流量导入 sing-box；Fake-IP 和 tun DNS 必需。</string>
+    <string name="dns_cache_capacity">缓存容量</string>
+    <string name="dns_independent_cache">独立缓存</string>
+    <string name="dns_global_strategy">全局策略</string>
+    <string name="dns_delete">删除</string>
+
+    <!-- fakeip -->
+    <string name="fakeip_title">Fake IP（虚拟 IP）</string>
+    <string name="fakeip_desc">对匹配的域名返回合成地址，让路由规则在真实 DNS 解析前即可生效。</string>
+    <string name="fakeip_enable">启用 Fake IP</string>
+    <string name="fakeip_inet4_range">IPv4 地址池</string>
+    <string name="fakeip_inet6_range">IPv6 地址池</string>
+    <string name="fakeip_filter">过滤域名（后缀，逗号分隔）</string>
+    <string name="fakeip_filter_hint">留空 = 重写所有域名</string>
+    <string name="fakeip_default_range4">198.18.0.0/15（默认）</string>
+    <string name="fakeip_default_range6">fc00::/18（默认）</string>
+
+    <!-- settings -->
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_section_tunnel">隧道</string>
+    <string name="settings_section_sniffer">嗅探</string>
+    <string name="settings_section_logging">日志</string>
+    <string name="settings_section_language">语言</string>
+    <string name="settings_color_mode">主题模式</string>
+    <string name="settings_color_system">跟随系统</string>
+    <string name="settings_color_light">浅色</string>
+    <string name="settings_color_dark">深色</string>
+    <string name="settings_language">界面语言</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_zh">中文</string>
+    <string name="settings_ipv6">IPv6</string>
+    <string name="settings_ipv6_desc">通过 tun 接口启用 IPv6 路由。</string>
+    <string name="settings_mtu">MTU：%1$d</string>
+    <string name="settings_tun_addresses">TUN 地址</string>
+    <string name="settings_tun_ipv4">TUN IPv4 地址</string>
+    <string name="settings_tun_ipv6">TUN IPv6 地址</string>
+    <string name="settings_tun_dns">下发给系统的 DNS 地址</string>
+    <string name="settings_tun_dns_hint">留空 = 从 TUN 子网推导</string>
+    <string name="settings_enable_sniffer">启用嗅探</string>
+    <string name="settings_enable_sniffer_desc">从流量中识别协议，让规则匹配更精确。</string>
+    <string name="settings_sniffer_protocols">协议列表</string>
+    <string name="settings_log_level">日志级别</string>
+    <string name="settings_append_log">日志写入文件</string>
+    <string name="settings_append_log_desc">用于崩溃报告和事后诊断。</string>
+    <string name="settings_cache_file">持久化缓存到磁盘</string>
+    <string name="settings_cache_file_desc">跨会话保留 fake-IP 与规则集缓存。</string>
+
+    <!-- common -->
+    <string name="common_save">保存</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_delete">删除</string>
+    <string name="common_add">添加</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_enabled">已启用</string>
+    <string name="common_none">无</string>
+    <string name="common_yes">是</string>
+    <string name="common_no">否</string>
+</resources>

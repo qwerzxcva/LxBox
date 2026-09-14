@@ -5,7 +5,11 @@ import com.leadaxe.lxbox.app.ClashModeDirect
 import com.leadaxe.lxbox.app.ClashModeGlobal
 import com.leadaxe.lxbox.app.DirectOutboundTag
 import com.leadaxe.lxbox.app.DnsOutboundTag
+import com.leadaxe.lxbox.app.DnsRule
+import com.leadaxe.lxbox.app.DnsRuleActionReject
+import com.leadaxe.lxbox.app.DnsRuleActionRouteOptions
 import com.leadaxe.lxbox.app.DnsServerState
+import com.leadaxe.lxbox.app.FakeIpServerTag
 import com.leadaxe.lxbox.app.ProxySelectorTag
 import com.leadaxe.lxbox.app.RouteRule
 import com.leadaxe.lxbox.app.TunInboundTag
@@ -25,9 +29,15 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * Compiles [AppState] into a complete sing-box configuration document.
  *
- * Layout mirrors the proven AsteriskBOX compiler: managed rules first, then the
- * injected rules (sniff / hijack-dns), then clash-mode shortcuts, and finally the
- * catch-all `final` outbound.
+ * Layout mirrors the proven AsteriskBOX / LxBox-Flutter compiler: managed
+ * rules first, then the injected rules (sniff / hijack-dns), then clash-mode
+ * shortcuts, and finally the catch-all `final` outbound.
+ *
+ * DNS is the other half of the picture: [compileDns] emits the server list
+ * (including a fake-IP pool when enabled), the user's DNS rules, and the
+ * `final` fallback server. `default_domain_resolver` ties the route resolver
+ * back to the first concrete DNS server so sing-box can resolve node
+ * hostnames without a chicken-and-egg deadlock.
  */
 object ConfigCompiler {
 
@@ -42,7 +52,16 @@ object ConfigCompiler {
             put("level", state.logLevel)
             put("timestamp", true)
         }
-        put("dns", compileDns(state))
+        if (state.enableCacheFile) {
+            putJsonObject("experimental") {
+                putJsonObject("cache_file") {
+                    put("enabled", true)
+                    put("path", File(ruleSetDir, "cache.db").absolutePath)
+                    if (state.enableFakeIp) put("store_fakeip", true)
+                }
+            }
+        }
+        put("dns", compileDns(state, ruleSetDir))
         putJsonArray("inbounds") { add(compileTunInbound(state)) }
         putJsonArray("outbounds") { compileOutbounds(state).forEach(::add) }
         putJsonObject("route") {
@@ -51,6 +70,11 @@ object ConfigCompiler {
             if (ruleSets.isNotEmpty()) {
                 putJsonArray("rule_set") { ruleSets.forEach(::add) }
             }
+            // sing-box 1.12+: resolvers for outbound server names must be
+            // pinned, otherwise a node hostname lookup has no route to go
+            // through when the proxy chain is the only way out.
+            val resolverTag = pickDefaultResolver(state)
+            if (resolverTag != null) put("default_domain_resolver", resolverTag)
             put("final", ProxySelectorTag)
             put("auto_detect_interface", true)
         }
@@ -58,19 +82,24 @@ object ConfigCompiler {
 
     // ------------------------------------------------------------------ dns
 
-    private fun compileDns(state: AppState): JsonObject = buildJsonObject {
+    private fun compileDns(state: AppState, ruleSetDir: File): JsonObject = buildJsonObject {
         putJsonArray("servers") {
-            state.dnsServers.forEach { server -> add(compileDnsServer(server)) }
+            state.dnsServers.filter { it.enabled }.forEach { server ->
+                add(compileDnsServer(server))
+            }
+            if (state.enableFakeIp) {
+                add(compileFakeIpServer(state))
+            }
+        }
+        val rules = compileDnsRules(state)
+        if (rules.isNotEmpty()) {
+            putJsonArray("rules") { rules.forEach(::add) }
         }
         if (state.dnsStrategy.isNotBlank()) put("strategy", state.dnsStrategy)
-        put("final", state.dnsServers.firstOrNull()?.tag ?: "dns-remote")
-        put("independent_cache", true)
-        // Bound the DNS cache so long-running sessions don't OOM on a phone
-        // that sees lots of unique subdomains (e.g. CDN fan-out).
-        put("cache_capacity", 4096)
-        // Stop caching answers for hosts we just told the OS to skip via
-        // fake-IP; those would otherwise pin a fake address past the TTL.
-        put("cache_hint", true)
+        if (state.dnsClientSubnet.isNotBlank()) put("client_subnet", state.dnsClientSubnet)
+        put("final", pickFinalServer(state))
+        put("independent_cache", state.dnsIndependentCache)
+        if (state.dnsCacheCapacity > 0) put("cache_capacity", state.dnsCacheCapacity)
     }
 
     private fun compileDnsServer(server: DnsServerState): JsonObject = buildJsonObject {
@@ -85,9 +114,147 @@ object ConfigCompiler {
                 put("type", server.type)
                 put("server", server.address)
                 if (server.detour.isNotBlank()) put("detour", server.detour)
+                when (server.type) {
+                    "tls", "https", "quic", "h3" -> putJsonObject("tls") {
+                        if (server.tlsServerName.isNotBlank()) put("server_name", server.tlsServerName)
+                        if (server.insecure) put("insecure", true)
+                    }
+                }
+            }
+        }
+        if (server.strategy.isNotBlank()) put("strategy", server.strategy)
+        if (server.domainResolver.isNotBlank()) {
+            put("domain_resolver", server.domainResolver)
+        }
+        if (server.clientSubnet.isNotBlank()) put("client_subnet", server.clientSubnet)
+    }
+
+    /** Built-in fake-IP pool — one server that synthesises addresses locally. */
+    private fun compileFakeIpServer(state: AppState): JsonObject = buildJsonObject {
+        put("tag", FakeIpServerTag)
+        put("type", "fakeip")
+        if (state.fakeIpInet4Range.isNotBlank()) {
+            put("inet4_range", state.fakeIpInet4Range)
+        } else {
+            put("inet4_range", "198.18.0.0/15")
+        }
+        if (state.enableIpv6) {
+            if (state.fakeIpInet6Range.isNotBlank()) {
+                put("inet6_range", state.fakeIpInet6Range)
+            } else {
+                put("inet6_range", "fc00::/18")
             }
         }
     }
+
+    private fun compileDnsRules(state: AppState): List<JsonObject> = buildList {
+        // Fake-IP rules run first: when the pool is on, lookups that should
+        // be faked also need the "rest" routed through the normal chain, or
+        // every domain ends up on the fake range and rule matching breaks.
+        if (state.enableFakeIp) {
+            val filter = state.fakeIpFilter.map { it.trim() }.filter { it.isNotEmpty() }
+            if (filter.isNotEmpty()) {
+                // Whitelist mode: match the filter → fakeip; everything else
+                // → the regular chain.
+                add(buildJsonObject {
+                    putJsonArray("domain_suffix") { filter.forEach(::add) }
+                    put("server", FakeIpServerTag)
+                })
+            } else {
+                add(buildJsonObject { put("server", FakeIpServerTag) })
+            }
+        }
+        // User rules.
+        state.dnsRules.filter { it.enabled }.forEach { rule ->
+            when (rule.kind) {
+                DnsRule.KindJson -> addAll(compileJsonDnsRule(rule))
+                else -> compileInlineDnsRule(rule)?.let(::add)
+            }
+        }
+    }
+
+    private fun compileDnsRuleAction(builder: JsonObjectBuilder, rule: DnsRule) {
+        when (rule.action) {
+            DnsRuleActionReject -> {
+                builder.put("action", "predefined")
+                builder.put("rcode", "NXDOMAIN")
+            }
+            DnsRuleActionRouteOptions -> {
+                builder.put("action", "route-options")
+                if (rule.server.isNotBlank()) builder.put("server", rule.server)
+            }
+            else -> {
+                // Plain route: sing-box infers the action from `server`.
+                if (rule.server.isNotBlank()) builder.put("server", rule.server)
+            }
+        }
+    }
+
+    private fun compileInlineDnsRule(rule: DnsRule): JsonObject? {
+        if (rule.isLogical) {
+            val children = rule.rules.filter { it.enabled }.mapNotNull(::compileInlineDnsMatcher)
+            if (children.isEmpty()) return null
+            return buildJsonObject {
+                put("type", "logical")
+                put("mode", rule.logicalMode)
+                putJsonArray("rules") { children.forEach(::add) }
+                if (rule.invert) put("invert", true)
+                compileDnsRuleAction(this, rule)
+            }
+        }
+        val matcher = compileInlineDnsMatcher(rule) ?: return null
+        return buildJsonObject {
+            for ((k, v) in matcher) put(k, v)
+            if (rule.invert) put("invert", true)
+            compileDnsRuleAction(this, rule)
+        }
+    }
+
+    private fun compileInlineDnsMatcher(rule: DnsRule): JsonObject? {
+        val obj = buildJsonObject {
+            putStringList("domain", rule.domain)
+            putStringList("domain_suffix", rule.domainSuffix)
+            putStringList("domain_keyword", rule.domainKeyword)
+            putStringList("domain_regex", rule.domainRegex)
+            putStringList("rule_set", rule.ruleSet)
+            putStringList("query_type", rule.queryType)
+            putStringList("package_name", rule.packageName)
+            putStringList("network", rule.network)
+            putStringList("protocol", rule.protocol)
+            putStringList("clash_mode", rule.clashMode)
+        }
+        return if (obj.isEmpty()) null else obj
+    }
+
+    private fun compileJsonDnsRule(rule: DnsRule): List<JsonObject> {
+        val text = rule.json.trim()
+        if (text.isEmpty()) return emptyList()
+        val parsed = runCatching { json.parseToJsonElement(text) }.getOrNull() ?: return emptyList()
+        return when (parsed) {
+            is JsonObject -> listOf(parsed)
+            is JsonArray -> parsed.filterIsInstance<JsonObject>()
+            else -> emptyList()
+        }
+    }
+
+    /**
+     * The `final` DNS server: first enabled concrete server, preferring the
+     * fake-IP entry when the pool is on (queries that hit `final` after all
+     * rules should be resolved, not faked — so we deliberately skip fakeip
+     * here and use the first real server).
+     */
+    private fun pickFinalServer(state: AppState): String =
+        state.dnsServers.firstOrNull { it.enabled && it.type != "local" }?.tag
+            ?: state.dnsServers.firstOrNull { it.enabled }?.tag
+            ?: FakeIpServerTag
+
+    /**
+     * Resolver handed to `route.default_domain_resolver`. Must be a concrete
+     * server (local / udp / tls / …): fakeip cannot resolve names.
+     */
+    private fun pickDefaultResolver(state: AppState): String? =
+        state.dnsServers.firstOrNull { it.enabled && it.type != "local" }?.tag
+            ?: state.dnsServers.firstOrNull { it.enabled }?.tag
 
     // ------------------------------------------------------------------ tun
 
@@ -96,8 +263,10 @@ object ConfigCompiler {
         put("tag", TunInboundTag)
         put("mtu", state.tunMtu.coerceIn(MIN_TUN_MTU, MAX_TUN_MTU))
         putJsonArray("address") {
-            add("172.18.0.1/30")
-            if (state.enableIpv6) add("fdfe:dcba:9876::1/64")
+            add(state.tunInet4Address.ifBlank { "172.19.0.1/30" })
+            if (state.enableIpv6) {
+                add(state.tunInet6Address.ifBlank { "fdfe:dcba:9876::1/126" })
+            }
         }
         put("auto_route", true)
         put("strict_route", false)
@@ -289,7 +458,8 @@ object ConfigCompiler {
 
     private fun compileRuleSets(state: AppState, dir: File): List<JsonObject> {
         // Only emit rule sets that are actually referenced by an enabled inline rule.
-        val referenced = collectReferencedRuleSetTags(state.routeRules)
+        val referenced = collectReferencedRuleSetTags(state.routeRules) +
+            collectReferencedDnsRuleSetTags(state.dnsRules)
         return state.ruleSets
             .filter { it.tag in referenced }
             .map { rs ->
@@ -313,6 +483,17 @@ object ConfigCompiler {
         fun visit(rule: RouteRule) {
             if (!rule.enabled) return
             if (rule.kind == RouteRule.KindInline) {
+                addAll(rule.ruleSet)
+                rule.rules.forEach(::visit)
+            }
+        }
+        rules.forEach(::visit)
+    }
+
+    private fun collectReferencedDnsRuleSetTags(rules: List<DnsRule>): Set<String> = buildSet {
+        fun visit(rule: DnsRule) {
+            if (!rule.enabled) return
+            if (rule.kind == DnsRule.KindInline) {
                 addAll(rule.ruleSet)
                 rule.rules.forEach(::visit)
             }

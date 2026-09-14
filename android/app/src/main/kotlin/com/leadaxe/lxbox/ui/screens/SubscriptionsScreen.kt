@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -40,9 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.leadaxe.lxbox.LxBoxApp
+import com.leadaxe.lxbox.R
 import com.leadaxe.lxbox.app.OutboundProfile
 import com.leadaxe.lxbox.app.Subscription
 import com.leadaxe.lxbox.engine.share.ShareLinkParser
@@ -72,7 +75,7 @@ fun SubscriptionsScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = { addDialog = true }) {
                         Icon(Icons.Outlined.Add, contentDescription = null)
-                        Text("Add subscription")
+                        Text(stringResource(R.string.subs_add))
                     }
                     FilledTonalButton(onClick = {
                         scope.launch {
@@ -85,25 +88,24 @@ fun SubscriptionsScreen() {
                                     },
                                 )
                             }
-                            snackbar.showSnackbar(
-                                if (r.failures.isEmpty())
-                                    "Refreshed ${r.outbounds.size} node(s)"
-                                else
-                                    "Refreshed with ${r.failures.size} failure(s)",
-                            )
+                            val msg = if (r.failures.isEmpty())
+                                context.getString(R.string.subs_refreshed, r.outbounds.size)
+                            else
+                                context.getString(R.string.subs_refreshed_with_failures, r.failures.size)
+                            snackbar.showSnackbar(msg)
                         }
                     }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null)
-                        Text("Refresh all")
+                        Text(stringResource(R.string.subs_refresh_all))
                     }
                     FilledTonalButton(onClick = { pasteDialog = true }) {
                         Icon(Icons.Outlined.ContentPaste, contentDescription = null)
-                        Text("Paste link")
+                        Text(stringResource(R.string.subs_paste_link))
                     }
                 }
             }
 
-            item { SectionHeader("Subscriptions (${state.subscriptions.size})") }
+            item { SectionHeader(stringResource(R.string.subs_section_subscriptions, state.subscriptions.size)) }
             items(state.subscriptions, key = { it.id }) { sub ->
                 SubscriptionRow(
                     sub = sub,
@@ -125,15 +127,15 @@ fun SubscriptionsScreen() {
                                             subscriptions = st.subscriptions.map { it.takeIf { s -> s.id != sub.id } ?: sub.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) },
                                         )
                                     }
-                                    snackbar.showSnackbar("${sub.name}: ${r.outbounds.size} node(s)")
+                                    snackbar.showSnackbar(context.getString(R.string.subs_nodes_added, sub.name, r.outbounds.size))
                                 }
-                                .onFailure { snackbar.showSnackbar("${sub.name}: ${it.message ?: "fetch failed"}") }
+                                .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, sub.name, it.message ?: "fetch failed")) }
                         }
                     },
                 )
             }
 
-            item { SectionHeader("Nodes (${state.outbounds.size})") }
+            item { SectionHeader(stringResource(R.string.subs_section_nodes, state.outbounds.size)) }
             items(state.outbounds, key = { it.id }) { node ->
                 NodeRow(node = node, selected = node.tag == state.selectedOutbound, onSelect = { selected ->
                     store.update { it.copy(selectedOutbound = selected) }
@@ -165,7 +167,7 @@ fun SubscriptionsScreen() {
                                 st.copy(outbounds = st.outbounds + r.outbounds)
                             }
                         }
-                        .onFailure { snackbar.showSnackbar("Subscription fetch failed: ${it.message}") }
+                        .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, name, it.message ?: "fetch failed")) }
                 }
                 addDialog = false
             },
@@ -190,7 +192,7 @@ fun SubscriptionsScreen() {
                 }
                 val errs = parsed.size - ok.size
                 store.update { st -> st.copy(outbounds = st.outbounds + ok) }
-                scope.launch { snackbar.showSnackbar("Added ${ok.size} node(s), ${errs} skipped") }
+                scope.launch { snackbar.showSnackbar(context.getString(R.string.subs_paste_result, ok.size, errs)) }
                 pasteDialog = false
             },
         )
@@ -210,10 +212,10 @@ private fun SubscriptionRow(
                 Text(sub.url, style = MaterialTheme.typography.bodySmall)
             }
             IconButton(onClick = onRefresh) {
-                Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.subs_refresh))
             }
             IconButton(onClick = onDelete) {
-                Text("✕", style = MaterialTheme.typography.titleMedium)
+                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.subs_delete))
             }
         }
     }
@@ -241,7 +243,11 @@ private fun NodeRow(
             FilterChip(
                 selected = selected,
                 onClick = { onSelect(node.tag) },
-                label = { Text(if (selected) "selected" else "tap to use") },
+                label = {
+                    Text(
+                        stringResource(if (selected) R.string.subs_selected else R.string.subs_tap_to_use),
+                    )
+                },
             )
         }
     }
@@ -256,17 +262,17 @@ private fun AddSubscriptionDialog(
     var url by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add subscription") },
+        title = { Text(stringResource(R.string.subs_add)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
-                OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Subscription URL") })
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.subs_name)) })
+                OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text(stringResource(R.string.subs_url)) })
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(name, url) }, enabled = url.isNotBlank()) { Text("Add") }
+            Button(onClick = { onAdd(name, url) }, enabled = url.isNotBlank()) { Text(stringResource(R.string.subs_add_action)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.subs_cancel)) } },
     )
 }
 
@@ -278,20 +284,20 @@ private fun PasteLinkDialog(
     var raw by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Paste share link") },
+        title = { Text(stringResource(R.string.subs_paste_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("vless/vmess/trojan/ss/hy2/tuic, one per line or base64.")
+                Text(stringResource(R.string.subs_paste_hint))
                 OutlinedTextField(
                     value = raw, onValueChange = { raw = it },
-                    label = { Text("Links") },
+                    label = { Text(stringResource(R.string.subs_paste_label)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(raw) }, enabled = raw.isNotBlank()) { Text("Add") }
+            Button(onClick = { onAdd(raw) }, enabled = raw.isNotBlank()) { Text(stringResource(R.string.subs_add_action)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.subs_cancel)) } },
     )
 }

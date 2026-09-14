@@ -7,12 +7,13 @@ import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.leadaxe.lxbox.R
 
 /** Top-level destinations the bottom bar can navigate to. */
-enum class Destination(val label: String, val icon: ImageVector) {
-    Home("Home", Icons.Outlined.Home),
-    Subscriptions("Subscriptions", Icons.Outlined.Subscriptions),
-    Routes("Routes", Icons.Outlined.Route),
-    Dns("DNS", Icons.Outlined.Dns),
-    Settings("Settings", Icons.Outlined.Settings),
+enum class Destination(val labelRes: Int, val icon: ImageVector) {
+    Home(R.string.nav_home, Icons.Outlined.Home),
+    Subscriptions(R.string.nav_subscriptions, Icons.Outlined.Subscriptions),
+    Routes(R.string.nav_routes, Icons.Outlined.Route),
+    Dns(R.string.nav_dns, Icons.Outlined.Dns),
+    Settings(R.string.nav_settings, Icons.Outlined.Settings),
 }
