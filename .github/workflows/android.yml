@@ -172,7 +172,36 @@ jobs:
         # PATH, so `gradle ...` would fail with 'command not found'. The
         # wrapper bootstraps a fresh 8.14.3 on first run (~25s) and caches
         # it under ~/.gradle/wrapper/dists/ for subsequent runs.
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace --console=plain
+        #
+        # Run with --info so a failure prints enough context for diagnosis
+        # without needing log-download access (which the public actions
+        # API doesn't expose). On any failure, upload the intermediate
+        # build outputs and the tail of the build log as a diagnostics
+        # artifact so the failure is reproducible.
+        run: |
+          set +e
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace --info 2>&1 | tee /tmp/assembleDebug.log
+          ASSEMBLE_RC=${PIPESTATUS[0]}
+          echo "==> gradle exit code: ${ASSEMBLE_RC}"
+          if [ "${ASSEMBLE_RC}" -ne 0 ]; then
+            echo "::error::assembleDebug failed with exit code ${ASSEMBLE_RC} — last 80 lines of build log:"
+            tail -n 80 /tmp/assembleDebug.log >&2
+            mkdir -p android/build-diagnostics
+            tail -n 400 /tmp/assembleDebug.log > android/build-diagnostics/assembleDebug-tail.log
+            [ -d android/build/reports ] && cp -r android/build/reports android/build-diagnostics/reports
+            exit "${ASSEMBLE_RC}"
+          fi
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lxbox-android-diag
+          path: android/build-diagnostics/
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Smoke-test the APK
         # aapt2 dump badging is a cheap sanity check that the build produced
