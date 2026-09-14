@@ -12,6 +12,8 @@ data class AppState(
     /** Selected node tag inside the `proxy` selector. */
     val selectedOutbound: String = "",
     val outbounds: List<OutboundProfile> = emptyList(),
+    /** UrlTest / selector groups built on top of [outbounds]. */
+    val outboundGroups: List<OutboundGroup> = emptyList(),
     val subscriptions: List<Subscription> = emptyList(),
     val routeRules: List<RouteRule> = emptyList(),
     val ruleSets: List<RuleSetResource> = emptyList(),
@@ -43,6 +45,11 @@ data class AppState(
      * normal DNS chain. Empty = rewrite everything (sing-box default).
      */
     val fakeIpFilter: List<String> = emptyList(),
+    /**
+     * When true, [fakeIpFilter] is an exclusion list instead of an inclusion
+     * list: matching domains bypass the fake pool and are resolved normally.
+     */
+    val fakeIpFilterExclude: Boolean = false,
     /** IPv4 fake range; empty = sing-box default (198.18.0.0/15). */
     val fakeIpInet4Range: String = "",
     /** IPv6 fake range; empty = sing-box default (fc00::/18). */
@@ -114,7 +121,7 @@ val SingBoxLogLevels = listOf("trace", "debug", "info", "warn", "error", "fatal"
  * the request through the direct outbound; everything else maps to the
  * sing-box server type of the same name.
  */
-val DnsServerTypes = listOf("local", "direct", "udp", "tcp", "tls", "https", "quic", "h3")
+val DnsServerTypes = listOf("local", "direct", "udp", "tcp", "tls", "https", "quic", "h3", "group")
 
 val DnsStrategies = listOf("", "prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only")
 
@@ -199,6 +206,61 @@ data class RouteRule(
 }
 
 /**
+ * Outbound group: several nodes (or other groups) behind one tag with a
+ * selection strategy.
+ *
+ *  - [KindSelector] — manual choice; the user picks the active member.
+ *  - [KindUrlTest]  — automatic latency-based selection, re-probed every
+ *    [interval]. sing-box-lx additionally offers an LX load-balancing
+ *    mode ([mode] = [ModeRoundRobin]) that rotates a pool of the fastest
+ *    members instead of always using one.
+ *
+ * Members are tags of [OutboundProfile]s (or other groups); order is the
+ * declaration order inside the group.
+ */
+@Serializable
+data class OutboundGroup(
+    val id: String,
+    val name: String = "",
+    val kind: String = KindUrlTest,
+    val members: List<String> = emptyList(),
+    val enabled: Boolean = true,
+    /** UrlTest probe URL; empty = the global `speedTestUrl`. */
+    val url: String = "",
+    /** Probe interval, e.g. "3m". Empty = engine default (3m). */
+    val interval: String = "",
+    /** Latency tolerance in ms (url-test); 0 = engine default (50). */
+    val tolerance: Int = 0,
+    /** LX extension: "least_test" (default) or "round_robin". */
+    val mode: String = ModeLeastTest,
+    /** LX round_robin: how many of the fastest members form the pool. 0 = 3. */
+    val pool: Int = 0,
+    /** LX round_robin: pool tolerance in ms; 0 = keep-live-fill. */
+    val poolTolerance: Int = 0,
+    /** LX round_robin sticky-hash components: process/domain/source_ip/dest_ip/dest_port. */
+    val stickyHash: List<String> = defaultStickyHash(),
+    /** Selector only: currently chosen member tag. Empty = first member. */
+    val selected: String = "",
+) {
+    val tag: String get() = "group-$id"
+
+    companion object {
+        const val KindSelector = "selector"
+        const val KindUrlTest = "urltest"
+        const val ModeLeastTest = "least_test"
+        const val ModeRoundRobin = "round_robin"
+    }
+}
+
+val OutboundGroupKinds = listOf(OutboundGroup.KindSelector, OutboundGroup.KindUrlTest)
+val OutboundGroupModes = listOf(OutboundGroup.ModeLeastTest, OutboundGroup.ModeRoundRobin)
+val StickyHashComponents = listOf("process", "domain", "source_ip", "dest_ip", "dest_port")
+
+fun defaultStickyHash(): List<String> = listOf("process", "domain")
+
+fun defaultUrlTestInterval(): String = "3m"
+
+/**
  * A managed rule set — the successor of the old standalone "srs" rule kind.
  * Remote `.srs`/`.json` rule sets are cached on disk and referenced by inline
  * route rules through [RouteRule.ruleSet].
@@ -223,6 +285,11 @@ data class RuleSetResource(
  * selector; any node tag routes through that specific node. This is the
  * "DNS group / mirror with an explicit exit" feature: the same physical
  * server can be instantiated several times with different detours.
+ *
+ * `type = "group"` is a sing-box-lx extension: it wraps several other DNS
+ * server tags behind one tag with a selection strategy, so a single dead
+ * resolver no longer stalls name resolution. Group entries must reference
+ * the tags of other servers in this list.
  */
 @Serializable
 data class DnsServerState(
@@ -246,9 +313,25 @@ data class DnsServerState(
     val tlsServerName: String = "",
     /** Skip TLS certificate verification (https/tls/quic/h3 types). */
     val insecure: Boolean = false,
+    // ----- group type (sing-box-lx) -----
+    /** Member server TAGS for `type = "group"`. Order is not meaningful. */
+    val groupServers: List<String> = emptyList(),
+    /** group selection strategy: [DnsGroupStable] | [DnsGroupFastest] | [DnsGroupParallel]. */
+    val groupMode: String = DnsGroupStable,
+    /** How long an error record lives, e.g. "2m". Empty = engine default. */
+    val groupErrorTtl: String = "",
+    /** How long a win record lives (fastest only), e.g. "5m". Empty = default. */
+    val groupWinTtl: String = "",
 ) {
     val tag: String get() = "dns-$id"
 }
+
+/** Group modes supported by the sing-box-lx DNS group server. */
+const val DnsGroupStable = "stable"
+const val DnsGroupFastest = "fastest"
+const val DnsGroupParallel = "parallel"
+
+val DnsGroupModes = listOf(DnsGroupStable, DnsGroupFastest, DnsGroupParallel)
 
 /**
  * DNS rule. Mirrors the route-rule shape at a smaller scale: match on

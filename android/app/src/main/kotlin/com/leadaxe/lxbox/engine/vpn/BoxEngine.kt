@@ -83,14 +83,16 @@ class BoxEngine internal constructor(
     fun isRunning(): Boolean = server != null
 
     /**
-     * Forward the device's screen + lock state to the kernel so it can
-     * throttle housekeeping (GC, logging, idle timers) accordingly. Safe
-     * to call before [start] — the values are recorded and replayed once
-     * the command server attaches.
+     * Forward the device's screen + lock state to the kernel.
+     *
+     * NOTE: sing-box-lx (the core we ship) dropped the upstream
+     * recordScreenState / recordLockState hooks from CommandServer; idle
+     * suspension is now driven by the LX energy model (route.lx_idle_*),
+     * which does not need client-side screen signals. Kept as a no-op so
+     * the service can keep calling it on screen events without branching.
      */
     fun recordPowerState(screenOn: Boolean, deviceLocked: Boolean) {
-        runCatching { server?.recordScreenState(screenOn) }
-        runCatching { server?.recordLockState(deviceLocked) }
+        // intentionally empty — see kdoc above.
     }
 
     fun start(state: AppState): Job = launchCommand { runStart(state) }
@@ -239,6 +241,13 @@ class BoxEngine internal constructor(
     override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) = Unit
 
     override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) = Unit
+
+    /**
+     * Live DNS-query stream (sing-box-lx extension). Not surfaced in the UI
+     * yet — the stream exists so a future "DNS log" tab can show resolved
+     * names without polling. Keep the override to satisfy the interface.
+     */
+    override fun writeDNSQuery(query: io.nekohasekai.libbox.DnsQuery) = Unit
 
     private fun filesDir(): File = context.filesDir
     private fun workDir(): File = File(context.filesDir, "box").apply { mkdirs() }

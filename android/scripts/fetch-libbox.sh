@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
-# Download the libbox AAR into app/libs/libbox.aar.
-# This is a local-only artifact (gitignored); CI re-runs the download on its
-# own runner.
+# Download the libbox AAR (sing-box-lx core) into app/libs/libbox.aar.
+#
+# Source: Leadaxe/sing-box-lx GitHub releases — the same core the Flutter
+# client pins via app/android/libbox.version. That fork carries the
+# client-side extensions this app relies on:
+#   * DNS server group  (dns.servers[].type: "group", modes stable/fastest/parallel)
+#   * XHTTP transport   (VLESS/VMess/Trojan transport.type: "xhttp")
+#   * AmneziaWG 2.0     (wireguard endpoint obfuscation fields)
+#   * VLESS encryption  (post-quantum layer)
+# The AAR is a local-only artifact (gitignored); CI re-runs the download on
+# its own runner.
+#
+# Version pin: LXCORE_VERSION below. Keep it in sync with the Flutter-side
+# pin (app/android/libbox.version) when both clients ship the same core.
 
 set -euo pipefail
 
-RELEASE_TAG="${LIBBOX_TAG:-v1.15.0-alpha.3-reF1nd}"
+LXCORE_VERSION="${LIBBOX_TAG:-v1.14.0-lx.38}"
+AAR_NAME="libbox-${LXCORE_VERSION#v}.aar"
 OUT_DIR="$(cd "$(dirname "$0")/.." && pwd)/app/libs"
 OUT_FILE="$OUT_DIR/libbox.aar"
 
 mkdir -p "$OUT_DIR"
 
 URLS=(
-    "https://github.com/Asterisk4Magisk/AndroidLibBoxLite/releases/download/${RELEASE_TAG}/libbox.aar"
-    "https://gh-proxy.com/https://github.com/Asterisk4Magisk/AndroidLibBoxLite/releases/download/${RELEASE_TAG}/libbox.aar"
+    "https://github.com/Leadaxe/sing-box-lx/releases/download/${LXCORE_VERSION}/${AAR_NAME}"
+    "https://gh-proxy.com/https://github.com/Leadaxe/sing-box-lx/releases/download/${LXCORE_VERSION}/${AAR_NAME}"
 )
 
 for url in "${URLS[@]}"; do

@@ -10,6 +10,7 @@ import com.leadaxe.lxbox.app.DnsRuleActionReject
 import com.leadaxe.lxbox.app.DnsRuleActionRouteOptions
 import com.leadaxe.lxbox.app.DnsServerState
 import com.leadaxe.lxbox.app.FakeIpServerTag
+import com.leadaxe.lxbox.app.OutboundGroup
 import com.leadaxe.lxbox.app.ProxySelectorTag
 import com.leadaxe.lxbox.app.RouteRule
 import com.leadaxe.lxbox.app.TunInboundTag
@@ -110,6 +111,15 @@ object ConfigCompiler {
                 put("type", "local")
                 put("detour", DirectOutboundTag)
             }
+            "group" -> {
+                // sing-box-lx extension: several resolvers behind one tag.
+                // Members are referenced by tag; order is not meaningful.
+                put("type", "group")
+                putJsonArray("servers") { server.groupServers.forEach(::add) }
+                put("mode", server.groupMode.ifBlank { "stable" })
+                if (server.groupErrorTtl.isNotBlank()) put("error_ttl", server.groupErrorTtl)
+                if (server.groupWinTtl.isNotBlank()) put("win_ttl", server.groupWinTtl)
+            }
             else -> {
                 put("type", server.type)
                 put("server", server.address)
@@ -153,15 +163,24 @@ object ConfigCompiler {
         // every domain ends up on the fake range and rule matching breaks.
         if (state.enableFakeIp) {
             val filter = state.fakeIpFilter.map { it.trim() }.filter { it.isNotEmpty() }
-            if (filter.isNotEmpty()) {
-                // Whitelist mode: match the filter → fakeip; everything else
-                // → the regular chain.
+            if (filter.isEmpty()) {
+                // Everything is faked; `final` still resolves for the
+                // domains excluded by rule ordering.
+                add(buildJsonObject { put("server", FakeIpServerTag) })
+            } else if (state.fakeIpFilterExclude) {
+                // Blacklist: the listed suffixes bypass the pool and go to
+                // the normal chain; everything else is faked.
+                add(buildJsonObject {
+                    putJsonArray("domain_suffix") { filter.forEach(::add) }
+                    put("server", pickFinalServer(state))
+                })
+                add(buildJsonObject { put("server", FakeIpServerTag) })
+            } else {
+                // Whitelist: only the listed suffixes are faked.
                 add(buildJsonObject {
                     putJsonArray("domain_suffix") { filter.forEach(::add) }
                     put("server", FakeIpServerTag)
                 })
-            } else {
-                add(buildJsonObject { put("server", FakeIpServerTag) })
             }
         }
         // User rules.
@@ -298,15 +317,21 @@ object ConfigCompiler {
 
     private fun compileOutbounds(state: AppState): List<JsonObject> = buildList {
         val nodeTags = state.outbounds.map { it.tag }
+        val groupTags = state.outboundGroups.filter { it.enabled }.map { it.tag }
+        // Main selector: nodes first, then groups, then direct. Keeping the
+        // nodes first mirrors the Flutter client's ordering and makes the
+        // Home-tab chip list read top-down like a server list.
         add(buildJsonObject {
             put("type", "selector")
             put("tag", ProxySelectorTag)
             putJsonArray("outbounds") {
                 nodeTags.forEach(::add)
+                groupTags.forEach(::add)
                 add(DirectOutboundTag)
             }
             val selected = state.selectedOutbound
-            if (selected.isNotBlank() && (selected in nodeTags || selected == DirectOutboundTag)) {
+            val selectable = nodeTags + groupTags
+            if (selected.isNotBlank() && (selected in selectable || selected == DirectOutboundTag)) {
                 put("default", selected)
             }
             put("interrupt_exist_connections", true)
@@ -319,6 +344,10 @@ object ConfigCompiler {
                 put("tag", JsonPrimitive(profile.tag))
             }))
         }
+        // User-configured groups, after their constituent nodes.
+        state.outboundGroups.filter { it.enabled }.forEach { group ->
+            add(compileOutboundGroup(group, state))
+        }
         add(buildJsonObject {
             put("type", "direct")
             put("tag", DirectOutboundTag)
@@ -328,6 +357,50 @@ object ConfigCompiler {
             put("tag", DnsOutboundTag)
         })
     }
+
+    /**
+     * Compiles one [OutboundGroup] entry.
+     *
+     * `urltest` groups in sing-box-lx accept the same `mode` / `balancer`
+     * extension keys as the standalone urltest outbound; we only emit them
+     * for `round_robin`, because `least_test` is the upstream default and
+     * sending it explicitly on an older core would fail the config check.
+     */
+    private fun compileOutboundGroup(group: OutboundGroup, state: AppState): JsonObject =
+        buildJsonObject {
+            put("type", group.kind)
+            put("tag", group.tag)
+            val members = group.members.ifEmpty {
+                // A group with no explicit members falls back to every node,
+                // so a freshly created group still produces a usable config.
+                state.outbounds.map { it.tag }
+            }
+            putJsonArray("outbounds") { members.forEach(::add) }
+            when (group.kind) {
+                OutboundGroup.KindSelector -> {
+                    if (group.selected.isNotBlank() && group.selected in members) {
+                        put("default", group.selected)
+                    }
+                    put("interrupt_exist_connections", true)
+                }
+                else -> {
+                    put("url", group.url.ifBlank { state.speedTestUrl })
+                    if (group.interval.isNotBlank()) put("interval", group.interval)
+                    if (group.tolerance > 0) put("tolerance", group.tolerance)
+                    if (group.mode == OutboundGroup.ModeRoundRobin) {
+                        put("mode", group.mode)
+                        putJsonObject("balancer") {
+                            if (group.pool > 0) put("pool", group.pool)
+                            if (group.poolTolerance > 0) put("pool_tolerance", group.poolTolerance)
+                            val hash = group.stickyHash.filter { it.isNotBlank() }
+                            if (hash.isNotEmpty()) {
+                                putJsonArray("sticky_hash") { hash.forEach(::add) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
     // ----------------------------------------------------------------- route
 

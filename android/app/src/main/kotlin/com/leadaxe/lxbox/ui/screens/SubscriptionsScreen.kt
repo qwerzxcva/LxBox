@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -64,6 +65,8 @@ fun SubscriptionsScreen() {
     val scope = rememberCoroutineScope()
     var addDialog by remember { mutableStateOf(false) }
     var pasteDialog by remember { mutableStateOf(false) }
+    var editingGroup: com.leadaxe.lxbox.app.OutboundGroup? by remember { mutableStateOf(null) }
+    var creatingGroup by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -141,6 +144,30 @@ fun SubscriptionsScreen() {
                     store.update { it.copy(selectedOutbound = selected) }
                 })
             }
+
+            item {
+                FilledTonalButton(onClick = { creatingGroup = true }) {
+                    Icon(Icons.Outlined.Add, contentDescription = null)
+                    Text(stringResource(R.string.groups_add))
+                }
+            }
+            item { SectionHeader(stringResource(R.string.groups_section, state.outboundGroups.size)) }
+            items(state.outboundGroups, key = { it.id }) { group ->
+                GroupRow(
+                    group = group,
+                    state = state,
+                    onEdit = { editingGroup = group },
+                    onDelete = {
+                        store.update { st ->
+                            st.copy(
+                                outboundGroups = st.outboundGroups.filterNot { it.id == group.id },
+                                // Drop the selection if it pointed at the deleted group.
+                                selectedOutbound = st.selectedOutbound.takeIf { it != group.tag } ?: "",
+                            )
+                        }
+                    },
+                )
+            }
         }
         SnackbarHost(
             hostState = snackbar,
@@ -194,6 +221,31 @@ fun SubscriptionsScreen() {
                 store.update { st -> st.copy(outbounds = st.outbounds + ok) }
                 scope.launch { snackbar.showSnackbar(context.getString(R.string.subs_paste_result, ok.size, errs)) }
                 pasteDialog = false
+            },
+        )
+    }
+
+    if (creatingGroup) {
+        GroupEditor(
+            initial = null,
+            state = state,
+            onDismiss = { creatingGroup = false },
+            onSave = { group ->
+                store.update { st -> st.copy(outboundGroups = st.outboundGroups + group) }
+                creatingGroup = false
+            },
+        )
+    }
+    editingGroup?.let { group ->
+        GroupEditor(
+            initial = group,
+            state = state,
+            onDismiss = { editingGroup = null },
+            onSave = { updated ->
+                store.update { st ->
+                    st.copy(outboundGroups = st.outboundGroups.map { if (it.id == updated.id) updated else it })
+                }
+                editingGroup = null
             },
         )
     }
@@ -299,5 +351,216 @@ private fun PasteLinkDialog(
             Button(onClick = { onAdd(raw) }, enabled = raw.isNotBlank()) { Text(stringResource(R.string.subs_add_action)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.subs_cancel)) } },
+    )
+}
+
+// ----------------------------------------------------------- outbound groups
+
+@Composable
+private fun GroupRow(
+    group: com.leadaxe.lxbox.app.OutboundGroup,
+    state: com.leadaxe.lxbox.app.AppState,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    group.name.ifBlank { group.tag },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                val kindLabel = if (group.kind == com.leadaxe.lxbox.app.OutboundGroup.KindSelector)
+                    stringResource(R.string.groups_kind_selector)
+                else
+                    stringResource(R.string.groups_kind_urltest)
+                val modeLabel = when {
+                    group.kind != com.leadaxe.lxbox.app.OutboundGroup.KindUrlTest -> ""
+                    group.mode == com.leadaxe.lxbox.app.OutboundGroup.ModeRoundRobin ->
+                        " · " + stringResource(R.string.groups_mode_rr)
+                    else -> " · " + stringResource(R.string.groups_mode_least)
+                }
+                Text(
+                    "$kindLabel$modeLabel · ${group.members.size} member(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupEditor(
+    initial: com.leadaxe.lxbox.app.OutboundGroup?,
+    state: com.leadaxe.lxbox.app.AppState,
+    onDismiss: () -> Unit,
+    onSave: (com.leadaxe.lxbox.app.OutboundGroup) -> Unit,
+) {
+    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
+    var kind by remember { mutableStateOf(initial?.kind ?: com.leadaxe.lxbox.app.OutboundGroup.KindUrlTest) }
+    var members by remember { mutableStateOf(initial?.members ?: emptyList()) }
+    var url by remember { mutableStateOf(initial?.url.orEmpty()) }
+    var interval by remember { mutableStateOf(initial?.interval.orEmpty()) }
+    var tolerance by remember { mutableStateOf((initial?.tolerance ?: 0).toString()) }
+    var mode by remember { mutableStateOf(initial?.mode ?: com.leadaxe.lxbox.app.OutboundGroup.ModeLeastTest) }
+    var pool by remember { mutableStateOf((initial?.pool ?: 0).toString()) }
+    var poolTolerance by remember { mutableStateOf((initial?.poolTolerance ?: 0).toString()) }
+    var stickyHash by remember { mutableStateOf(initial?.stickyHash ?: com.leadaxe.lxbox.app.defaultStickyHash()) }
+    var selected by remember { mutableStateOf(initial?.selected.orEmpty()) }
+
+    val nodeTags = remember(state.outbounds) { state.outbounds.map { it.tag } }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (initial == null) R.string.groups_new else R.string.groups_edit,
+                ),
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                StringField(
+                    label = stringResource(R.string.groups_name),
+                    value = name,
+                    onValueChange = { name = it },
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.groups_kind),
+                    options = com.leadaxe.lxbox.app.OutboundGroupKinds,
+                    selected = kind,
+                    onSelect = { kind = it },
+                    display = {
+                        if (it == com.leadaxe.lxbox.app.OutboundGroup.KindSelector)
+                            stringResource(R.string.groups_kind_selector)
+                        else stringResource(R.string.groups_kind_urltest)
+                    },
+                )
+                MultiChoiceChips(
+                    label = stringResource(R.string.groups_members),
+                    options = nodeTags,
+                    selected = members,
+                    onToggle = { tag -> members = if (tag in members) members - tag else members + tag },
+                    display = { tag ->
+                        state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
+                    },
+                )
+                if (state.outbounds.isEmpty()) {
+                    Text(
+                        stringResource(R.string.groups_empty_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (kind == com.leadaxe.lxbox.app.OutboundGroup.KindSelector) {
+                    SingleChoiceChips(
+                        label = stringResource(R.string.groups_selected),
+                        options = listOf("") + members,
+                        selected = selected,
+                        onSelect = { selected = it },
+                        display = { tag ->
+                            if (tag.isEmpty()) stringResource(R.string.groups_first_member)
+                            else state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
+                        },
+                    )
+                } else {
+                    StringField(
+                        label = stringResource(R.string.groups_probe_url),
+                        value = url,
+                        onValueChange = { url = it },
+                        placeholder = state.speedTestUrl,
+                    )
+                    StringField(
+                        label = stringResource(R.string.groups_interval),
+                        value = interval,
+                        onValueChange = { interval = it },
+                        placeholder = com.leadaxe.lxbox.app.defaultUrlTestInterval(),
+                    )
+                    StringField(
+                        label = stringResource(R.string.groups_tolerance),
+                        value = tolerance,
+                        onValueChange = { tolerance = it.filter { c -> c.isDigit() } },
+                        placeholder = "50",
+                    )
+                    SingleChoiceChips(
+                        label = stringResource(R.string.groups_mode),
+                        options = com.leadaxe.lxbox.app.OutboundGroupModes,
+                        selected = mode,
+                        onSelect = { mode = it },
+                        display = {
+                            if (it == com.leadaxe.lxbox.app.OutboundGroup.ModeRoundRobin)
+                                stringResource(R.string.groups_mode_rr)
+                            else stringResource(R.string.groups_mode_least)
+                        },
+                    )
+                    if (mode == com.leadaxe.lxbox.app.OutboundGroup.ModeRoundRobin) {
+                        StringField(
+                            label = stringResource(R.string.groups_pool),
+                            value = pool,
+                            onValueChange = { pool = it.filter { c -> c.isDigit() } },
+                            placeholder = "3",
+                        )
+                        StringField(
+                            label = stringResource(R.string.groups_pool_tolerance),
+                            value = poolTolerance,
+                            onValueChange = { poolTolerance = it.filter { c -> c.isDigit() } },
+                            placeholder = "0",
+                        )
+                        Column {
+                            Text(
+                                stringResource(R.string.groups_sticky),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Text(
+                                stringResource(R.string.groups_sticky_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        MultiChoiceChips(
+                            label = "",
+                            options = com.leadaxe.lxbox.app.StickyHashComponents,
+                            selected = stickyHash,
+                            onToggle = { c ->
+                                stickyHash = if (c in stickyHash) stickyHash - c else stickyHash + c
+                            },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        (initial ?: com.leadaxe.lxbox.app.OutboundGroup(id = UUID.randomUUID().toString())).copy(
+                            name = name,
+                            kind = kind,
+                            members = members,
+                            url = url,
+                            interval = interval,
+                            tolerance = tolerance.toIntOrNull() ?: 0,
+                            mode = mode,
+                            pool = pool.toIntOrNull() ?: 0,
+                            poolTolerance = poolTolerance.toIntOrNull() ?: 0,
+                            stickyHash = stickyHash,
+                            selected = selected,
+                        ),
+                    )
+                },
+            ) { Text(stringResource(R.string.common_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }

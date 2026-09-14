@@ -244,6 +244,14 @@ private fun FakeIpSection(state: AppState, onChange: (AppState.() -> AppState) -
             onValuesChange = { v -> onChange { copy(fakeIpFilter = v) } },
             placeholder = stringResource(R.string.fakeip_filter_hint),
         )
+        if (state.fakeIpFilter.isNotEmpty()) {
+            SwitchRow(
+                label = stringResource(R.string.fakeip_filter_exclude),
+                supporting = stringResource(R.string.fakeip_filter_exclude_desc),
+                checked = state.fakeIpFilterExclude,
+                onCheckedChange = { v -> onChange { copy(fakeIpFilterExclude = v) } },
+            )
+        }
     }
 }
 
@@ -321,9 +329,17 @@ private fun DnsServerEditor(
     var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
     var tlsServerName by remember { mutableStateOf(initial?.tlsServerName.orEmpty()) }
     var insecure by remember { mutableStateOf(initial?.insecure ?: false) }
+    var groupServers by remember { mutableStateOf(initial?.groupServers ?: emptyList()) }
+    var groupMode by remember { mutableStateOf(initial?.groupMode ?: com.leadaxe.lxbox.app.DnsGroupStable) }
+    var groupErrorTtl by remember { mutableStateOf(initial?.groupErrorTtl.orEmpty()) }
+    var groupWinTtl by remember { mutableStateOf(initial?.groupWinTtl.orEmpty()) }
 
     val detourOptions = remember(state.outbounds) {
         listOf(DnsDetourDirect, DnsDetourProxy) + state.outbounds.map { it.tag }
+    }
+    // Candidate members for a group: every other server, by tag.
+    val groupCandidates = remember(state.dnsServers, initial) {
+        state.dnsServers.filter { it.id != initial?.id }.map { it.tag }
     }
 
     AlertDialog(
@@ -350,8 +366,9 @@ private fun DnsServerEditor(
                     options = DnsServerTypes,
                     selected = type,
                     onSelect = { type = it },
+                    display = { t -> if (t == "group") stringResource(R.string.dns_type_group) else t },
                 )
-                if (type != "local" && type != "direct") {
+                if (type != "local" && type != "direct" && type != "group") {
                     StringField(
                         label = stringResource(R.string.dns_address),
                         value = address,
@@ -359,13 +376,59 @@ private fun DnsServerEditor(
                         placeholder = "1.1.1.1",
                     )
                 }
-                DetourPicker(
-                    label = stringResource(R.string.dns_detour),
-                    options = detourOptions,
-                    selected = detour,
-                    state = state,
-                    onSelect = { detour = it },
-                )
+                if (type == "group") {
+                    Text(
+                        stringResource(R.string.dns_group_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    MultiChoiceChips(
+                        label = stringResource(R.string.dns_group_members),
+                        options = groupCandidates,
+                        selected = groupServers,
+                        onToggle = { tag ->
+                            groupServers = if (tag in groupServers) groupServers - tag else groupServers + tag
+                        },
+                        display = { tag ->
+                            state.dnsServers.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
+                        },
+                    )
+                    SingleChoiceChips(
+                        label = stringResource(R.string.dns_group_mode),
+                        options = com.leadaxe.lxbox.app.DnsGroupModes,
+                        selected = groupMode,
+                        onSelect = { groupMode = it },
+                        display = {
+                            when (it) {
+                                com.leadaxe.lxbox.app.DnsGroupFastest -> stringResource(R.string.dns_group_fastest)
+                                com.leadaxe.lxbox.app.DnsGroupParallel -> stringResource(R.string.dns_group_parallel)
+                                else -> stringResource(R.string.dns_group_stable)
+                            }
+                        },
+                    )
+                    StringField(
+                        label = stringResource(R.string.dns_group_error_ttl),
+                        value = groupErrorTtl,
+                        onValueChange = { groupErrorTtl = it },
+                        placeholder = stringResource(R.string.dns_group_error_ttl_hint),
+                    )
+                    if (groupMode == com.leadaxe.lxbox.app.DnsGroupFastest) {
+                        StringField(
+                            label = stringResource(R.string.dns_group_win_ttl),
+                            value = groupWinTtl,
+                            onValueChange = { groupWinTtl = it },
+                            placeholder = stringResource(R.string.dns_group_win_ttl_hint),
+                        )
+                    }
+                } else {
+                    DetourPicker(
+                        label = stringResource(R.string.dns_detour),
+                        options = detourOptions,
+                        selected = detour,
+                        state = state,
+                        onSelect = { detour = it },
+                    )
+                }
                 SingleChoiceChips(
                     label = stringResource(R.string.dns_strategy),
                     options = DnsStrategies,
@@ -414,6 +477,10 @@ private fun DnsServerEditor(
                             clientSubnet = clientSubnet,
                             tlsServerName = tlsServerName,
                             insecure = insecure,
+                            groupServers = groupServers,
+                            groupMode = groupMode,
+                            groupErrorTtl = groupErrorTtl,
+                            groupWinTtl = groupWinTtl,
                         ),
                     )
                 },

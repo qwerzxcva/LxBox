@@ -53,6 +53,31 @@
     <string name="subs_paste_label">Links</string>
     <string name="subs_paste_result">Added %1$d node(s), %2$d skipped</string>
 
+    <!-- outbound groups -->
+    <string name="groups_section">Groups (%1$d)</string>
+    <string name="groups_add">Add group</string>
+    <string name="groups_new">New group</string>
+    <string name="groups_edit">Edit group</string>
+    <string name="groups_name">Name</string>
+    <string name="groups_kind">Type</string>
+    <string name="groups_kind_selector">Manual (selector)</string>
+    <string name="groups_kind_urltest">Auto (URL test)</string>
+    <string name="groups_members">Members</string>
+    <string name="groups_probe_url">Probe URL</string>
+    <string name="groups_interval">Probe interval</string>
+    <string name="groups_interval_hint">e.g. 3m</string>
+    <string name="groups_tolerance">Latency tolerance (ms)</string>
+    <string name="groups_mode">Balance mode</string>
+    <string name="groups_mode_least">Least latency</string>
+    <string name="groups_mode_rr">Round robin</string>
+    <string name="groups_pool">Pool size</string>
+    <string name="groups_pool_tolerance">Pool tolerance (ms)</string>
+    <string name="groups_sticky">Sticky hash</string>
+    <string name="groups_sticky_hint">Pick components that keep one connection on one node.</string>
+    <string name="groups_selected">Active member</string>
+    <string name="groups_first_member">First member</string>
+    <string name="groups_empty_hint">No members — this group will use every node.</string>
+
     <!-- routes -->
     <string name="routes_section_rules">Rules (%1$d)</string>
     <string name="routes_section_rulesets">Rule sets (%1$d)</string>
@@ -109,6 +134,7 @@
     <string name="dns_new_rule">New rule</string>
     <string name="dns_name">Name</string>
     <string name="dns_type">Type</string>
+    <string name="dns_type_group">Group</string>
     <string name="dns_address">Address</string>
     <string name="dns_detour">Send queries via</string>
     <string name="dns_detour_direct">Direct</string>
@@ -132,6 +158,16 @@
     <string name="dns_global_strategy">Global strategy</string>
     <string name="dns_final_server">Fallback resolver</string>
     <string name="dns_final_auto">Automatic</string>
+    <string name="dns_group_members">Member servers</string>
+    <string name="dns_group_mode">Selection strategy</string>
+    <string name="dns_group_stable">Stable</string>
+    <string name="dns_group_fastest">Fastest</string>
+    <string name="dns_group_parallel">Parallel</string>
+    <string name="dns_group_error_ttl">Error record TTL</string>
+    <string name="dns_group_win_ttl">Win record TTL</string>
+    <string name="dns_group_error_ttl_hint">default 2m</string>
+    <string name="dns_group_win_ttl_hint">default 5m, fastest only</string>
+    <string name="dns_group_hint">Wraps several resolvers behind one name so a single dead server does not stall resolution. Do not mix internal and public resolvers in one group.</string>
     <string name="dns_delete">Delete</string>
 
     <!-- fakeip -->
@@ -142,6 +178,8 @@
     <string name="fakeip_inet6_range">IPv6 range</string>
     <string name="fakeip_filter">Filter (domain suffixes, comma separated)</string>
     <string name="fakeip_filter_hint">empty = rewrite every domain</string>
+    <string name="fakeip_filter_exclude">Filter is an exclusion list</string>
+    <string name="fakeip_filter_exclude_desc">Listed suffixes bypass the fake pool and are resolved normally.</string>
     <string name="fakeip_default_range4">198.18.0.0/15 (default)</string>
     <string name="fakeip_default_range6">fc00::/18 (default)</string>
 

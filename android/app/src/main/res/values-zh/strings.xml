@@ -51,6 +51,31 @@
     <string name="subs_paste_label">链接</string>
     <string name="subs_paste_result">已添加 %1$d 个节点，跳过 %2$d 个</string>
 
+    <!-- outbound groups -->
+    <string name="groups_section">出口组（%1$d）</string>
+    <string name="groups_add">添加出口组</string>
+    <string name="groups_new">新建出口组</string>
+    <string name="groups_edit">编辑出口组</string>
+    <string name="groups_name">名称</string>
+    <string name="groups_kind">类型</string>
+    <string name="groups_kind_selector">手动（选择器）</string>
+    <string name="groups_kind_urltest">自动（延迟测试）</string>
+    <string name="groups_members">成员节点</string>
+    <string name="groups_probe_url">测速地址</string>
+    <string name="groups_interval">测速间隔</string>
+    <string name="groups_interval_hint">例如 3m</string>
+    <string name="groups_tolerance">延迟容差（毫秒）</string>
+    <string name="groups_mode">均衡模式</string>
+    <string name="groups_mode_least">最低延迟</string>
+    <string name="groups_mode_rr">轮询</string>
+    <string name="groups_pool">池大小</string>
+    <string name="groups_pool_tolerance">池容差（毫秒）</string>
+    <string name="groups_sticky">粘滞哈希</string>
+    <string name="groups_sticky_hint">选择让同一连接固定走同一节点的分量。</string>
+    <string name="groups_selected">当前成员</string>
+    <string name="groups_first_member">第一个成员</string>
+    <string name="groups_empty_hint">无成员 — 该组将使用全部节点。</string>
+
     <!-- routes -->
     <string name="routes_section_rules">路由规则（%1$d）</string>
     <string name="routes_section_rulesets">规则集（%1$d）</string>
@@ -107,6 +132,7 @@
     <string name="dns_new_rule">新建规则</string>
     <string name="dns_name">名称</string>
     <string name="dns_type">协议类型</string>
+    <string name="dns_type_group">分组</string>
     <string name="dns_address">服务器地址</string>
     <string name="dns_detour">查询出口</string>
     <string name="dns_detour_direct">直连</string>
@@ -130,6 +156,16 @@
     <string name="dns_global_strategy">全局策略</string>
     <string name="dns_final_server">兜底解析服务器</string>
     <string name="dns_final_auto">自动</string>
+    <string name="dns_group_members">成员服务器</string>
+    <string name="dns_group_mode">选择策略</string>
+    <string name="dns_group_stable">稳定（粘滞）</string>
+    <string name="dns_group_fastest">最快</string>
+    <string name="dns_group_parallel">并发</string>
+    <string name="dns_group_error_ttl">错误记录 TTL</string>
+    <string name="dns_group_win_ttl">获胜记录 TTL</string>
+    <string name="dns_group_error_ttl_hint">默认 2m</string>
+    <string name="dns_group_win_ttl_hint">默认 5m，仅 fastest 模式</string>
+    <string name="dns_group_hint">将多个解析器合并为一个名字，单个服务器宕机时不会阻断解析。不要在同一组里混用内网与公网 DNS。</string>
     <string name="dns_delete">删除</string>
 
     <!-- fakeip -->
@@ -140,6 +176,8 @@
     <string name="fakeip_inet6_range">IPv6 地址池</string>
     <string name="fakeip_filter">过滤域名（后缀，逗号分隔）</string>
     <string name="fakeip_filter_hint">留空 = 重写所有域名</string>
+    <string name="fakeip_filter_exclude">过滤列表为排除名单</string>
+    <string name="fakeip_filter_exclude_desc">名单内的域名跳过 Fake-IP，走正常解析。</string>
     <string name="fakeip_default_range4">198.18.0.0/15（默认）</string>
     <string name="fakeip_default_range6">fc00::/18（默认）</string>
 
