@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -60,6 +59,7 @@ fun HomeScreen(
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
@@ -68,23 +68,14 @@ fun HomeScreen(
             fontWeight = FontWeight.SemiBold,
         )
 
-        StatusCard(
-            state = boxState,
-            runtime = runtime,
-            selectedNode = appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
-                ?.name?.ifBlank { appState.selectedOutbound } ?: appState.selectedOutbound,
-        )
-
-        ClashModeRow(
-            current = appState.clashMode,
-            onChange = { mode -> store.update { it.copy(clashMode = mode) } },
-        )
-
-        ConnectButton(
+        // Betttbox-style hero control: one large target dominates the screen,
+        // with the status and action label inside it. Everything else on the
+        // tab is supporting information.
+        PowerDial(
             state = boxState,
             onConnect = {
                 val activityRef = activity
-                val intent = controller.prepareVpn(activityRef ?: return@ConnectButton)
+                val intent = controller.prepareVpn(activityRef ?: return@PowerDial)
                 if (intent != null) {
                     onRequestVpnConsent(intent)
                 } else {
@@ -92,6 +83,26 @@ fun HomeScreen(
                 }
             },
             onDisconnect = { controller.stop() },
+        )
+
+        Text(
+            text = if (boxState is BoxState.Connected)
+                stringResource(
+                    R.string.home_via_node,
+                    appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
+                        ?.name?.ifBlank { appState.selectedOutbound }
+                        ?: appState.selectedOutbound.ifBlank { "proxy" },
+                )
+            else statusHeadline(boxState),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        StatusCard(state = boxState, runtime = runtime)
+
+        ClashModeRow(
+            current = appState.clashMode,
+            onChange = { mode -> store.update { it.copy(clashMode = mode) } },
         )
 
         NodePickerPreview(
@@ -103,10 +114,70 @@ fun HomeScreen(
 }
 
 @Composable
+private fun statusHeadline(state: BoxState): String = when (state) {
+    BoxState.Idle -> stringResource(R.string.home_status_idle)
+    BoxState.Starting -> stringResource(R.string.home_status_starting)
+    is BoxState.Connected -> stringResource(R.string.home_status_connected)
+    BoxState.Stopping -> stringResource(R.string.home_status_stopping)
+    is BoxState.Error -> stringResource(R.string.home_status_error, state.message)
+}
+
+/**
+ * Large circular connect/disconnect control. The ring colour tracks the
+ * engine state so the current state reads at a glance without text.
+ */
+@Composable
+private fun PowerDial(
+    state: BoxState,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val connected = state is BoxState.Connected
+    val busy = state is BoxState.Starting || state is BoxState.Stopping
+    val ringColor = when (state) {
+        is BoxState.Connected -> MaterialTheme.colorScheme.primary
+        is BoxState.Error -> MaterialTheme.colorScheme.error
+        BoxState.Starting, BoxState.Stopping -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val label = when {
+        connected -> stringResource(R.string.home_disconnect)
+        busy -> stringResource(R.string.home_working)
+        else -> stringResource(R.string.home_connect)
+    }
+    Card(
+        onClick = { if (connected) onDisconnect() else onConnect() },
+        enabled = !busy,
+        shape = androidx.compose.foundation.shape.CircleShape,
+        modifier = Modifier.size(180.dp),
+        colors = CardDefaults.cardColors(containerColor = ringColor),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                Icons.Filled.PowerSettingsNew,
+                contentDescription = label,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+}
+
+@Composable
 private fun StatusCard(
     state: BoxState,
     runtime: BoxRuntimeSnapshot,
-    selectedNode: String,
 ) {
     val statusLabel = when (state) {
         BoxState.Idle -> stringResource(R.string.home_status_idle)
@@ -123,13 +194,6 @@ private fun StatusCard(
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AssistChip(onClick = {}, label = { Text(statusLabel) })
-                Spacer(Modifier.size(12.dp))
-                Text(
-                    text = if (state is BoxState.Connected)
-                        stringResource(R.string.home_via_node, selectedNode.ifBlank { "proxy" })
-                    else "—",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -202,32 +266,6 @@ private fun ClashModeRow(
                 },
             )
         }
-    }
-}
-
-@Composable
-private fun ConnectButton(
-    state: BoxState,
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-) {
-    val connected = state is BoxState.Connected
-    val busy = state is BoxState.Starting || state is BoxState.Stopping
-    ElevatedButton(
-        onClick = { if (connected) onDisconnect() else onConnect() },
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth().height(56.dp),
-    ) {
-        Icon(Icons.Filled.PowerSettingsNew, contentDescription = null)
-        Spacer(Modifier.size(8.dp))
-        Text(
-            text = when {
-                connected -> stringResource(R.string.home_disconnect)
-                busy -> stringResource(R.string.home_working)
-                else -> stringResource(R.string.home_connect)
-            },
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 

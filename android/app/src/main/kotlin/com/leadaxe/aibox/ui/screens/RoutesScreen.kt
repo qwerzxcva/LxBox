@@ -223,13 +223,16 @@ private fun RuleCard(
     onToggleEnabled: (Boolean) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            // One line per rule, Karing-style: a compact matcher summary on
+            // top, the action underneath. Long matcher lists are counted
+            // rather than printed so the row height stays predictable.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = rule.name.ifBlank { rule.id.take(8) },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    text = ruleLine(rule, state),
+                    style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f),
+                    maxLines = 2,
                 )
                 FilterChip(
                     selected = rule.enabled,
@@ -243,34 +246,54 @@ private fun RuleCard(
                     Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
                 }
             }
-            val summary = when (rule.kind) {
-                RouteRule.KindJson -> stringResource(R.string.routes_json_hint, rule.json.length)
-                else -> buildList {
-                    if (rule.domain.isNotEmpty()) add("domain ${rule.domain.size}")
-                    if (rule.domainSuffix.isNotEmpty()) add("suffix ${rule.domainSuffix.size}")
-                    if (rule.domainKeyword.isNotEmpty()) add("keyword ${rule.domainKeyword.size}")
-                    if (rule.domainRegex.isNotEmpty()) add("regex ${rule.domainRegex.size}")
-                    if (rule.ipCidr.isNotEmpty()) add("cidr ${rule.ipCidr.size}")
-                    if (rule.port.isNotEmpty()) add("port ${rule.port.size}")
-                    if (rule.portRange.isNotEmpty()) add("range ${rule.portRange.size}")
-                    if (rule.network.isNotEmpty()) add("net ${rule.network.size}")
-                    if (rule.protocol.isNotEmpty()) add("proto ${rule.protocol.size}")
-                    if (rule.packageName.isNotEmpty()) add("pkg ${rule.packageName.size}")
-                    if (rule.ruleSet.isNotEmpty()) add("rule_set ${rule.ruleSet.size}")
-                    if (rule.isLogical) add(rule.logicalMode)
-                }.joinToString(" · ").ifBlank { stringResource(R.string.routes_empty_matcher) }
-            }
-            Text(summary, style = MaterialTheme.typography.bodySmall)
-            val target = when (rule.action) {
-                RouteRule.RuleActionReject -> stringResource(R.string.routes_action_reject)
-                RouteRule.RuleActionResolve -> stringResource(R.string.routes_action_resolve)
-                else -> outboundLabel(rule.outbound, state)
-            }
-            Text(
-                "${rule.action} → $target" + if (rule.invert) " (invert)" else "",
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
+    }
+}
+
+/**
+ * Renders one rule as a single readable line: the matcher first (with the
+ * first few literal values shown), then an arrow and the action target.
+ */
+@Composable
+private fun ruleLine(rule: RouteRule, state: AppState): String {
+    val matcher = when (rule.kind) {
+        RouteRule.KindJson -> "JSON"
+        else -> {
+            val parts = buildList {
+                appendMatcher(this, "domain", rule.domain)
+                appendMatcher(this, "suffix", rule.domainSuffix)
+                appendMatcher(this, "keyword", rule.domainKeyword)
+                appendMatcher(this, "regex", rule.domainRegex)
+                appendMatcher(this, "cidr", rule.ipCidr)
+                appendMatcher(this, "port", rule.port)
+                appendMatcher(this, "rule_set", rule.ruleSet)
+                appendMatcher(this, "protocol", rule.protocol)
+                appendMatcher(this, "package", rule.packageName)
+                if (rule.isLogical) {
+                    add(rule.logicalMode + "(" + rule.rules.size + ")")
+                }
+            }
+            parts.joinToString(" ").ifBlank { "—" }
+        }
+    }
+    val target = when (rule.action) {
+        RouteRule.RuleActionReject -> stringResource(R.string.routes_action_reject)
+        RouteRule.RuleActionResolve -> stringResource(R.string.routes_action_resolve)
+        else -> outboundLabel(rule.outbound, state)
+    }
+    val prefix = if (rule.invert) "!" else ""
+    return "$prefix$matcher → $target"
+}
+
+/**
+ * Appends `label:first-values` for a matcher list, collapsing long lists to
+ * `label:n items` so a single line stays a single line.
+ */
+private fun appendMatcher(out: MutableList<String>, label: String, values: List<String>) {
+    if (values.isEmpty()) return
+    out += when {
+        values.size <= 2 -> "$label:${values.joinToString(",")}"
+        else -> "$label:${values.size}"
     }
 }
 
