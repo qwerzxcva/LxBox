@@ -55,6 +55,10 @@ fun FormBody(content: @Composable ColumnScope.() -> Unit) {
  * Comma-separated list field. The existing rule editors store list-shaped
  * matchers as `List<String>` — this widget accepts "a, b, c" text and
  * hands the parsed list back to the caller.
+ *
+ * [supporting] renders as a hint line under the field; the rule editor
+ * uses it to spell out what each matcher actually matches, which is the
+ * difference between a field someone uses and one they scroll past.
  */
 @Composable
 fun ListField(
@@ -62,19 +66,30 @@ fun ListField(
     values: List<String>,
     onValuesChange: (List<String>) -> Unit,
     placeholder: String = "",
+    supporting: String = "",
     modifier: Modifier = Modifier,
 ) {
     val text = values.joinToString(", ")
-    OutlinedTextField(
-        value = text,
-        onValueChange = { raw ->
-            onValuesChange(raw.split(',').map { it.trim() }.filter { it.isNotEmpty() })
-        },
-        label = { Text(label) },
-        placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
-        singleLine = true,
-        modifier = modifier.fillMaxWidth(),
-    )
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { raw ->
+                onValuesChange(raw.split(',').map { it.trim() }.filter { it.isNotEmpty() })
+            },
+            label = { Text(label) },
+            placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (supporting.isNotEmpty()) {
+            Text(
+                supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+            )
+        }
+    }
 }
 
 /** Outlined text field bound to a String value with a label. */
@@ -84,16 +99,27 @@ fun StringField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String = "",
+    supporting: String = "",
     modifier: Modifier = Modifier,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
-        singleLine = true,
-        modifier = modifier.fillMaxWidth(),
-    )
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (supporting.isNotEmpty()) {
+            Text(
+                supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+            )
+        }
+    }
 }
 
 /** Single-choice chip row: pick exactly one value. */

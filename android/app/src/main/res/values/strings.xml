@@ -84,7 +84,8 @@
     <string name="groups_interval_hint">e.g. 3m</string>
     <string name="groups_tolerance">Latency tolerance (ms)</string>
     <string name="groups_mode">Balance mode</string>
-    <string name="groups_mode_least">Least latency</string>
+    <string name="groups_mode_least">Lowest latency</string>
+    <string name="groups_mode_fallback">Fallback (sticky)</string>
     <string name="groups_mode_rr">Round robin</string>
     <string name="groups_pool">Pool size</string>
     <string name="groups_pool_tolerance">Pool tolerance (ms)</string>

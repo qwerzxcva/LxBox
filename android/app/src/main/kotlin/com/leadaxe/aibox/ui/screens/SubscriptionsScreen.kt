@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,7 +17,10 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,8 +56,11 @@ import com.leadaxe.aibox.app.OutboundProfile
 import com.leadaxe.aibox.app.Subscription
 import com.leadaxe.aibox.engine.share.ShareLinkParser
 import com.leadaxe.aibox.engine.share.SubscriptionFetcher
+import com.leadaxe.aibox.engine.vpn.BoxEngine
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SubscriptionsScreen() {
@@ -65,8 +72,11 @@ fun SubscriptionsScreen() {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var addDialog by remember { mutableStateOf(false) }
+    var addDialogFolderId by remember { mutableStateOf<String?>(null) }
     var pasteDialog by remember { mutableStateOf(false) }
     var creatingFolder by remember { mutableStateOf(false) }
+    var nodesExpanded by remember { mutableStateOf(false) }
+    var pingResults by remember { mutableStateOf<Map<String, PingState>>(emptyMap()) }
     var editingGroup: com.leadaxe.aibox.app.OutboundGroup? by remember { mutableStateOf(null) }
     var creatingGroup by remember { mutableStateOf(false) }
 
@@ -134,6 +144,18 @@ fun SubscriptionsScreen() {
                                 )
                             }
                             IconButton(onClick = {
+                                // Open the add dialog pre-filed into this folder:
+                                // a folder card is where a user naturally wants
+                                // to put a new subscription.
+                                addDialogFolderId = folder.id
+                                addDialog = true
+                            }) {
+                                Icon(
+                                    Icons.Outlined.Add,
+                                    contentDescription = stringResource(R.string.subs_folder_add_url),
+                                )
+                            }
+                            IconButton(onClick = {
                                 store.update { st ->
                                     st.copy(
                                         subscriptionGroups = st.subscriptionGroups.filterNot { it.id == folder.id },
@@ -181,11 +203,67 @@ fun SubscriptionsScreen() {
                 )
             }
 
-            item { SectionHeader(stringResource(R.string.subs_section_nodes, state.outbounds.size)) }
-            items(state.outbounds, key = { it.id }) { node ->
-                NodeRow(node = node, selected = node.tag == state.selectedOutbound, onSelect = { selected ->
-                    store.update { it.copy(selectedOutbound = selected) }
-                })
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionHeader(
+                        stringResource(R.string.subs_section_nodes, state.outbounds.size),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (state.outbounds.isNotEmpty()) {
+                        if (nodesExpanded) {
+                            TextButton(onClick = {
+                                // Sequential probes: the kernel reports each
+                                // result independently, but fanning out one
+                                // at a time keeps the list readable and
+                                // avoids a burst of connections.
+                                scope.launch {
+                                    for (node in state.outbounds) {
+                                        pingResults = pingResults + (node.id to PingState.Running)
+                                        val result = withContext(Dispatchers.IO) {
+                                            BoxEngine.shared()?.pingOutbound(node.tag, state.speedTestUrl)
+                                        }
+                                        pingResults = pingResults + (node.id to when {
+                                            result == null -> PingState.Failed("engine not running")
+                                            result.isSuccess -> PingState.Ok(result.getOrThrow())
+                                            else -> PingState.Failed(result.exceptionOrNull()?.message ?: "failed")
+                                        })
+                                    }
+                                }
+                            }) { Text(stringResource(R.string.subs_ping_all)) }
+                        }
+                        IconButton(onClick = { nodesExpanded = !nodesExpanded }) {
+                            Icon(
+                                if (nodesExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                contentDescription = stringResource(
+                                    if (nodesExpanded) R.string.subs_nodes_collapse else R.string.subs_nodes_expand,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            if (nodesExpanded) {
+                items(state.outbounds, key = { it.id }) { node ->
+                    NodeRow(
+                        node = node,
+                        selected = node.tag == state.selectedOutbound,
+                        pingState = pingResults[node.id],
+                        onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                        onPing = {
+                            scope.launch {
+                                pingResults = pingResults + (node.id to PingState.Running)
+                                val result = withContext(Dispatchers.IO) {
+                                    BoxEngine.shared()?.pingOutbound(node.tag, state.speedTestUrl)
+                                }
+                                pingResults = pingResults + (node.id to when {
+                                    result == null -> PingState.Failed("engine not running")
+                                    result.isSuccess -> PingState.Ok(result.getOrThrow())
+                                    else -> PingState.Failed(result.exceptionOrNull()?.message ?: "failed")
+                                })
+                            }
+                        },
+                    )
+                }
             }
 
             item {
@@ -221,7 +299,11 @@ fun SubscriptionsScreen() {
     if (addDialog) {
         AddSubscriptionDialog(
             state = state,
-            onDismiss = { addDialog = false },
+            presetGroupId = addDialogFolderId,
+            onDismiss = {
+                addDialog = false
+                addDialogFolderId = null
+            },
             onAdd = { sub ->
                 store.update { st ->
                     st.copy(subscriptions = st.subscriptions + sub)
@@ -341,7 +423,9 @@ private fun SubscriptionRow(
 private fun NodeRow(
     node: OutboundProfile,
     selected: Boolean,
+    pingState: PingState?,
     onSelect: (String) -> Unit,
+    onPing: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -354,7 +438,19 @@ private fun NodeRow(
             Checkbox(checked = selected, onCheckedChange = { onSelect(node.tag) })
             Column(modifier = Modifier.weight(1f)) {
                 Text(node.name.ifBlank { node.tag }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(node.type, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(node.type, style = MaterialTheme.typography.bodySmall)
+                    PingBadge(pingState)
+                }
+            }
+            IconButton(
+                onClick = onPing,
+                enabled = pingState !is PingState.Running,
+            ) {
+                Icon(
+                    Icons.Outlined.Speed,
+                    contentDescription = stringResource(R.string.subs_ping),
+                )
             }
             FilterChip(
                 selected = selected,
@@ -369,9 +465,38 @@ private fun NodeRow(
     }
 }
 
+/** Outcome of a latency probe against one outbound. */
+private sealed interface PingState {
+    data object Running : PingState
+    data class Ok(val delayMillis: Int) : PingState
+    data class Failed(val reason: String) : PingState
+}
+
+/** Small inline latency readout shown next to the node type. */
+@Composable
+private fun PingBadge(state: PingState?) {
+    if (state == null) return
+    val text = when (state) {
+        PingState.Running -> stringResource(R.string.subs_ping_running)
+        is PingState.Ok -> stringResource(R.string.subs_ping_result, state.delayMillis)
+        is PingState.Failed -> stringResource(R.string.subs_ping_failed)
+    }
+    val color = when (state) {
+        is PingState.Ok -> MaterialTheme.colorScheme.primary
+        is PingState.Failed -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        text = "  ·  $text",
+        style = MaterialTheme.typography.bodySmall,
+        color = color,
+    )
+}
+
 @Composable
 private fun AddSubscriptionDialog(
     state: com.leadaxe.aibox.app.AppState,
+    presetGroupId: String? = null,
     onDismiss: () -> Unit,
     onAdd: (com.leadaxe.aibox.app.Subscription) -> Unit,
 ) {
@@ -380,7 +505,11 @@ private fun AddSubscriptionDialog(
     var fetchVia by remember { mutableStateOf(com.leadaxe.aibox.app.FetchViaAuto) }
     var resolver by remember { mutableStateOf("") }
     var deduplicate by remember { mutableStateOf(true) }
-    var groupId by remember { mutableStateOf<String?>(null) }
+    var userAgent by remember { mutableStateOf(com.leadaxe.aibox.app.UserAgentSingBox) }
+    var tlsFingerprint by remember { mutableStateOf(com.leadaxe.aibox.app.FingerprintChrome) }
+    var maskHwid by remember { mutableStateOf(true) }
+    // Pre-filed when the user opened the dialog from a folder card.
+    var groupId by remember(presetGroupId) { mutableStateOf(presetGroupId) }
 
     // Only DoH-capable servers can be used for the pinned-resolver path.
     val resolverOptions = remember(state.dnsServers) {
@@ -439,6 +568,50 @@ private fun AddSubscriptionDialog(
                     checked = deduplicate,
                     onCheckedChange = { deduplicate = it },
                 )
+                // ----- header masking -----
+                // Some panels serve a different (or empty) node list per
+                // client, so the fetch can impersonate a mainstream client.
+                Text(
+                    stringResource(R.string.subs_http_masking),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_user_agent),
+                    options = com.leadaxe.aibox.app.UserAgentOptions,
+                    selected = userAgent,
+                    onSelect = { userAgent = it },
+                    display = { choice ->
+                        when (choice) {
+                            com.leadaxe.aibox.app.UserAgentMihomo -> stringResource(R.string.ua_mihomo)
+                            com.leadaxe.aibox.app.UserAgentFlClash -> stringResource(R.string.ua_flclash)
+                            com.leadaxe.aibox.app.UserAgentV2rayNG -> stringResource(R.string.ua_v2rayng)
+                            com.leadaxe.aibox.app.UserAgentClashMeta -> stringResource(R.string.ua_clashmeta)
+                            else -> stringResource(R.string.ua_singbox)
+                        }
+                    },
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_tls_fingerprint),
+                    options = com.leadaxe.aibox.app.FingerprintOptions,
+                    selected = tlsFingerprint,
+                    onSelect = { tlsFingerprint = it },
+                    display = { fp ->
+                        when (fp) {
+                            com.leadaxe.aibox.app.FingerprintChrome -> stringResource(R.string.fp_chrome)
+                            com.leadaxe.aibox.app.FingerprintIOS -> stringResource(R.string.fp_ios)
+                            com.leadaxe.aibox.app.FingerprintFirefox -> stringResource(R.string.fp_firefox)
+                            com.leadaxe.aibox.app.FingerprintEdge -> stringResource(R.string.fp_edge)
+                            else -> stringResource(R.string.fp_auto)
+                        }
+                    },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.subs_mask_hwid),
+                    supporting = stringResource(R.string.subs_mask_hwid_desc),
+                    checked = maskHwid,
+                    onCheckedChange = { maskHwid = it },
+                )
                 if (state.subscriptionGroups.isNotEmpty()) {
                     SingleChoiceChips(
                         label = stringResource(R.string.subs_group),
@@ -465,6 +638,9 @@ private fun AddSubscriptionDialog(
                             fetchVia = fetchVia,
                             dnsServer = resolver,
                             deduplicate = deduplicate,
+                            userAgent = userAgent,
+                            tlsFingerprint = tlsFingerprint,
+                            maskHwid = maskHwid,
                         ),
                     )
                 },
@@ -556,6 +732,8 @@ private fun GroupRow(
                     group.kind != com.leadaxe.aibox.app.OutboundGroup.KindUrlTest -> ""
                     group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeRoundRobin ->
                         " · " + stringResource(R.string.groups_mode_rr)
+                    group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeFallback ->
+                        " · " + stringResource(R.string.groups_mode_fallback)
                     else -> " · " + stringResource(R.string.groups_mode_least)
                 }
                 Text(
@@ -675,6 +853,8 @@ private fun GroupEditor(
                         display = {
                             if (it == com.leadaxe.aibox.app.OutboundGroup.ModeRoundRobin)
                                 stringResource(R.string.groups_mode_rr)
+                            else if (it == com.leadaxe.aibox.app.OutboundGroup.ModeFallback)
+                                stringResource(R.string.groups_mode_fallback)
                             else stringResource(R.string.groups_mode_least)
                         },
                     )

@@ -182,6 +182,10 @@ class BoxEngine internal constructor(
     /** Re-derived per-start so each VPN session has its own client + secret. */
     private var currentSecret: String = ""
 
+    /** Live command channel; kept so the UI can request a latency probe. */
+    @Volatile
+    private var client: io.nekohasekai.libbox.CommandClient? = null
+
     private fun attachClient() {
         // The CommandServer is the kernel-facing IPC, but it doesn't push
         // status to its handler — status flows the other way, from a
@@ -192,9 +196,24 @@ class BoxEngine internal constructor(
             statusInterval = RUNTIME_PUSH_INTERVAL_MS
             addCommand(io.nekohasekai.libbox.Libbox.CommandStatus)
         }
-        val client = io.nekohasekai.libbox.CommandClient(this, opts)
-        runCatching { client.connect() }
+        val c = io.nekohasekai.libbox.CommandClient(this, opts)
+        runCatching { c.connect() }
             .onFailure { Log.w(TAG, "status client connect failed", it) }
+        client = c
+    }
+
+    /**
+     * Measures the latency of one outbound through the running kernel.
+     * Blocks for up to [timeoutMillis]; call from a background dispatcher.
+     */
+    fun pingOutbound(tag: String, url: String, timeoutMillis: Int = 3000): Result<Int> {
+        val c = client ?: return Result.failure(IllegalStateException("engine not running"))
+        return runCatching {
+            val result = c.urlTestOutbound(tag, url, timeoutMillis)
+            val error = result.error
+            if (!error.isNullOrEmpty()) error(error)
+            result.delay
+        }
     }
 
     // ----------------- CommandClientHandler callbacks -----------------
@@ -256,6 +275,8 @@ class BoxEngine internal constructor(
         "lx-${startSequence.incrementAndGet()}-${System.nanoTime()}"
 
     private fun safeCloseServer() {
+        runCatching { client?.disconnect() }
+        client = null
         runCatching { server?.close() }
         server = null
     }

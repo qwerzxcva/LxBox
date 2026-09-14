@@ -275,14 +275,27 @@ private fun RuleCard(
 }
 
 @Composable
-private fun outboundLabel(tag: String, state: AppState): String = when (tag) {
-    "", ProxySelectorTag -> stringResource(R.string.dns_detour_proxy)
-    DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
-    else -> {
-        val node = state.outbounds.firstOrNull { it.tag == tag }
-        node?.name?.ifBlank { tag } ?: tag
+private fun outboundDisplayLabel(tag: String, state: AppState): String {
+    return when (tag) {
+        "", ProxySelectorTag -> stringResource(R.string.dns_detour_proxy)
+        DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+        else -> {
+            // Groups first: their tags are checked before node tags so a rule
+            // pointing at a group shows the group's display name.
+            val group = state.outboundGroups.firstOrNull { it.tag == tag }
+            if (group != null) {
+                group.name.ifBlank { tag }
+            } else {
+                val node = state.outbounds.firstOrNull { it.tag == tag }
+                node?.name?.ifBlank { tag } ?: tag
+            }
+        }
     }
 }
+
+/** Route-rule card summary; same labels as the editor picker. */
+@Composable
+private fun outboundLabel(tag: String, state: AppState): String = outboundDisplayLabel(tag, state)
 
 @Composable
 private fun RuleEditor(
@@ -313,6 +326,10 @@ private fun RuleEditor(
     var sourceIpIsPrivate by remember { mutableStateOf(initial?.sourceIpIsPrivate ?: false) }
     var ipIsPrivate by remember { mutableStateOf(initial?.ipIsPrivate ?: false) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
+    var structureType by remember { mutableStateOf(initial?.type ?: RouteRule.RuleTypeDefault) }
+    var logicalMode by remember { mutableStateOf(initial?.logicalMode ?: RouteRule.LogicalAnd) }
+    var subRules by remember { mutableStateOf(initial?.rules ?: emptyList()) }
+    var editingSubRule by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -335,50 +352,132 @@ private fun RuleEditor(
                     },
                 )
                 if (kind == RouteRule.KindInline) {
+                    // ----- structure: default vs logical -----
+                    // This is where AND / OR lives: a logical rule carries
+                    // sub-rules and earns the combination mode; a default
+                    // rule matches its own fields directly. The sub-rule
+                    // list only appears in logical mode, which keeps the
+                    // common case (one matcher) to one screen full of
+                    // fields instead of a tree editor.
+                    SingleChoiceChips(
+                        label = stringResource(R.string.routes_rule_structure),
+                        options = listOf(RouteRule.RuleTypeDefault, RouteRule.RuleTypeLogical),
+                        selected = structureType,
+                        onSelect = { structureType = it },
+                        display = {
+                            if (it == RouteRule.RuleTypeLogical)
+                                stringResource(R.string.routes_type_logical)
+                            else stringResource(R.string.routes_type_default)
+                        },
+                    )
+                    Text(
+                        stringResource(R.string.routes_structure_help),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (structureType == RouteRule.RuleTypeLogical) {
+                        SingleChoiceChips(
+                            label = stringResource(R.string.routes_logical_mode),
+                            options = listOf(RouteRule.LogicalAnd, RouteRule.LogicalOr),
+                            selected = logicalMode,
+                            onSelect = { logicalMode = it },
+                            display = {
+                                if (it == RouteRule.LogicalOr)
+                                    stringResource(R.string.routes_logical_or)
+                                else stringResource(R.string.routes_logical_and)
+                            },
+                        )
+                        Text(
+                            stringResource(R.string.routes_rule_sub_rules, subRules.size),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        subRules.forEachIndexed { index, sub ->
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            sub.name.ifBlank { sub.id.take(8) },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        Text(
+                                            subRuleSummary(sub),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            subRules = subRules.toMutableList().also { it.removeAt(index) }
+                                        },
+                                    ) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
+                                    }
+                                }
+                            }
+                        }
+                        FilledTonalButton(onClick = { editingSubRule = true }) {
+                            Icon(Icons.Outlined.Add, contentDescription = null)
+                            Text(stringResource(R.string.routes_add_sub_rule))
+                        }
+                    }
+                }
+                if (kind == RouteRule.KindInline && structureType == RouteRule.RuleTypeDefault) {
                     ListField(
                         label = stringResource(R.string.routes_field_domain),
                         values = domain,
                         onValuesChange = { domain = it },
                         placeholder = "example.com",
+                        supporting = stringResource(R.string.hint_domain),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_domain_suffix),
                         values = domainSuffix,
                         onValuesChange = { domainSuffix = it },
                         placeholder = "google.com, openai.com",
+                        supporting = stringResource(R.string.hint_domain_suffix),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_domain_keyword),
                         values = domainKeyword,
                         onValuesChange = { domainKeyword = it },
+                        supporting = stringResource(R.string.hint_domain_keyword),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_domain_regex),
                         values = domainRegex,
                         onValuesChange = { domainRegex = it },
+                        supporting = stringResource(R.string.hint_domain_regex),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_ip_cidr),
                         values = ipCidr,
                         onValuesChange = { ipCidr = it },
                         placeholder = "8.8.8.8/32",
+                        supporting = stringResource(R.string.hint_ip_cidr),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_port),
                         values = port,
                         onValuesChange = { port = it },
                         placeholder = "443, 8443",
+                        supporting = stringResource(R.string.hint_port),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_source_port),
                         values = sourcePort,
                         onValuesChange = { sourcePort = it },
+                        supporting = stringResource(R.string.hint_source_port),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_port_range),
                         values = portRange,
                         onValuesChange = { portRange = it },
                         placeholder = "1000:2000",
+                        supporting = stringResource(R.string.hint_port_range),
                     )
                     MultiChoiceChips(
                         label = stringResource(R.string.routes_field_network),
@@ -391,16 +490,19 @@ private fun RuleEditor(
                         values = protocol,
                         onValuesChange = { protocol = it },
                         placeholder = "http, tls, quic",
+                        supporting = stringResource(R.string.hint_protocol),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_package),
                         values = packageName,
                         onValuesChange = { packageName = it },
+                        supporting = stringResource(R.string.hint_package_name),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_rule_set),
                         values = ruleSet,
                         onValuesChange = { ruleSet = it },
+                        supporting = stringResource(R.string.hint_rule_set),
                     )
                     SwitchRow(
                         label = stringResource(R.string.routes_source_private),
@@ -434,22 +536,39 @@ private fun RuleEditor(
                         }
                     },
                 )
+                Text(
+                    stringResource(R.string.hint_action),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (action == RouteRule.RuleActionRoute) {
-                    val outboundOptions = remember(state.outbounds) {
-                        listOf(ProxySelectorTag, DirectOutboundTag) + state.outbounds.map { it.tag }
+                    val outboundOptions = remember(state.outbounds, state.outboundGroups) {
+                        listOf(ProxySelectorTag, DirectOutboundTag) +
+                            state.outboundGroups.filter { it.enabled }.map { it.tag } +
+                            state.outbounds.map { it.tag }
                     }
                     SingleChoiceChips(
                         label = stringResource(R.string.routes_outbound),
                         options = outboundOptions,
                         selected = outbound,
                         onSelect = { outbound = it },
-                        display = { outboundLabel(it, state) },
+                        display = { outboundDisplayLabel(it, state) },
+                    )
+                    Text(
+                        stringResource(R.string.hint_outbound),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 SwitchRow(
                     label = stringResource(R.string.routes_invert),
                     checked = invert,
                     onCheckedChange = { invert = it },
+                )
+                Text(
+                    stringResource(R.string.hint_invert),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SwitchRow(
                     label = stringResource(R.string.routes_enabled),
@@ -465,6 +584,9 @@ private fun RuleEditor(
                         (initial ?: RouteRule(id = UUID.randomUUID().toString())).copy(
                             name = name,
                             kind = kind,
+                            type = structureType,
+                            logicalMode = logicalMode,
+                            rules = subRules,
                             action = action,
                             outbound = outbound,
                             invert = invert,
@@ -484,6 +606,159 @@ private fun RuleEditor(
                             sourceIpIsPrivate = sourceIpIsPrivate,
                             ipIsPrivate = ipIsPrivate,
                             json = jsonBody,
+                        ),
+                    )
+                },
+            ) { Text(stringResource(R.string.common_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
+
+    if (editingSubRule) {
+        // Sub-rules are pure matchers: no action, no outbound, no name is
+        // required. A compact copy of this editor would do, but reusing the
+        // full one keeps the field set (and its hints) identical between
+        // top-level and nested rules.
+        SubRuleEditor(
+            onDismiss = { editingSubRule = false },
+            onSave = { sub ->
+                subRules = subRules + sub
+                editingSubRule = false
+            },
+        )
+    }
+}
+
+/** One-line human summary of a sub-rule, shown in the sub-rule list. */
+private fun subRuleSummary(rule: RouteRule): String {
+    val parts = buildList {
+        if (rule.domain.isNotEmpty()) add("domain ${rule.domain.size}")
+        if (rule.domainSuffix.isNotEmpty()) add("suffix ${rule.domainSuffix.size}")
+        if (rule.domainKeyword.isNotEmpty()) add("keyword ${rule.domainKeyword.size}")
+        if (rule.domainRegex.isNotEmpty()) add("regex ${rule.domainRegex.size}")
+        if (rule.ipCidr.isNotEmpty()) add("cidr ${rule.ipCidr.size}")
+        if (rule.port.isNotEmpty()) add("port ${rule.port.size}")
+        if (rule.network.isNotEmpty()) add("net ${rule.network.joinToString("/")}")
+        if (rule.protocol.isNotEmpty()) add("proto ${rule.protocol.joinToString("/")}")
+        if (rule.packageName.isNotEmpty()) add("pkg ${rule.packageName.size}")
+        if (rule.ruleSet.isNotEmpty()) add("rule_set ${rule.ruleSet.size}")
+        if (rule.sourceIpIsPrivate) add("src-private")
+        if (rule.ipIsPrivate) add("dst-private")
+    }
+    return parts.joinToString(" · ")
+}
+
+/**
+ * Matcher-only editor for a logical rule's sub-rule. Deliberately smaller
+ * than [RuleEditor]: sub-rules carry no action and no outbound, so the two
+ * chips are the only structural controls.
+ */
+@Composable
+private fun SubRuleEditor(
+    onDismiss: () -> Unit,
+    onSave: (RouteRule) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var domain by remember { mutableStateOf(emptyList<String>()) }
+    var domainSuffix by remember { mutableStateOf(emptyList<String>()) }
+    var domainKeyword by remember { mutableStateOf(emptyList<String>()) }
+    var ipCidr by remember { mutableStateOf(emptyList<String>()) }
+    var port by remember { mutableStateOf(emptyList<String>()) }
+    var network by remember { mutableStateOf(emptyList<String>()) }
+    var protocol by remember { mutableStateOf(emptyList<String>()) }
+    var packageName by remember { mutableStateOf(emptyList<String>()) }
+    var ruleSet by remember { mutableStateOf(emptyList<String>()) }
+    var ipIsPrivate by remember { mutableStateOf(false) }
+    var invert by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.routes_add_sub_rule)) },
+        text = {
+            FormBody {
+                StringField(
+                    label = stringResource(R.string.routes_name),
+                    value = name,
+                    onValueChange = { name = it },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_domain_suffix),
+                    values = domainSuffix,
+                    onValuesChange = { domainSuffix = it },
+                    placeholder = "google.com, openai.com",
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_domain),
+                    values = domain,
+                    onValuesChange = { domain = it },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_domain_keyword),
+                    values = domainKeyword,
+                    onValuesChange = { domainKeyword = it },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_ip_cidr),
+                    values = ipCidr,
+                    onValuesChange = { ipCidr = it },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_port),
+                    values = port,
+                    onValuesChange = { port = it },
+                )
+                MultiChoiceChips(
+                    label = stringResource(R.string.routes_field_network),
+                    options = listOf("tcp", "udp"),
+                    selected = network,
+                    onToggle = { n -> network = if (n in network) network - n else network + n },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_protocol),
+                    values = protocol,
+                    onValuesChange = { protocol = it },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_package),
+                    values = packageName,
+                    onValuesChange = { packageName = it },
+                )
+                ListField(
+                    label = stringResource(R.string.routes_field_rule_set),
+                    values = ruleSet,
+                    onValuesChange = { ruleSet = it },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.routes_ip_private),
+                    checked = ipIsPrivate,
+                    onCheckedChange = { ipIsPrivate = it },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.routes_invert),
+                    checked = invert,
+                    onCheckedChange = { invert = it },
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        RouteRule(
+                            id = UUID.randomUUID().toString(),
+                            name = name,
+                            type = RouteRule.RuleTypeDefault,
+                            domain = domain,
+                            domainSuffix = domainSuffix,
+                            domainKeyword = domainKeyword,
+                            ipCidr = ipCidr,
+                            port = port,
+                            network = network,
+                            protocol = protocol,
+                            packageName = packageName,
+                            ruleSet = ruleSet,
+                            ipIsPrivate = ipIsPrivate,
+                            invert = invert,
                         ),
                     )
                 },

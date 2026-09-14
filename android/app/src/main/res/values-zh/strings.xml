@@ -83,6 +83,7 @@
     <string name="groups_tolerance">延迟容差（毫秒）</string>
     <string name="groups_mode">均衡模式</string>
     <string name="groups_mode_least">最低延迟</string>
+    <string name="groups_mode_fallback">降级（粘滞优先）</string>
     <string name="groups_mode_rr">轮询</string>
     <string name="groups_pool">池大小</string>
     <string name="groups_pool_tolerance">池容差（毫秒）</string>

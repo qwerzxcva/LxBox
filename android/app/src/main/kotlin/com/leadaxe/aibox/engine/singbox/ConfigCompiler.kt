@@ -14,6 +14,7 @@ import com.leadaxe.aibox.app.OutboundGroup
 import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
 import com.leadaxe.aibox.app.TunInboundTag
+import com.leadaxe.aibox.app.defaultUrlTestInterval
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -392,6 +393,12 @@ object ConfigCompiler {
      * extension keys as the standalone urltest outbound; we only emit them
      * for `round_robin`, because `least_test` is the upstream default and
      * sending it explicitly on an older core would fail the config check.
+     *
+     * [OutboundGroup.ModeFallback] is a UI-level concept: the kernel has no
+     * fallback outbound type, so it compiles to a sticky urltest — long
+     * probe interval, wide tolerance — which switches only when the current
+     * member stops answering. Emitting `mode: "fallback"` would be rejected
+     * at load time.
      */
     private fun compileOutboundGroup(group: OutboundGroup, state: AppState): JsonObject =
         buildJsonObject {
@@ -412,8 +419,19 @@ object ConfigCompiler {
                 }
                 else -> {
                     put("url", group.url.ifBlank { state.speedTestUrl })
-                    if (group.interval.isNotBlank()) put("interval", group.interval)
-                    if (group.tolerance > 0) put("tolerance", group.tolerance)
+                    val fallback = group.mode == OutboundGroup.ModeFallback
+                    val interval = group.interval.ifBlank {
+                        if (fallback) FALLBACK_PROBE_INTERVAL else defaultUrlTestInterval()
+                    }
+                    put("interval", interval)
+                    val tolerance = if (group.tolerance > 0) {
+                        group.tolerance
+                    } else if (fallback) {
+                        FALLBACK_TOLERANCE_MS
+                    } else {
+                        0
+                    }
+                    if (tolerance > 0) put("tolerance", tolerance)
                     if (group.mode == OutboundGroup.ModeRoundRobin) {
                         put("mode", group.mode)
                         putJsonObject("balancer") {
@@ -628,4 +646,8 @@ object ConfigCompiler {
 
     /** Port the box listens on for subscription fetches (loopback only). */
     const val SubscriptionFetchPort = 2080
+
+    /** Sticky-probe settings used to emulate a fallback group (see above). */
+    private const val FALLBACK_PROBE_INTERVAL = "10m"
+    private const val FALLBACK_TOLERANCE_MS = 100_000
 }

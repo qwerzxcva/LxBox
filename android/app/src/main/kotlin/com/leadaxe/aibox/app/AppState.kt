@@ -333,12 +333,29 @@ data class OutboundGroup(
         const val KindSelector = "selector"
         const val KindUrlTest = "urltest"
         const val ModeLeastTest = "least_test"
+        const val ModeFallback = "fallback"
         const val ModeRoundRobin = "round_robin"
     }
 }
 
 val OutboundGroupKinds = listOf(OutboundGroup.KindSelector, OutboundGroup.KindUrlTest)
-val OutboundGroupModes = listOf(OutboundGroup.ModeLeastTest, OutboundGroup.ModeRoundRobin)
+
+/**
+ * Balance modes for urltest groups.
+ *
+ * [OutboundGroup.ModeFallback] approximates the "use the first working
+ * node, switch only when it dies" behaviour other clients call a fallback
+ * group: the kernel keeps the current node unless the probe failure list
+ * forces a change, which a long interval plus a wide tolerance produces.
+ * sing-box has no dedicated fallback outbound type, so this compiles to a
+ * urltest group with those settings rather than pretending otherwise.
+ */
+val OutboundGroupModes = listOf(
+    OutboundGroup.ModeLeastTest,
+    OutboundGroup.ModeFallback,
+    OutboundGroup.ModeRoundRobin,
+)
+
 val StickyHashComponents = listOf("process", "domain", "source_ip", "dest_ip", "dest_port")
 
 fun defaultStickyHash(): List<String> = listOf("process", "domain")
