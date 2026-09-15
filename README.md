@@ -7,10 +7,9 @@ and a fully editable rule engine.
 
 ## Download
 
-Grab the arm64 release APK from
-[GitHub Actions artifacts](https://github.com/qwerzxcva/LxBox/actions/workflows/android.yml)
-(`aibox-android-release`, ~20 MB). ARMv8 (arm64-v8a) is the only supported
-ABI.
+Grab the ARMv8 (arm64-v8a) APK from the
+[Releases page](https://github.com/qwerzxcva/LxBox/releases) — ARMv8 is the
+only supported ABI.
 
 ## Build
 

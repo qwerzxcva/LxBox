@@ -401,8 +401,13 @@ jobs:
           {
             echo "## AIBox ${TAG}"
             echo
+            echo "ARMv8 (arm64-v8a) release build. Signed with the project upload key when available."
+            echo
             echo "- Native Android client (Kotlin/Compose) on the reF1nd sing-box core"
-            echo "- Signed arm64-v8a (ARMv8) APK, ~20 MB — the only supported ABI"
+            echo "- Protocols: vless (reality/ws/grpc/http) and shadowsocks"
+            echo "- Routing: visual rule editor (app > domain > address), compile-time merge and dedupe, per-rule address family, ECS/ECH support"
+            echo "- DNS: multi-transport servers, fake-IP pool, parallel groups, optimistic cache"
+            echo "- Extras: connection monitor, Doze deep-suspend, TLS fragmentation, battery-exemption prompt"
             echo "- sha256: \`$SHA\`"
           } > notes.md
           if ! gh release create "$TAG" "dist/$APK" --title "AIBox $TAG" --notes-file notes.md 2> /tmp/gh.err; then
