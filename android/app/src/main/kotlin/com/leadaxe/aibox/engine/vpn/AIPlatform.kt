@@ -195,7 +195,8 @@ class AIPlatform(private val context: Context) : PlatformInterface {
     ): ShellSession = throw UnsupportedOperationException("no shell sessions on Android")
 
     private fun ensureChannel(nm: NotificationManager) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && nm.getNotificationChannel(CHANNEL_ID) == null) {
+        // minSdk is 26 (O), so no version guard is needed here.
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
                 "sing-box",

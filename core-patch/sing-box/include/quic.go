@@ -2,36 +2,27 @@
 
 package include
 
+// AIBox-slim QUIC surface: the app speaks vless (whose QUIC transport is
+// transport/v2rayquic) and resolves over DoQ / DoH3. Everything else the
+// upstream `with_quic` tag drags in — hysteria, hysteria2 (including the
+// realm service), TUIC, the naive HTTP/3 listener — was removed with the
+// protocol diet; those registrations are gone rather than stubbed, so the
+// types are not even linked.
+
 import (
 	"github.com/sagernet/sing-box/adapter/inbound"
 	"github.com/sagernet/sing-box/adapter/outbound"
-	"github.com/sagernet/sing-box/adapter/service"
 	"github.com/sagernet/sing-box/dns"
 	"github.com/sagernet/sing-box/dns/transport/quic"
-	"github.com/sagernet/sing-box/protocol/hysteria"
-	"github.com/sagernet/sing-box/protocol/hysteria2"
-	_ "github.com/sagernet/sing-box/protocol/naive/quic"
-	"github.com/sagernet/sing-box/protocol/tuic"
 	_ "github.com/sagernet/sing-box/transport/v2rayquic"
 )
 
-func registerQUICInbounds(registry *inbound.Registry) {
-	hysteria.RegisterInbound(registry)
-	tuic.RegisterInbound(registry)
-	hysteria2.RegisterInbound(registry)
-}
+func registerQUICInbounds(_ *inbound.Registry) {}
 
-func registerQUICOutbounds(registry *outbound.Registry) {
-	hysteria.RegisterOutbound(registry)
-	tuic.RegisterOutbound(registry)
-	hysteria2.RegisterOutbound(registry)
-}
+func registerQUICOutbounds(_ *outbound.Registry) {}
 
 func registerQUICTransports(registry *dns.TransportRegistry) {
 	quic.RegisterTransport(registry)
 	quic.RegisterHTTP3Transport(registry)
 }
 
-func registerQUICServices(registry *service.Registry) {
-	hysteria2.RegisterRealmService(registry)
-}

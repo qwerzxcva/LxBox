@@ -2,14 +2,14 @@
 
 package libbox
 
-import (
-	"github.com/sagernet/sing-box/protocol/tailscale/tailssh"
-	"github.com/sagernet/sing/common"
-)
+// AIBox-slim: shell sessions ride the tailscale implementation upstream
+// (`protocol/tailscale/tailssh`), which this fork does not ship. The app's
+// PlatformInterface never opens one, so the entry points reject instead of
+// linking the SSH stack (a meaningful slice of the QUIC/Tailscale graph).
 
-type nativeShellSession struct {
-	shell *tailssh.Shell
-}
+import (
+	E "github.com/sagernet/sing/common/exceptions"
+)
 
 func OpenNativeShellSession(
 	shell, cwd string,
@@ -18,19 +18,7 @@ func OpenNativeShellSession(
 	rows, cols, uid, gid int32,
 	groups Int32Iterator,
 ) (ShellSession, error) {
-	sh, err := tailssh.OpenPtyShell(
-		shell,
-		iteratorToArray[string](args),
-		iteratorToArray[string](environ),
-		cwd,
-		int(uid), int(gid),
-		common.Map(iteratorToArray[int32](groups), func(g int32) int { return int(g) }),
-		uint16(rows), uint16(cols), 0, 0,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &nativeShellSession{shell: sh}, nil
+	return nil, E.New("shell sessions are not included in this build")
 }
 
 func OpenNativePipeSession(
@@ -39,40 +27,5 @@ func OpenNativePipeSession(
 	uid, gid int32,
 	groups Int32Iterator,
 ) (ShellSession, error) {
-	sh, err := tailssh.OpenSocketpairShell(
-		shell,
-		iteratorToArray[string](args),
-		iteratorToArray[string](environ),
-		cwd,
-		int(uid), int(gid),
-		common.Map(iteratorToArray[int32](groups), func(g int32) int { return int(g) }),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &nativeShellSession{shell: sh}, nil
-}
-
-func (s *nativeShellSession) MasterFD() int32 {
-	return int32(s.shell.MasterFD())
-}
-
-func (s *nativeShellSession) Resize(rows, cols int32) error {
-	return s.shell.Resize(uint16(rows), uint16(cols), 0, 0)
-}
-
-func (s *nativeShellSession) Signal(sig int32) error {
-	return s.shell.Signal(int(sig))
-}
-
-func (s *nativeShellSession) WaitExit() (int32, error) {
-	status, err := s.shell.Wait()
-	if err != nil {
-		return 0, err
-	}
-	return int32(status), nil
-}
-
-func (s *nativeShellSession) Close() error {
-	return s.shell.Close()
+	return nil, E.New("shell sessions are not included in this build")
 }
