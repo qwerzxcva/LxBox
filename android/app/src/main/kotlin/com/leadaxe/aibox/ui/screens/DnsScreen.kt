@@ -108,7 +108,19 @@ fun DnsScreen() {
             }
         }
         item { SectionHeader(stringResource(R.string.dns_section_rules, state.dnsRules.size)) }
-        items(state.dnsRules, key = { it.id }) { rule ->
+        itemsIndexedWithActions(
+            items = state.dnsRules,
+            onMove = { from, to ->
+                store.update { st ->
+                    val list = st.dnsRules.toMutableList()
+                    if (to in list.indices) {
+                        val item = list.removeAt(from)
+                        list.add(to, item)
+                    }
+                    st.copy(dnsRules = list)
+                }
+            },
+        ) { _, rule ->
             DnsRuleCard(
                 rule = rule,
                 state = state,

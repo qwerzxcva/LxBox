@@ -232,8 +232,6 @@
     <string name="settings_ipv6">IPv6</string>
     <string name="settings_ipv6_desc">Enable IPv6 routing through the tun interface.</string>
     <string name="settings_mtu">MTU: %1$d</string>
-    <string name="settings_tun_stack">TUN network stack</string>
-    <string name="settings_tun_stack_desc">system: fastest, kernel-owned TCP; gvisor: most compatible; mixed: system TCP + gvisor UDP (default)</string>
     <string name="settings_udp_over_tcp">UDP over TCP (VLESS)</string>
     <string name="settings_udp_over_tcp_desc">Carry UDP inside the VLESS TCP stream (packet-addr). Helps when the server or network blocks real UDP; needs server support (Xray/sing-box).</string>
     <string name="routes_client_subnet">EDNS client subnet (ECS)</string>
@@ -277,6 +275,13 @@
     <string name="connections_detail_process">Process</string>
     <string name="connections_detail_traffic">Traffic</string>
     <string name="common_close">Close</string>
+    <string name="settings_local_socks5">Local socks5 proxy</string>
+    <string name="settings_local_socks5_desc">Loopback socks5 inbound (127.0.0.1) — lets other apps use AIBox without the TUN. Same rules and DNS as the tunnel.</string>
+    <string name="settings_local_socks5_port">socks5 port</string>
+    <string name="settings_local_http">Local HTTP proxy</string>
+    <string name="settings_local_http_desc">Loopback HTTP proxy inbound (127.0.0.1). Same rules and DNS as the tunnel.</string>
+    <string name="settings_local_http_port">HTTP port</string>
+    <string name="common_drag_reorder">Hold and drag to reorder</string>
     <string name="settings_tun_addresses">TUN addresses</string>
     <string name="settings_tun_ipv4">TUN IPv4 address</string>
     <string name="settings_tun_ipv6">TUN IPv6 address</string>

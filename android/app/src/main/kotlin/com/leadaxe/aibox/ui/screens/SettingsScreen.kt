@@ -117,23 +117,42 @@ fun SettingsScreen() {
                     valueRange = 1280f..9000f,
                     steps = 30,
                 )
-                SingleChoiceChips(
-                    label = stringResource(R.string.settings_tun_stack),
-                    options = listOf("system", "gvisor", "mixed"),
-                    selected = state.tunStack,
-                    onSelect = { v -> store.update { it.copy(tunStack = v) } },
-                )
-                Text(
-                    stringResource(R.string.settings_tun_stack_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
                 SwitchRow(
                     label = stringResource(R.string.settings_udp_over_tcp),
                     supporting = stringResource(R.string.settings_udp_over_tcp_desc),
                     checked = state.udpOverTcp,
                     onCheckedChange = { v -> store.update { it.copy(udpOverTcp = v) } },
                 )
+                SwitchRow(
+                    label = stringResource(R.string.settings_local_socks5),
+                    supporting = stringResource(R.string.settings_local_socks5_desc),
+                    checked = state.enableLocalSocks5,
+                    onCheckedChange = { v -> store.update { it.copy(enableLocalSocks5 = v) } },
+                )
+                if (state.enableLocalSocks5) {
+                    StringField(
+                        label = stringResource(R.string.settings_local_socks5_port),
+                        value = state.localSocks5Port.toString(),
+                        onValueChange = { v ->
+                            store.update { st -> st.copy(localSocks5Port = v.filter { c -> c.isDigit() }.toIntOrNull() ?: st.localSocks5Port) }
+                        },
+                    )
+                }
+                SwitchRow(
+                    label = stringResource(R.string.settings_local_http),
+                    supporting = stringResource(R.string.settings_local_http_desc),
+                    checked = state.enableLocalHttp,
+                    onCheckedChange = { v -> store.update { it.copy(enableLocalHttp = v) } },
+                )
+                if (state.enableLocalHttp) {
+                    StringField(
+                        label = stringResource(R.string.settings_local_http_port),
+                        value = state.localHttpPort.toString(),
+                        onValueChange = { v ->
+                            store.update { st -> st.copy(localHttpPort = v.filter { c -> c.isDigit() }.toIntOrNull() ?: st.localHttpPort) }
+                        },
+                    )
+                }
                 Text(
                     stringResource(R.string.settings_tun_addresses),
                     style = MaterialTheme.typography.titleMedium,

@@ -26,6 +26,15 @@ data class AppState(
     /** Route rule `hijack-dns` for port 53 plus local DNS resolution (借鉴 AsteriskBOX). */
     val hijackDns: Boolean = true,
     val dnsStrategy: String = "",
+    /**
+     * Expose local socks5 / HTTP proxy inbounds on the loopback interface so
+     * other apps (or the same device via 127.0.0.1) can use AIBox without
+     * the TUN. Traffic rides the same rules and DNS as the tunnel.
+     */
+    val enableLocalSocks5: Boolean = false,
+    val localSocks5Port: Int = 2081,
+    val enableLocalHttp: Boolean = false,
+    val localHttpPort: Int = 2082,
     /** Extra DNS cache knobs (0 = engine default). */
     val dnsCacheCapacity: Int = 4096,
     val dnsIndependentCache: Boolean = true,

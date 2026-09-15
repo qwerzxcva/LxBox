@@ -230,8 +230,6 @@
     <string name="settings_ipv6">IPv6</string>
     <string name="settings_ipv6_desc">通过 tun 接口启用 IPv6 路由。</string>
     <string name="settings_mtu">MTU：%1$d</string>
-    <string name="settings_tun_stack">TUN 网络栈</string>
-    <string name="settings_tun_stack_desc">system：最快，内核态 TCP；gvisor：兼容性最好；mixed：system TCP + gvisor UDP（默认）</string>
     <string name="settings_udp_over_tcp">UDP 转 TCP（VLESS）</string>
     <string name="settings_udp_over_tcp_desc">把 UDP 装进 VLESS TCP 流传输（packet-addr）。服务器或网络封 UDP 时可用；需服务端支持（Xray/sing-box）。</string>
     <string name="routes_client_subnet">EDNS 客户端子网（ECS）</string>
@@ -275,6 +273,13 @@
     <string name="connections_detail_process">进程</string>
     <string name="connections_detail_traffic">流量</string>
     <string name="common_close">关闭</string>
+    <string name="settings_local_socks5">本地 socks5 代理</string>
+    <string name="settings_local_socks5_desc">本地回环 socks5 入站（127.0.0.1）— 让其它应用不走 TUN 也能使用 AIBox，规则与 DNS 与隧道一致。</string>
+    <string name="settings_local_socks5_port">socks5 端口</string>
+    <string name="settings_local_http">本地 HTTP 代理</string>
+    <string name="settings_local_http_desc">本地回环 HTTP 代理入站（127.0.0.1），规则与 DNS 与隧道一致。</string>
+    <string name="settings_local_http_port">HTTP 端口</string>
+    <string name="common_drag_reorder">长按拖动排序</string>
     <string name="settings_tun_addresses">TUN 地址</string>
     <string name="settings_tun_ipv4">TUN IPv4 地址</string>
     <string name="settings_tun_ipv6">TUN IPv6 地址</string>

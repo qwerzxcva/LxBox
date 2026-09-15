@@ -1,5 +1,7 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,9 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowDownward
-import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -33,10 +34,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.leadaxe.aibox.AIBoxApp
 import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.AppState
@@ -305,27 +309,101 @@ internal fun syncedDnsRule(
  * Renders a list with per-row move-up/move-down affordances. Order matters in
  * sing-box routing — rules are tried top to bottom — so reordering needs to
  * be one tap away, not buried in the editor.
+ *
+ * Reordering: long-press the handle icon and drag. The dragged row follows
+ * the finger; on drop, the permutation is applied via [onMove] calls.
  */
-private fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWithActions(
+internal fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWithActions(
     items: List<T>,
     onMove: (Int, Int) -> Unit,
     itemContent: @Composable (Int, T) -> Unit,
 ) {
     items.forEachIndexed { index, value ->
         item(key = "${index}-${value.hashCode()}") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) { itemContent(index, value) }
-                Column {
-                    IconButton(
-                        onClick = { onMove(index, index - 1) },
-                        enabled = index > 0,
-                    ) { Icon(Icons.Outlined.ArrowUpward, contentDescription = null) }
-                    IconButton(
-                        onClick = { onMove(index, index + 1) },
-                        enabled = index < items.lastIndex,
-                    ) { Icon(Icons.Outlined.ArrowDownward, contentDescription = null) }
+            DragDropRow(
+                index = index,
+                itemsCount = items.size,
+                onMove = onMove,
+                content = { itemContent(index, value) },
+            )
+        }
+    }
+}
+
+/**
+ * Row wrapper with a drag handle. Long-press the handle to lift the row,
+ * drag to the target position, release to drop. Uses a simple offset shift
+ * and calls [onMove] on release; the store rewrite re-renders the list in
+ * the new order.
+ */
+@Composable
+internal fun DragDropRow(
+    index: Int,
+    itemsCount: Int,
+    onMove: (Int, Int) -> Unit,
+    content: @Composable () -> Unit,
+) {
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val rowHeightPx = with(density) { 64.dp.toPx() }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer {
+                    translationX = offsetX
+                    translationY = offsetY
+                    if (dragging) {
+                        shadowElevation = 16f
+                        scaleX = 1.02f
+                        scaleY = 1.02f
+                    }
                 }
-            }
+                .zIndex(if (dragging) 1f else 0f),
+        ) { content() }
+        IconButton(
+            onClick = {},
+            modifier = Modifier
+                .pointerInput(Unit) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { dragging = true },
+                        onDragEnd = {
+                            dragging = false
+                            offsetX = 0f
+                            offsetY = 0f
+                        },
+                        onDragCancel = {
+                            dragging = false
+                            offsetX = 0f
+                            offsetY = 0f
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            offsetX += amount.x
+                            offsetY += amount.y
+                            // Once the row is dragged past a neighbour's
+                            // height, apply the move and reset the offset
+                            // so the row keeps tracking the finger.
+                            while (offsetY > rowHeightPx && index < itemsCount - 1) {
+                                onMove(index, index + 1)
+                                offsetY -= rowHeightPx
+                            }
+                            while (offsetY < -rowHeightPx && index > 0) {
+                                onMove(index, index - 1)
+                                offsetY += rowHeightPx
+                            }
+                        },
+                    )
+                },
+        ) {
+            Icon(
+                Icons.Outlined.DragHandle,
+                contentDescription = stringResource(R.string.common_drag_reorder),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

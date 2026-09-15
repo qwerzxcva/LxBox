@@ -90,6 +90,20 @@ object ConfigCompiler {
             // Subscription fetches ride the same DNS/routing rules as normal
             // traffic when the user picks "proxy" (or when auto falls back).
             add(compileLocalProxyInbound())
+            state.let {
+                if (it.enableLocalSocks5) add(buildJsonObject {
+                    put("type", "socks")
+                    put("tag", "local-socks5")
+                    put("listen", "127.0.0.1")
+                    put("listen_port", it.localSocks5Port.coerceIn(1024, 65535))
+                })
+                if (it.enableLocalHttp) add(buildJsonObject {
+                    put("type", "http")
+                    put("tag", "local-http")
+                    put("listen", "127.0.0.1")
+                    put("listen_port", it.localHttpPort.coerceIn(1024, 65535))
+                })
+            }
         }
         localProxyPort = SubscriptionFetchPort
         putJsonArray("outbounds") { compileOutbounds(state).forEach(::add) }
@@ -337,7 +351,11 @@ object ConfigCompiler {
             }
         }
         put("auto_route", true)
-        put("stack", state.tunStack.ifBlank { "mixed" })
+        // The `stack` option is deprecated in sing-box 1.15 and the legacy
+        // system/gvisor/mixed implementations are on the removal path;
+        // omitting it selects sing-tun's own Go stack (slab pools, splice,
+        // batched IO), which the upstream changelog credits with better
+        // peak performance, energy efficiency, and memory usage.
         // Power-saving: bypass the tun entirely for traffic that's already
         // on the LAN or destined for the local device. Without this every
         // LAN packet (Chromecast discovery, AirPlay, SMB, mDNS, printer
