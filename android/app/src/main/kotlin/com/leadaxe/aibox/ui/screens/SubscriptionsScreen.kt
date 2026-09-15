@@ -100,6 +100,12 @@ fun SubscriptionsScreen() {
         }
         pingResults = pingResults + mapped
     }
+    // Prune results of nodes that are gone (deleted subscription / removed
+    // node): the map must not grow with every refresh cycle.
+    androidx.compose.runtime.LaunchedEffect(state.outbounds) {
+        val live = state.outbounds.map { it.id }.toSet()
+        pingResults = pingResults.filterKeys { it in live }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(

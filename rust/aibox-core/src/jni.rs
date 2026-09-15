@@ -28,7 +28,7 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_snapshotFing
         let (out, fp) = crate::snapshot_json_and_fingerprint(&connections);
         Ok(format!("[{fp},{out}]"))
     })()
-    .unwrap_or_else(|_e| format!("[0,{{}}]"));
+    .unwrap_or_else(|_e| "[0,{}]".to_string());
 
     env.new_string(result)
         .map(|s| s.into_raw())

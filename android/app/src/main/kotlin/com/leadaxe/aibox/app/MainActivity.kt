@@ -66,6 +66,14 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onDestroy() {
+        // The relay is an app-lifetime singleton, but its receiver only has
+        // work while an activity can display the flows: stop the broadcast
+        // dispatch while nothing is attached (startListening re-registers).
+        (application as AIBoxApp).vpnRelay.stopListening()
+        super.onDestroy()
+    }
 }
 
 @Composable

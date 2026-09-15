@@ -143,10 +143,7 @@ impl RouteChecker {
         };
         let rules = rules
             .into_iter()
-            .filter_map(|item| match serde_json::from_value::<CompiledRule>(item) {
-                Ok(rule) => Some(rule),
-                Err(_) => None,
-            })
+            .filter_map(|item| serde_json::from_value::<CompiledRule>(item).ok())
             .collect();
         Ok(Self { rules })
     }
