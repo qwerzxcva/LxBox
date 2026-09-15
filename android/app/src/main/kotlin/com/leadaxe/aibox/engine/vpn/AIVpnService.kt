@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.leadaxe.aibox.AIBoxApp
+import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.AppStateStore
 import com.leadaxe.aibox.app.MainActivity
 import com.leadaxe.aibox.engine.share.SubscriptionFetcher
@@ -182,6 +183,16 @@ class AIVpnService : VpnService() {
 
     private fun handleConnect() {
         val state = store.current
+        // ECS auto: resolve the selected node's server host once, off the
+        // main thread, and stash it for the compiler. A literal IP is used
+        // as-is; a domain waits for the resolver (the compiler falls back to
+        // the global subnet when it is still empty).
+        scope.launch {
+            val node = resolveNodeEcsAddress(state)
+            if (node != null && node != state.nodeEcsAddress) {
+                store.update { it.copy(nodeEcsAddress = node) }
+            }
+        }
         val configureIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java)
@@ -273,6 +284,27 @@ class AIVpnService : VpnService() {
         }
     }
 
+    /**
+     * The server address of the outbound the tunnel will use — the ECS
+     * value the compiler presents to proxied DNS lookups. Only the direct
+     * form is resolvable here (a domain would need the tunnel itself), so
+     * domains return null and the global subnet stays in charge.
+     */
+    private fun resolveNodeEcsAddress(state: AppState): String? {
+        val selected = state.selectedOutbound.ifBlank { state.outbounds.firstOrNull()?.tag.orEmpty() }
+        if (selected.isBlank()) return null
+        val profile = state.outbounds.firstOrNull { it.tag == selected } ?: return null
+        val server = runCatching {
+            kotlinx.serialization.json.Json.parseToJsonElement(profile.config)
+                .let { it as? kotlinx.serialization.json.JsonObject }
+                ?.get("server")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        }.getOrNull() ?: return null
+        if (server.isBlank()) return null
+        return runCatching {
+            java.net.InetAddress.getByName(server).hostAddress
+        }.getOrNull()
+    }
+
     private fun parseCidr(cidr: String): ParseResult? {
         val s = cidr.trim()
         if (s.isEmpty()) return null
@@ -301,6 +333,22 @@ class AIVpnService : VpnService() {
 
     private fun observeState() {
         stateJob?.cancel()
+        // Family-policy changes come from the network monitor (IPv6 turned
+        // unusable → downgrade to IPv4). They only take effect once the
+        // running config is recompiled, so watch the state slice that
+        // matters and reload on a flip. Debounced: the monitor can fire a
+        // burst of callbacks while a network settles.
+        scope.launch {
+            var lastFallback: Boolean? = null
+            store.state.collect { st ->
+                val fallback = st.enableIpv6 && st.ipv6FallbackActive
+                if (lastFallback != null && lastFallback != fallback) {
+                    Log.d(TAG, "IPv6 fallback flipped to $fallback — reloading")
+                    handleReload()
+                }
+                lastFallback = fallback
+            }
+        }
         stateJob = scope.launch {
             engine.state.collect { st ->
                 broadcastState(st)

@@ -107,6 +107,34 @@ fun SettingsScreen() {
                     checked = state.enableIpv6,
                     onCheckedChange = { v -> store.update { it.copy(enableIpv6 = v) } },
                 )
+                if (state.enableIpv6) {
+                    SingleChoiceChips(
+                        label = stringResource(R.string.settings_ip_family),
+                        options = listOf("prefer_ipv6", "prefer_ipv4", "ipv6_only", "ipv4_only"),
+                        selected = state.ipFamilyPolicy,
+                        onSelect = { v -> store.update { it.copy(ipFamilyPolicy = v) } },
+                        display = {
+                            when (it) {
+                                "prefer_ipv4" -> stringResource(R.string.settings_prefer_ipv4)
+                                "ipv6_only" -> stringResource(R.string.settings_ipv6_only)
+                                "ipv4_only" -> stringResource(R.string.settings_ipv4_only)
+                                else -> stringResource(R.string.settings_prefer_ipv6)
+                            }
+                        },
+                    )
+                    Text(
+                        stringResource(R.string.settings_ip_family_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.ipv6FallbackActive) {
+                        Text(
+                            stringResource(R.string.settings_ipv6_fallback_active),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
                 Text(
                     stringResource(R.string.settings_mtu, state.tunMtu),
                     style = MaterialTheme.typography.titleMedium,

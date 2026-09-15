@@ -154,7 +154,19 @@ object ConfigCompiler {
         if (rules.isNotEmpty()) {
             putJsonArray("rules") { rules.forEach(::add) }
         }
-        if (state.dnsStrategy.isNotBlank()) put("strategy", state.dnsStrategy)
+        // Global family policy: the explicit DNS strategy wins; otherwise
+        // the IPv6 policy applies (with a runtime downgrade to IPv4 when the
+        // active network turned out to have no usable IPv6).
+        val globalStrategy = state.dnsStrategy.ifBlank {
+            when {
+                !state.enableIpv6 -> ""
+                state.ipv6FallbackActive -> "prefer_ipv4"
+                state.ipFamilyPolicy == "as_is" -> ""
+                state.ipFamilyPolicy.isNotBlank() -> state.ipFamilyPolicy
+                else -> "prefer_ipv6"
+            }
+        }
+        if (globalStrategy.isNotBlank()) put("strategy", globalStrategy)
         if (state.dnsClientSubnet.isNotBlank()) put("client_subnet", state.dnsClientSubnet)
         put("final", pickFinalServer(state))
         put("independent_cache", state.dnsIndependentCache)
@@ -611,7 +623,7 @@ object ConfigCompiler {
         RulePlanner.prepare(state.routeRules).forEach { rule ->
             when (rule.kind) {
                 RouteRule.KindJson -> addAll(compileJsonRule(rule))
-                else -> compileInlineRule(rule)?.let(::add)
+                else -> compileInlineRule(rule, state)?.let(::add)
             }
         }
         // Injected: sniff (visual sniffer settings) — before hijack-dns like AsteriskBOX.
@@ -661,7 +673,7 @@ object ConfigCompiler {
     }
 
     /** Compiles an inline rule (default or logical) into a sing-box route rule. */
-    private fun compileInlineRule(rule: RouteRule): JsonObject? {
+    private fun compileInlineRule(rule: RouteRule, state: AppState): JsonObject? {
         if (rule.isLogical) {
             // Logical children are pure matchers: compiled as default rules
             // stripped of their action.
@@ -674,14 +686,14 @@ object ConfigCompiler {
                 put("mode", rule.logicalMode)
                 putJsonArray("rules") { children.forEach(::add) }
                 if (rule.invert) put("invert", true)
-                putRuleAction(rule)
+                putRuleAction(rule, state)
             }
         }
         val matcher = compileInlineRuleMatcher(rule) ?: return null
         return buildJsonObject {
             for ((k, v) in matcher) put(k, v)
             if (rule.invert) put("invert", true)
-            putRuleAction(rule)
+            putRuleAction(rule, state)
         }
     }
 
@@ -698,6 +710,13 @@ object ConfigCompiler {
             putStringList("domain_regex", rule.domainRegex)
             putStringList("ip_cidr", rule.ipCidr)
             putStringList("source_ip_cidr", rule.sourceIpCidr)
+            // Per-rule address family: ipv4_only / ipv6_only as a match item
+            // (only one core value at a time), while "both" with a
+            // preference is expressed through the rule's resolve strategy.
+            when (rule.ipFamily) {
+                "ipv4_only" -> put("ip_version", 4)
+                "ipv6_only" -> put("ip_version", 6)
+            }
             putIntList("source_port", rule.sourcePort)
             putStringList("source_port_range", rule.sourcePortRange)
             putIntList("port", rule.port)
@@ -714,18 +733,56 @@ object ConfigCompiler {
         return if (obj.isEmpty()) null else obj
     }
 
-    private fun JsonObjectBuilder.putRuleAction(rule: RouteRule) {
+    private fun JsonObjectBuilder.putRuleAction(rule: RouteRule, state: AppState) {
         when (rule.action) {
             RouteRule.RuleActionReject -> put("action", "reject")
             RouteRule.RuleActionResolve -> {
                 put("action", "resolve")
-                if (rule.clientSubnet.isNotBlank()) put("client_subnet", rule.clientSubnet)
+                val subnet = effectiveClientSubnet(rule, state)
+                if (subnet.isNotBlank()) put("client_subnet", subnet)
+                // The resolve action's strategy uses the same family policy
+                // as the rule's own matcher.
+                rule.ipFamilyStrategy()?.let { put("strategy", it) }
             }
             else -> {
                 put("action", "route")
                 put("outbound", rule.outbound.ifBlank { ProxySelectorTag })
             }
         }
+    }
+
+    /**
+     * ECS resolution, in priority order: the rule's explicit subnet, then
+     * the global default, then (auto mode) the exit node's address so proxy
+     * lookups carry the exit's locality instead of the user's. Empty = no
+     * client_subnet is emitted at all.
+     */
+    private fun effectiveClientSubnet(rule: RouteRule, state: AppState): String {
+        rule.clientSubnet.trim().let { if (it.isNotBlank()) return it }
+        val global = state.dnsClientSubnet.trim()
+        if (global.isNotBlank()) return global
+        if (state.autoEcsFromNode && rule.outbound.ifBlank { ProxySelectorTag } != DirectOutboundTag) {
+            val node = state.nodeEcsAddress.trim()
+            if (node.isNotBlank()) {
+                // ECS wants a subnet: a bare address becomes a /24 (v4) or
+                // /56 (v6) so resolvers accept it.
+                return if (':' in node) "$node/56" else "$node/24"
+            }
+        }
+        return ""
+    }
+
+    /**
+     * The rule's address-family filter as a core strategy string. A rule
+     * that says nothing inherits the global policy (null = emit nothing so
+     * the global strategy applies). `both` with a preference is expressed as
+     * the corresponding prefer_* strategy.
+     */
+    private fun RouteRule.ipFamilyStrategy(): String? = when (ipFamily) {
+        "ipv4_only" -> "ipv4_only"
+        "ipv6_only" -> "ipv6_only"
+        "both" -> if (ipPreference == "prefer_ipv4") "prefer_ipv4" else "prefer_ipv6"
+        else -> null
     }
 
     // -------------------------------------------------------------- rule set

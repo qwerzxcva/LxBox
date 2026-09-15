@@ -95,6 +95,28 @@ data class AppState(
 
     // ---------------------------------------------------------------- tun
     val enableIpv6: Boolean = false,
+    /**
+     * Address-family policy applied to DNS answers and outbound dialing
+     * when [enableIpv6] is on: how the resolver picks between A and AAAA.
+     * Values match the core's domain strategy (as_is / prefer_ipv4 /
+     * prefer_ipv6 / ipv4_only / ipv6_only).
+     */
+    val ipFamilyPolicy: String = "prefer_ipv6",
+    /**
+     * Runtime downgrade: when the active network has no usable IPv6, the
+     * compiler is asked to fall back to the IPv4 preference automatically
+     * and remember why (see NetworkMonitor).
+     */
+    val ipv6FallbackActive: Boolean = false,
+    /**
+     * ECS auto-fill: when a name resolves through the proxy (a proxied DNS
+     * server or a resolve action on a proxy-routed rule) and no explicit
+     * client_subnet is set, present the exit node's address as the EDNS
+     * client subnet so geo-aware answers match the exit location.
+     */
+    val autoEcsFromNode: Boolean = true,
+    /** Node address resolved at connect time, used by [autoEcsFromNode]. */
+    val nodeEcsAddress: String = "",
     val tunMtu: Int = 9000,
     /** TUN interface IPv4 address (CIDR). */
     val tunInet4Address: String = "172.19.0.1/30",
@@ -344,6 +366,14 @@ data class RouteRule(
      * resolved addresses, not names).
      */
     val syncDnsServer: String = "",
+    /**
+     * Per-rule address-family filter. `""` = inherit the global policy;
+     * otherwise `ipv4_only` / `ipv6_only` / `both` — with `both` honouring
+     * [ipPreference] when the user wants a bias inside the rule.
+     */
+    val ipFamily: String = "",
+    /** Bias used when [ipFamily] = "both": "prefer_ipv6" or "prefer_ipv4". */
+    val ipPreference: String = "prefer_ipv6",
     // ----- json kind -----
     val json: String = "",
 ) {

@@ -79,6 +79,8 @@ fun RuleEditorPage(
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
     var logicalMode by remember { mutableStateOf(initial?.logicalMode ?: RouteRule.LogicalAnd) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
+    var ipFamily by remember { mutableStateOf(initial?.ipFamily.orEmpty()) }
+    var ipPreference by remember { mutableStateOf(initial?.ipPreference ?: "prefer_ipv6") }
 
     // ----- branches: every rule is a stack of (at least one) sub-rule card.
     // A plain rule's own conditions become sub-rule 1, so the model is
@@ -117,6 +119,7 @@ fun RuleEditorPage(
                                 name = name, kind = kind, action = action, outbound = outbound,
                                 syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
                                 enabled = enabled, logicalMode = logicalMode, jsonBody = jsonBody,
+                                ipFamily = ipFamily, ipPreference = ipPreference,
                                 branches = branches,
                             ),
                         )
@@ -295,6 +298,33 @@ fun RuleEditorPage(
                                 checked = enabled,
                                 onCheckedChange = { enabled = it },
                             )
+                            // ----- per-rule address family
+                            SingleChoiceChips(
+                                label = stringResource(R.string.routes_ip_family),
+                                options = listOf("", "both", "ipv4_only", "ipv6_only"),
+                                selected = ipFamily,
+                                onSelect = { ipFamily = it },
+                                display = {
+                                    when (it) {
+                                        "both" -> stringResource(R.string.routes_ip_family_both)
+                                        "ipv4_only" -> stringResource(R.string.routes_ip_family_v4)
+                                        "ipv6_only" -> stringResource(R.string.routes_ip_family_v6)
+                                        else -> stringResource(R.string.routes_ip_family_inherit)
+                                    }
+                                },
+                            )
+                            if (ipFamily == "both") {
+                                SingleChoiceChips(
+                                    label = stringResource(R.string.routes_ip_preference),
+                                    options = listOf("prefer_ipv6", "prefer_ipv4"),
+                                    selected = ipPreference,
+                                    onSelect = { ipPreference = it },
+                                    display = {
+                                        if (it == "prefer_ipv4") stringResource(R.string.settings_prefer_ipv4)
+                                        else stringResource(R.string.settings_prefer_ipv6)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -485,6 +515,8 @@ private fun compose(
     enabled: Boolean,
     logicalMode: String,
     jsonBody: String,
+    ipFamily: String,
+    ipPreference: String,
     branches: List<RouteRule>,
 ): RouteRule {
     val base = initial ?: RouteRule(id = UUID.randomUUID().toString())
@@ -499,6 +531,7 @@ private fun compose(
             syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
             enabled = enabled, type = RouteRule.RuleTypeDefault,
             logicalMode = logicalMode, rules = emptyList(),
+            ipFamily = ipFamily, ipPreference = ipPreference,
             domain = m.domain, domainSuffix = m.domainSuffix,
             domainKeyword = m.domainKeyword, domainRegex = m.domainRegex,
             ipCidr = m.ipCidr, port = m.port, protocol = m.protocol,
@@ -513,6 +546,7 @@ private fun compose(
         syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
         enabled = enabled, logicalMode = logicalMode,
         type = RouteRule.RuleTypeLogical,
+        ipFamily = ipFamily, ipPreference = ipPreference,
         rules = branches,
         // Container-level conditions stay empty: branches own the match.
         domain = emptyList(), domainSuffix = emptyList(), domainKeyword = emptyList(),

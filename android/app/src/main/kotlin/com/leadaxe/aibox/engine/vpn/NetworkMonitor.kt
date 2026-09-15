@@ -2,6 +2,7 @@ package com.leadaxe.aibox.engine.vpn
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -20,6 +21,12 @@ import kotlinx.coroutines.launch
  * picks up the new outbound interface on the kernel side, but the running
  * configuration holds resolved DNS, cached routes, and stale `rule_set`
  * downloads; a reload clears them.
+ *
+ * It also tracks whether the active network actually hands out a usable
+ * IPv6 address: carriers and captive-portal WiFis that advertise IPv6 but
+ * drop the traffic would otherwise leave every AAAA lookup hanging. When
+ * the answer flips, the IPv6 policy downgrade flag is written to the state
+ * so the compiler emits the IPv4-preferring strategy.
  *
  * The class is intentionally conservative — it ignores networks the user
  * hasn't authorised for VPN (e.g. unmetered bypass), and only fires once
@@ -58,7 +65,12 @@ class NetworkMonitor(
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
                 if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return
                 Log.d(TAG, "network validated: $network")
+                evaluateIpv6Availability(network)
                 scheduleReload("validated")
+            }
+
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                evaluateIpv6Availability(network, linkProperties)
             }
         }
         callback = cb
@@ -70,6 +82,31 @@ class NetworkMonitor(
         val cb = callback ?: return
         runCatching { cm.unregisterNetworkCallback(cb) }
         callback = null
+    }
+
+    /**
+     * Decides whether the active network can actually carry IPv6 traffic:
+     * it needs a routable v6 address on the interface. A network that only
+     * advertises the capability (or hands out a link-local fe80::/10) is
+     * treated as not usable — that is the carrier/captive-portal case where
+     * AAAA lookups would hang.
+     */
+    private fun evaluateIpv6Availability(network: Network, linkProperties: LinkProperties? = null) {
+        val lp = linkProperties
+            ?: runCatching { cm.getLinkProperties(network) }.getOrNull()
+            ?: return
+        val hasGlobalV6 = lp.linkAddresses.any { addr ->
+            val ip = addr.address
+            ip is java.net.Inet6Address && !ip.isLinkLocalAddress && !ip.isLoopbackAddress
+        }
+        val usable = hasGlobalV6 && runCatching { cm.getNetworkCapabilities(network) }
+            .getOrNull()
+            ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val current = store.current
+        if (current.enableIpv6 && current.ipv6FallbackActive != !usable) {
+            Log.d(TAG, "IPv6 usability changed: usable=$usable")
+            store.update { it.copy(ipv6FallbackActive = !usable) }
+        }
     }
 
     private fun scheduleReload(reason: String) {
