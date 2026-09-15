@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rsxm-core",
+    "crates/rsxm-rules",
+    "crates/rsxm-tun",
+    "crates/rsxm-agent",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

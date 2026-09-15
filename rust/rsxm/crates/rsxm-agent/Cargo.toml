@@ -1,0 +1,15 @@
+[package]
+name = "rsxm-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rsxm-core = { path = "../rsxm-core" }
+rsxm-rules = { path = "../rsxm-rules" }
+rsxm-tun = { path = "../rsxm-tun" }
+serde_json = "1"
+
+[[bin]]
+name = "rsxm-agent"
+path = "src/main.rs"
