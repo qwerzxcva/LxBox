@@ -31,6 +31,19 @@ android {
         versionName = "3.0.0"
     }
 
+    // The sing-box core .so is ~60 MB per ABI uncompressed; shipping all
+    // four in one APK produced an 83 MB artifact. Splits keep each APK
+    // around 25-30 MB. The CI workflow assembles arm64 by default; the
+    // other ABIs build on demand via `-PtargetAbi=`.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
