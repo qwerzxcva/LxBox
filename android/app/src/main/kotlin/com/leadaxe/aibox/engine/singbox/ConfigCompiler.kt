@@ -379,6 +379,12 @@ object ConfigCompiler {
             add(JsonObject(parsed.toMutableMap().apply {
                 put("type", JsonPrimitive(profile.type))
                 put("tag", JsonPrimitive(profile.tag))
+                // UDP-over-TCP: let the VLESS stream carry datagrams, so
+                // UDP survives servers/firewalls that blackhole real UDP.
+                // Skip nodes that set their own packet_encoding.
+                if (state.udpOverTcp && profile.type == "vless" && "packet_encoding" !in parsed) {
+                    put("packet_encoding", JsonPrimitive("packetaddr"))
+                }
             }))
         }
         // User-configured groups, after their constituent nodes.

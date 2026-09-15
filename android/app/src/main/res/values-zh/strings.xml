@@ -234,6 +234,8 @@
     <string name="settings_mtu">MTU：%1$d</string>
     <string name="settings_tun_stack">TUN 网络栈</string>
     <string name="settings_tun_stack_desc">system：最快，内核态 TCP；gvisor：兼容性最好；mixed：system TCP + gvisor UDP（默认）</string>
+    <string name="settings_udp_over_tcp">UDP 转 TCP（VLESS）</string>
+    <string name="settings_udp_over_tcp_desc">把 UDP 装进 VLESS TCP 流传输（packet-addr）。服务器或网络封 UDP 时可用；需服务端支持（Xray/sing-box）。</string>
     <string name="settings_tun_addresses">TUN 地址</string>
     <string name="settings_tun_ipv4">TUN IPv4 地址</string>
     <string name="settings_tun_ipv6">TUN IPv6 地址</string>

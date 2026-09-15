@@ -128,6 +128,12 @@ fun SettingsScreen() {
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
+                SwitchRow(
+                    label = stringResource(R.string.settings_udp_over_tcp),
+                    supporting = stringResource(R.string.settings_udp_over_tcp_desc),
+                    checked = state.udpOverTcp,
+                    onCheckedChange = { v -> store.update { it.copy(udpOverTcp = v) } },
+                )
                 Text(
                     stringResource(R.string.settings_tun_addresses),
                     style = MaterialTheme.typography.titleMedium,

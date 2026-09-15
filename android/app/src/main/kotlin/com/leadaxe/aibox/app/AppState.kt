@@ -75,6 +75,12 @@ data class AppState(
     val tunDnsAddresses: List<String> = emptyList(),
     /** TUN network stack: system (fastest), gvisor (most compatible), or mixed. */
     val tunStack: String = "mixed",
+    /**
+     * Carry UDP inside the VLESS TCP stream (packet-addr encoding, the
+     * XrayNG-style UDP-over-TCP). Applied to vless outbounds at compile
+     * time unless the node config sets its own packet_encoding.
+     */
+    val udpOverTcp: Boolean = false,
 
     // ------------------------------------------------------------- engine
     val logLevel: String = "warn",
