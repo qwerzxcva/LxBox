@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Subscription URLs are user-supplied and many panels still serve plain
+  http:// endpoints (or redirect to one). The default "no cleartext" policy
+  makes those subscriptions fail at fetch time with an opaque error, so the
+  client opts back in — matching what other proxy clients ship.
+
+  Node traffic itself never rides these sockets: the engine dials it.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

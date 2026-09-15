@@ -1,6 +1,9 @@
 package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,6 +40,10 @@ import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.ColorModeDark
 import com.leadaxe.aibox.app.ColorModeLight
 import com.leadaxe.aibox.app.ColorModeSystem
+import com.leadaxe.aibox.app.MuxProtocolH2mux
+import com.leadaxe.aibox.app.MuxProtocolSmux
+import com.leadaxe.aibox.app.MuxProtocolYamux
+import com.leadaxe.aibox.app.MuxProtocols
 import com.leadaxe.aibox.app.SingBoxLogLevels
 import com.leadaxe.aibox.app.SnifferProtocolOptions
 
@@ -271,6 +278,12 @@ fun SettingsScreen() {
         }
 
         item {
+            SettingsSection(stringResource(R.string.settings_section_mux)) {
+                MuxSettingsContent(state = state, onChange = { reducer -> store.update(reducer) })
+            }
+        }
+
+        item {
             SettingsSection(stringResource(R.string.settings_section_logging)) {
                 SingleChoiceChips(
                     label = stringResource(R.string.settings_log_level),
@@ -294,41 +307,121 @@ fun SettingsScreen() {
         }
 
         item {
-            SettingsSection(stringResource(R.string.settings_section_power)) {
-                val ctx = androidx.compose.ui.platform.LocalContext.current
-                val pm = ctx.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
-                val ignoring = pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true
-                Text(
-                    text = stringResource(
-                        if (ignoring) R.string.settings_battery_ok
-                        else R.string.settings_battery_prompt,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                if (!ignoring) {
-                    FilledTonalButton(
-                        onClick = {
-                            runCatching {
-                                ctx.startActivity(
-                                    android.content.Intent(
-                                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                        android.net.Uri.parse("package:${ctx.packageName}"),
-                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                                )
-                            }
-                        },
-                    ) {
-                        Text(stringResource(R.string.settings_battery_action))
-                    }
-                }
-                Text(
-                    stringResource(R.string.settings_battery_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            BatterySection(store = store)
         }
     }
+}
+
+/**
+ * Battery & background section.
+ *
+ * The old version only rendered a button while the exemption was missing,
+ * and that button called `startActivity` on an intent the app had not
+ * declared permission for — Android throws there, the exception was
+ * swallowed by `runCatching`, and the tap did nothing. The section now:
+ *
+ *  - declares the request permission (manifest),
+ *  - reports the live exemption state with the reason (idle / data / both),
+ *  - offers both the direct in-app request and a fallback to the system
+ *    battery-optimization screen for OEM ROMs that ignore the intent,
+ *  - explains what happens while the box is not exempt.
+ */
+@Composable
+private fun BatterySection(store: com.leadaxe.aibox.app.AppStateStore) {
+    val context = LocalContext.current
+    val pm = remember { context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager }
+
+    // The exemption can change while the app is in the background (user taps
+    // Allow in the system dialog), so re-read whenever the screen resumes.
+    var ignoring by remember { mutableStateOf(pm?.isIgnoringBatteryOptimizations(context.packageName) == true) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                ignoring = pm?.isIgnoringBatteryOptimizations(context.packageName) == true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Text(
+        text = if (ignoring) stringResource(R.string.settings_battery_ok)
+        else stringResource(R.string.settings_battery_prompt),
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = if (ignoring) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+    )
+
+    if (!ignoring) {
+        FilledTonalButton(
+            onClick = {
+                val request = runCatching {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            android.net.Uri.parse("package:${context.packageName}"),
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+                // Some ROMs ship an activity manager that rejects the
+                // package-scoped intent (or the user's OEM security layer
+                // blocks it). Fall back to the battery-optimization list so
+                // the tap always leads somewhere useful.
+                if (request.isFailure) {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS,
+                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                }
+            },
+        ) {
+            Text(stringResource(R.string.settings_battery_action))
+        }
+        Text(
+            stringResource(R.string.settings_battery_manual_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    FilledTonalButton(
+        onClick = {
+            runCatching {
+                context.startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:${context.packageName}"),
+                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        },
+    ) {
+        Text(stringResource(R.string.settings_battery_app_settings))
+    }
+
+    Text(
+        stringResource(R.string.settings_battery_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    // The engine's own power behaviour, made visible instead of hidden
+    // behind the box: what the tunnel does when the screen goes off.
+    Text(
+        stringResource(R.string.settings_battery_tunnel_policy),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+    Text(
+        stringResource(R.string.settings_battery_tunnel_policy_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /**

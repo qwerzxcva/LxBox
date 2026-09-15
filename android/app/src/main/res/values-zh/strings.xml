@@ -2,7 +2,7 @@
 <resources>
     <!-- bottom navigation -->
     <string name="nav_home">主页</string>
-    <string name="nav_subscriptions">订阅</string>
+    <string name="nav_subscriptions">分组</string>
     <string name="nav_routes">路由</string>
     <string name="nav_dns">DNS</string>
     <string name="nav_settings">设置</string>
@@ -34,6 +34,16 @@
     <string name="subs_paste_link">粘贴链接</string>
     <string name="subs_section_subscriptions">订阅（%1$d）</string>
     <string name="subs_section_nodes">节点（%1$d）</string>
+    <string name="subs_section_subscriptions_title">订阅源</string>
+    <string name="subs_section_sources_short">节点来自这些订阅地址</string>
+    <string name="subs_section_nodes_title">节点</string>
+    <string name="subs_section_nodes_short">从订阅源导入的全部节点</string>
+    <string name="subs_nodes_empty_hint">还没有节点 — 先在上方添加订阅。</string>
+    <string name="subs_folder_count">%1$d 个订阅</string>
+    <string name="subs_groups_section_title">文件夹</string>
+    <string name="groups_section_title">出口组</string>
+    <string name="groups_section_short">基于节点构建的选择器与自动测速组</string>
+    <string name="settings_mux_disabled_short">未启用 — 点击配置</string>
     <string name="subs_name">名称</string>
     <string name="subs_url">订阅地址</string>
     <string name="subs_fetch_via">获取节点方式</string>
@@ -110,6 +120,11 @@
     <string name="routes_logical_mode">组合方式</string>
     <string name="routes_logical_and">与（AND）</string>
     <string name="routes_logical_or">或（OR）</string>
+    <string name="routes_combine_mode">条件组合</string>
+    <string name="routes_combine_or">或（任一匹配）</string>
+    <string name="routes_combine_and">与（全部匹配）</string>
+    <string name="routes_json_invalid">JSON 格式错误</string>
+    <string name="routes_json_recognized">已识别</string>
     <string name="routes_invert">反转匹配</string>
     <string name="routes_action">动作</string>
     <string name="routes_action_route">转发到出口</string>
@@ -187,6 +202,7 @@
 
     <!-- fakeip -->
     <string name="fakeip_title">Fake IP（虚拟 IP）</string>
+    <string name="fakeip_disabled">未启用 — 点铅笔图标配置</string>
     <string name="fakeip_desc">对匹配的域名返回合成地址，让路由规则在真实 DNS 解析前即可生效。</string>
     <string name="fakeip_enable">启用 Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 地址池</string>
@@ -206,6 +222,49 @@
     <string name="settings_battery_ok">AIBox 已免除电池优化 — 系统不会在后台冻结隧道。</string>
     <string name="settings_battery_prompt">AIBox 受电池优化限制：系统可能在后冻结隧道。</string>
     <string name="settings_battery_action">免除电池优化</string>
+    <string name="settings_battery_app_settings">打开系统应用设置</string>
+    <string name="settings_battery_manual_hint">如果弹窗未出现：设置 → 应用 → AIBox → 电池 → 不受限制。</string>
+    <string name="settings_battery_tunnel_policy">隧道省电策略</string>
+    <string name="settings_battery_tunnel_policy_desc">熄屏时暂停隧道并关闭空闲连接；进入 Doze 深暂停（彻底停内核定时器），下次唤醒重置网络以恢复推送。网络切换（Wi-Fi ↔ 蜂窝）自动关闭半死连接并重载配置。</string>
+    <string name="settings_section_mux">多路复用（mux）</string>
+    <string name="settings_mux_enable">启用多路复用</string>
+    <string name="settings_mux_enable_desc">多个流共用一条连接：减少握手、重连更快，也能绕过限制新连接的服务端。</string>
+    <string name="settings_mux_protocol">协议</string>
+    <string name="settings_mux_protocol_h2mux">h2mux</string>
+    <string name="settings_mux_protocol_smux">smux</string>
+    <string name="settings_mux_protocol_yamux">yamux</string>
+    <string name="settings_mux_protocol_desc">h2mux 是默认值也是多数服务端的预期；smux 帧开销更小；yamux 每流带窗口，吞吐表现最好。</string>
+    <string name="settings_mux_max_connections">最大连接数</string>
+    <string name="settings_mux_max_connections_desc">承载连接的数量上限。留空 = 内核默认。</string>
+    <string name="settings_mux_min_streams">最小流数</string>
+    <string name="settings_mux_min_streams_desc">承载连接上活跃流低于此值时会提前新建连接。留空 = 内核默认（8）。</string>
+    <string name="settings_mux_max_streams">最大流数</string>
+    <string name="settings_mux_max_streams_desc">单条承载连接上的并发流上限。留空 = 内核默认。</string>
+    <string name="settings_mux_padding">帧填充</string>
+    <string name="settings_mux_padding_desc">对 mux 帧填充以隐藏长度特征。会稍微增加流量开销。</string>
+    <string name="settings_mux_brutal">Brutal 拥塞控制</string>
+    <string name="settings_mux_brutal_desc">忽略塞塞窗口按固定速率发送。高丢包长链路上提升明显，但会占满带宽、影响同线路其他流量。</string>
+    <string name="settings_mux_brutal_up">Brutal 上行</string>
+    <string name="settings_mux_brutal_down">Brutal 下行</string>
+    <string name="settings_mux_default">默认</string>
+    <string name="settings_mux_brutal_hint">建议设为实际带宽的约 80%，保证链路稳定。</string>
+    <string name="settings_mux_flow_hint">带 flow（xtls-rprx-vision）的节点会自动跳过 mux——内核不允许两者共存。</string>
+
+    <!-- built-in rule presets -->
+    <string name="preset_section">内置规则集</string>
+    <string name="preset_add">添加</string>
+    <string name="preset_added">已添加</string>
+    <string name="preset_installed">已安装 — 规则已加入上方列表，可直接启用/编辑/删除。</string>
+    <string name="preset_block_ads">屏蔽广告</string>
+    <string name="preset_block_ads_desc">拒绝广告与追踪域名。首次使用时下载约 1 MB 规则集。</string>
+    <string name="preset_private_ip">内网 IP</string>
+    <string name="preset_private_ip_desc">局域网与私有网段直连，隧道开启时本地设备仍可访问。</string>
+    <string name="preset_bittorrent">BitTorrent</string>
+    <string name="preset_bittorrent_desc">BT 流量直连，不经代理。</string>
+    <string name="preset_vowifi">VoWiFi（运营商通话）</string>
+    <string name="preset_vowifi_desc">Wi-Fi 通话不走隧道：运营商 IMS 网关（epdg）与 IKEv2 端口直连，避免通话增加延迟。</string>
+    <string name="preset_fcm">Google 推送（FCM）</string>
+    <string name="preset_fcm_desc">只把 FCM 推送流量（5228-5230 端口与 Google 推送主机）放在隧道外，熄屏时通知也能及时送达。</string>
     <string name="settings_battery_desc">在 ColorOS/realme UI 等激进清理 VPN 应用的厂商系统上推荐开启。Doze 深暂停已自动处理：进入 Doze 时隧道暂停，唤醒时自动恢复。</string>
     <string name="settings_tls_fragment">TLS 分片（抗 DPI）</string>
     <string name="settings_tls_fragment_none">关闭</string>

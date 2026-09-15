@@ -85,7 +85,8 @@ internal object RulePlanner {
 
     /** Plain rules have OR semantics inside the destination group; prunable. */
     fun prunable(rule: RouteRule): Boolean =
-        rule.kind == RouteRule.KindInline && !rule.isLogical && !rule.invert
+        rule.kind == RouteRule.KindInline && !rule.isLogical && !rule.invert &&
+            rule.combine != RouteRule.CombineOr
 
     /**
      * True when the rule constrains nothing but the destination address — the

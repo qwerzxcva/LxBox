@@ -47,6 +47,10 @@ import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
+import com.leadaxe.aibox.app.isPresetInstalled
+import com.leadaxe.aibox.app.materializePreset
+import com.leadaxe.aibox.app.withoutPreset
+import com.leadaxe.aibox.engine.singbox.RouteJson
 import java.util.UUID
 
 @Composable
@@ -70,7 +74,10 @@ fun RoutesScreen() {
                 editing = null
             },
             onSave = { rule ->
-                val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, rule)
+                // JSON rules mirror their payload's own action so the list and
+                // the planner see what the kernel will actually run.
+                val synced = if (rule.kind == RouteRule.KindJson) RouteJson.syncMirror(rule) else rule
+                val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, synced)
                 store.update { st ->
                     val list = if (creating) {
                         st.routeRules + normalized
@@ -147,12 +154,6 @@ fun RoutesScreen() {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SwitchRow(
-                        label = stringResource(R.string.routes_fakeip_bypass),
-                        supporting = stringResource(R.string.routes_fakeip_bypass_desc),
-                        checked = state.fakeIpBypass,
-                        onCheckedChange = { v -> store.update { it.copy(fakeIpBypass = v) } },
-                    )
                     val outboundOptions = remember(state.outbounds, state.outboundGroups) {
                         listOf("", DirectOutboundTag) +
                             state.outboundGroups.filter { it.enabled }.map { it.tag } +
@@ -179,6 +180,82 @@ fun RoutesScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        }
+
+        // Built-in presets: each is a one-tap rule bundle that materialises
+        // into ordinary rules above, so nothing is hidden — they can be
+        // enabled, edited or deleted like hand-made rules.
+        item {
+            SectionHeader(stringResource(R.string.preset_section))
+        }
+        items(com.leadaxe.aibox.app.RulePresets, key = { it.id }) { preset ->
+            PresetCard(
+                preset = preset,
+                installed = state.isPresetInstalled(preset.id),
+                onAdd = {
+                    val (rules, resources) = materializePreset(preset, state)
+                    store.update { st ->
+                        st.copy(
+                            routeRules = st.routeRules + rules,
+                            ruleSets = st.ruleSets + resources,
+                        )
+                    }
+                },
+                onRemove = {
+                    store.update { st ->
+                        st.copy(routeRules = st.routeRules.withoutPreset(preset.id))
+                    }
+                },
+            )
+        }
+    }
+}
+
+/**
+ * One built-in preset row: title, explanation, and an add / remove action.
+ * An installed preset toggles its rules instead of re-adding them.
+ */
+@Composable
+private fun PresetCard(
+    preset: com.leadaxe.aibox.app.RulePreset,
+    installed: Boolean,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(preset.titleRes),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        stringResource(preset.descriptionRes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (installed) {
+                    TextButton(onClick = onRemove) {
+                        Text(stringResource(R.string.common_delete))
+                    }
+                } else {
+                    FilterChip(
+                        selected = false,
+                        onClick = onAdd,
+                        label = { Text(stringResource(R.string.preset_add)) },
+                    )
+                }
+            }
+            if (installed) {
+                Text(
+                    stringResource(R.string.preset_installed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
     }
@@ -389,25 +466,43 @@ private fun RuleCard(
  */
 @Composable
 private fun ruleLine(rule: RouteRule, state: AppState): String {
-    val matcher = when (rule.kind) {
-        RouteRule.KindJson -> "JSON"
-        else -> {
-            val parts = buildList {
-                appendMatcher(this, "domain", rule.domain)
-                appendMatcher(this, "suffix", rule.domainSuffix)
-                appendMatcher(this, "keyword", rule.domainKeyword)
-                appendMatcher(this, "regex", rule.domainRegex)
-                appendMatcher(this, "cidr", rule.ipCidr)
-                appendMatcher(this, "port", rule.port)
-                appendMatcher(this, "rule_set", rule.ruleSet)
-                appendMatcher(this, "protocol", rule.protocol)
-                appendMatcher(this, "package", rule.packageName)
-                if (rule.isLogical) {
-                    add(rule.logicalMode + "(" + rule.rules.size + ")")
+    if (rule.kind == RouteRule.KindJson) {
+        // JSON rules describe themselves: parse the payload instead of
+        // assuming it routes to the proxy.
+        val summary = remember(rule.json) { RouteJson.describe(rule.json) }
+        val proxyLabel = stringResource(R.string.dns_detour_proxy)
+        val directLabel = stringResource(R.string.dns_detour_direct)
+        val label = RouteJson.summaryLabel(summary) { tag ->
+            when (tag) {
+                "", ProxySelectorTag -> proxyLabel
+                DirectOutboundTag -> directLabel
+                else -> {
+                    state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                        ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                        ?: tag
                 }
             }
-            parts.joinToString(" ").ifBlank { "—" }
         }
+        return "JSON · $label"
+    }
+    val matcher = run {
+        val parts = buildList {
+            appendMatcher(this, "domain", rule.domain)
+            appendMatcher(this, "suffix", rule.domainSuffix)
+            appendMatcher(this, "keyword", rule.domainKeyword)
+            appendMatcher(this, "regex", rule.domainRegex)
+            appendMatcher(this, "cidr", rule.ipCidr)
+            appendMatcher(this, "port", rule.port)
+            appendMatcher(this, "rule_set", rule.ruleSet)
+            appendMatcher(this, "protocol", rule.protocol)
+            appendMatcher(this, "package", rule.packageName)
+            if (rule.isLogical) {
+                add(rule.logicalMode + "(" + rule.rules.size + ")")
+            } else if (rule.combine == RouteRule.CombineOr) {
+                add("OR")
+            }
+        }
+        parts.joinToString(" ").ifBlank { "—" }
     }
     val target = when (rule.action) {
         RouteRule.RuleActionReject -> stringResource(R.string.routes_action_reject)

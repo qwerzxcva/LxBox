@@ -10,6 +10,7 @@ import com.leadaxe.aibox.app.DnsRuleActionReject
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.FakeIpServerTag
+import com.leadaxe.aibox.app.MuxProtocolH2mux
 import com.leadaxe.aibox.app.OutboundGroup
 import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
@@ -484,6 +485,8 @@ object ConfigCompiler {
                 // and reassembly-based detectors lose their anchor. Applied
                 // only to nodes that actually speak TLS.
                 applyTlsFragment(state, parsed)
+                // Multiplexing: one carrying connection for many streams.
+                applyMultiplex(state, parsed)
             }))
         }
         // User-configured groups, after their constituent nodes.
@@ -561,6 +564,42 @@ object ConfigCompiler {
                 }
             }
         }
+
+    /**
+     * Injects the multiplex block into an outbound. Rules the kernel
+     * enforces:
+     *
+     *  - Nodes that carry a `flow` value (VLESS xtls-rprx-vision) cannot
+     *    multiplex — the kernel rejects the combination at load time, so
+     *    they are skipped here rather than failing the whole config.
+     *  - Only vless / shadowsocks outbounds reach this point (the protocol
+     *    diet left both with mux support).
+     *  - A node that ships its own `multiplex` block keeps it.
+     */
+    private fun MutableMap<String, JsonElement>.applyMultiplex(state: AppState, node: JsonObject) {
+        if (!state.muxEnabled) return
+        if ("multiplex" in node) return
+        val type = (node["type"] as? JsonPrimitive)?.content ?: return
+        if (type !in setOf("vless", "shadowsocks")) return
+        val flow = (node["flow"] as? JsonPrimitive)?.content
+        if (!flow.isNullOrBlank()) return
+        val brutal = state.muxBrutalEnabled && state.muxBrutalUpMbps > 0 && state.muxBrutalDownMbps > 0
+        put("multiplex", buildJsonObject {
+            put("enabled", true)
+            put("protocol", state.muxProtocol.ifBlank { MuxProtocolH2mux })
+            if (state.muxMaxConnections > 0) put("max_connections", state.muxMaxConnections)
+            if (state.muxMinStreams > 0) put("min_streams", state.muxMinStreams)
+            if (state.muxMaxStreams > 0) put("max_streams", state.muxMaxStreams)
+            if (state.muxPadding) put("padding", true)
+            if (brutal) {
+                putJsonObject("brutal") {
+                    put("enabled", true)
+                    put("up_mbps", state.muxBrutalUpMbps)
+                    put("down_mbps", state.muxBrutalDownMbps)
+                }
+            }
+        })
+    }
 
     /**
      * Injects TLS fragmentation into a node's `tls` block when the global
@@ -674,27 +713,97 @@ object ConfigCompiler {
 
     /** Compiles an inline rule (default or logical) into a sing-box route rule. */
     private fun compileInlineRule(rule: RouteRule, state: AppState): JsonObject? {
-        if (rule.isLogical) {
-            // Logical children are pure matchers: compiled as default rules
-            // stripped of their action.
-            val children = rule.rules
-                .filter { it.enabled }
-                .mapNotNull(::compileInlineRuleMatcher)
-            if (children.isEmpty()) return null
-            return buildJsonObject {
-                put("type", "logical")
-                put("mode", rule.logicalMode)
-                putJsonArray("rules") { children.forEach(::add) }
-                if (rule.invert) put("invert", true)
-                putRuleAction(rule, state)
-            }
-        }
-        val matcher = compileInlineRuleMatcher(rule) ?: return null
+        val matcher = compileInlineMatcher(rule) ?: return null
         return buildJsonObject {
             for ((k, v) in matcher) put(k, v)
             if (rule.invert) put("invert", true)
             putRuleAction(rule, state)
         }
+    }
+
+    /**
+     * Compiles the match portion of any inline rule, without its action.
+     * Handles the three shapes: a plain default rule, a rule whose own
+     * conditions combine with OR, and a logical container over sub-rules.
+     * Logical children recurse through this same function, so sub-rules keep
+     * their own combine mode when nested (the kernel accepts nested logical
+     * rules as long as only the outermost one carries an action).
+     */
+    private fun compileInlineMatcher(rule: RouteRule): JsonObject? {
+        if (rule.isLogical) {
+            val children = rule.rules
+                .filter { it.enabled }
+                .mapNotNull(::compileInlineMatcher)
+            if (children.isEmpty()) return null
+            return buildJsonObject {
+                put("type", "logical")
+                put("mode", rule.logicalMode)
+                putJsonArray("rules") { children.forEach(::add) }
+            }
+        }
+        // Per-sub-rule combine mode: "or" turns the rule's own condition
+        // families into a logical OR (matching any one of them suffices),
+        // "" / "and" keeps the kernel-native default rule.
+        if (rule.combine == RouteRule.CombineOr) {
+            val groups = inlineOrGroups(rule)
+            if (groups.isEmpty()) return null
+            return buildJsonObject {
+                put("type", "logical")
+                put("mode", "or")
+                putJsonArray("rules") { groups.forEach(::add) }
+            }
+        }
+        return compileInlineRuleMatcher(rule)
+    }
+
+    /**
+     * Splits a rule's match fields into per-family objects for an OR
+     * combination. The destination-address family (domain / suffix /
+     * keyword / regex / ip_cidr / rule_set) stays together in one group,
+     * matching the kernel's own OR group; everything else gets its own
+     * branch so `package_name` OR `domain` behaves as the user expects.
+     */
+    private fun inlineOrGroups(rule: RouteRule): List<JsonObject> = buildList {
+        val address = buildJsonObject {
+            putStringList("domain", rule.domain)
+            putStringList("domain_suffix", rule.domainSuffix)
+            putStringList("domain_keyword", rule.domainKeyword)
+            putStringList("domain_regex", rule.domainRegex)
+            putStringList("ip_cidr", rule.ipCidr)
+            putStringList("rule_set", rule.ruleSet)
+        }
+        if (address.isNotEmpty()) add(address)
+        if (rule.packageName.isNotEmpty()) add(buildJsonObject { putStringList("package_name", rule.packageName) })
+        if (rule.wifiSsid.isNotEmpty() || rule.wifiBssid.isNotEmpty()) {
+            add(buildJsonObject {
+                putStringList("wifi_ssid", rule.wifiSsid)
+                putStringList("wifi_bssid", rule.wifiBssid)
+            })
+        }
+        val ports = buildJsonObject {
+            putIntList("source_port", rule.sourcePort)
+            putStringList("source_port_range", rule.sourcePortRange)
+            putIntList("port", rule.port)
+            putStringList("port_range", rule.portRange)
+        }
+        if (ports.isNotEmpty()) add(ports)
+        val transport = buildJsonObject {
+            putStringList("network", rule.network)
+            putStringList("protocol", rule.protocol)
+            when (rule.ipFamily) {
+                "ipv4_only" -> put("ip_version", 4)
+                "ipv6_only" -> put("ip_version", 6)
+            }
+        }
+        if (transport.isNotEmpty()) add(transport)
+        if (rule.sourceIpCidr.isNotEmpty()) {
+            add(buildJsonObject { putStringList("source_ip_cidr", rule.sourceIpCidr) })
+        }
+        val flags = buildJsonObject {
+            if (rule.sourceIpIsPrivate) put("source_ip_is_private", true)
+            if (rule.ipIsPrivate) put("ip_is_private", true)
+        }
+        if (flags.isNotEmpty()) add(flags)
     }
 
     /**

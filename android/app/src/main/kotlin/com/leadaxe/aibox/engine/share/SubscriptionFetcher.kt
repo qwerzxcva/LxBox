@@ -203,7 +203,7 @@ class SubscriptionFetcher(private val context: Context) {
         val headers = subscriptionHeaders(subscription)
         return when (mode) {
             FetchViaProxy -> {
-                val proxy = boxProxy() ?: error("VPN is not running")
+                val proxy = boxProxy() ?: error("tunnel is not running — enable AIBox first, or switch the fetch mode to direct")
                 openStream(url, proxy, pinnedAddress = null, extraHeaders = headers)
             }
             FetchViaDirect -> {
@@ -216,8 +216,9 @@ class SubscriptionFetcher(private val context: Context) {
                     val pinned = pinnedAddress(subscription, dnsServers, url)
                     openStream(url, proxy = null, pinnedAddress = pinned, extraHeaders = headers)
                 }.getOrElse { first ->
-                    val proxy = boxProxy()
-                        ?: throw IllegalStateException(first.message ?: "fetch failed")
+                    val proxy = boxProxy() ?: throw IllegalStateException(
+                        "direct fetch failed (${first.message ?: "no route"}) and the tunnel is not running — enable AIBox and retry",
+                    )
                     openStream(url, proxy, pinnedAddress = null, extraHeaders = headers)
                 }
             }
@@ -252,8 +253,21 @@ class SubscriptionFetcher(private val context: Context) {
 
     /** Local HTTP proxy exposed by the running box, or null when it is not up. */
     private fun boxProxy(): Proxy? {
-        val port = com.leadaxe.aibox.engine.singbox.ConfigCompiler.currentLocalProxyPort() ?: return null
-        return Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port))
+        // The fetch port is fixed (ConfigCompiler.SubscriptionFetchPort), but
+        // ConfigCompiler itself is an in-process singleton: the UI process
+        // never compiles a configuration, so asking it for the port always
+        // answers 0 there and every proxy-path fetch failed with "VPN is not
+        // running" even while the tunnel was up. Probe the loopback port
+        // instead — if the box is running, its mixed inbound is listening.
+        val port = com.leadaxe.aibox.engine.singbox.ConfigCompiler.SubscriptionFetchPort
+        val reachable = runCatching {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(LOOPBACK, port), PROBE_TIMEOUT_MS)
+            }
+            true
+        }.getOrDefault(false)
+        if (!reachable) return null
+        return Proxy(Proxy.Type.HTTP, InetSocketAddress(LOOPBACK, port))
     }
 
     /**
@@ -391,4 +405,11 @@ class SubscriptionFetcher(private val context: Context) {
 
     @Suppress("unused")
     private val unusedCert: X509Certificate? = null
+
+    private companion object {
+        const val LOOPBACK = "127.0.0.1"
+
+        /** How long to wait for the loopback probe before giving up. */
+        const val PROBE_TIMEOUT_MS = 400
+    }
 }

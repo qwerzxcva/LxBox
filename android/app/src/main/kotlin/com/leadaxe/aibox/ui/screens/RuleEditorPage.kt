@@ -14,7 +14,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Button
@@ -42,6 +44,7 @@ import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
+import com.leadaxe.aibox.engine.singbox.RouteJson
 import java.util.UUID
 
 /**
@@ -77,10 +80,18 @@ fun RuleEditorPage(
     var syncDnsServer by remember { mutableStateOf(initial?.syncDnsServer.orEmpty()) }
     var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
-    var logicalMode by remember { mutableStateOf(initial?.logicalMode ?: RouteRule.LogicalAnd) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
     var ipFamily by remember { mutableStateOf(initial?.ipFamily.orEmpty()) }
     var ipPreference by remember { mutableStateOf(initial?.ipPreference ?: "prefer_ipv6") }
+
+    // Live JSON validation for the json kind: the editor refuses to save a
+    // payload the kernel would silently drop, and shows where the problem is.
+    val jsonProblem = remember(jsonBody, kind) {
+        if (kind == RouteRule.KindJson && jsonBody.isNotBlank()) RouteJson.validate(jsonBody) else null
+    }
+    val jsonSummary = remember(jsonBody, kind) {
+        if (kind == RouteRule.KindJson && jsonBody.isNotBlank()) RouteJson.describe(jsonBody) else null
+    }
 
     // ----- branches: every rule is a stack of (at least one) sub-rule card.
     // A plain rule's own conditions become sub-rule 1, so the model is
@@ -112,13 +123,14 @@ fun RuleEditorPage(
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(
+                    enabled = !(kind == RouteRule.KindJson && jsonProblem != null),
                     onClick = {
                         onSave(
                             compose(
                                 initial = initial,
                                 name = name, kind = kind, action = action, outbound = outbound,
                                 syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
-                                enabled = enabled, logicalMode = logicalMode, jsonBody = jsonBody,
+                                enabled = enabled, jsonBody = jsonBody,
                                 ipFamily = ipFamily, ipPreference = ipPreference,
                                 branches = branches,
                             ),
@@ -168,6 +180,9 @@ fun RuleEditorPage(
                                 minLines = 6, maxLines = 14,
                                 supporting = stringResource(R.string.routes_json_multiline_hint),
                             )
+                            // Live validation feedback: green when the payload
+                            // parses, red with the position when it does not.
+                            JsonValidationBanner(problem = jsonProblem, summary = jsonSummary, raw = jsonBody, state = state)
                         } else {
                             // ----- branches
                             branches.forEachIndexed { index, branch ->
@@ -194,6 +209,7 @@ fun RuleEditorPage(
                                         id = UUID.randomUUID().toString(),
                                         name = "",
                                         type = RouteRule.RuleTypeDefault,
+                                        combine = RouteRule.CombineOr,
                                     )
                                 },
                             ) {
@@ -205,17 +221,6 @@ fun RuleEditorPage(
                                     ),
                                 )
                             }
-
-                            SingleChoiceChips(
-                                label = stringResource(R.string.routes_logical_mode),
-                                options = listOf(RouteRule.LogicalAnd, RouteRule.LogicalOr),
-                                selected = logicalMode,
-                                onSelect = { logicalMode = it },
-                                display = {
-                                    if (it == RouteRule.LogicalOr) stringResource(R.string.routes_logical_or)
-                                    else stringResource(R.string.routes_logical_and)
-                                },
-                            )
                         }
                     }
                 }
@@ -333,6 +338,85 @@ fun RuleEditorPage(
     }
 }
 
+/**
+ * Live feedback for a JSON-kind rule. Green with a one-line summary when
+ * the payload parses; red with the problem and its position when it does
+ * not — including line/column when the parser reported an offset.
+ */
+@Composable
+private fun JsonValidationBanner(
+    problem: RouteJson.Problem?,
+    summary: RouteJson.Summary?,
+    raw: String,
+    state: AppState,
+) {
+    if (summary == null && problem == null) return
+    if (problem != null) {
+        val location = problem.line(raw).let { line ->
+            if (line > 0) " (line ${line}, column ${problem.column(raw)})" else ""
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+            Column {
+                Text(
+                    stringResource(R.string.routes_json_invalid),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    problem.message + location,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        return
+    }
+    if (summary != null && summary.valid) {
+        val proxyLabel = stringResource(R.string.dns_detour_proxy)
+        val directLabel = stringResource(R.string.dns_detour_direct)
+        val label = RouteJson.summaryLabel(summary) { tag ->
+            when (tag) {
+                "", ProxySelectorTag -> proxyLabel
+                DirectOutboundTag -> directLabel
+                else -> {
+                    state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                        ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                        ?: tag
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column {
+                Text(
+                    stringResource(R.string.routes_json_recognized),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(label, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
 /** One collapsible sub-rule card: title + summary header, conditions body. */
 @Composable
 private fun BranchCard(
@@ -376,6 +460,19 @@ private fun BranchCard(
             }
             AnimatedVisibility(visible = !collapsed) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Each sub-rule decides how its own conditions combine.
+                    // Default is OR: a list of domains is meant as "any of
+                    // these", which is also how first-hit-wins routing reads.
+                    SingleChoiceChips(
+                        label = stringResource(R.string.routes_combine_mode),
+                        options = listOf(RouteRule.CombineOr, RouteRule.CombineAnd),
+                        selected = branch.combine.ifBlank { RouteRule.CombineOr },
+                        onSelect = { onChange(branch.copy(combine = it)) },
+                        display = {
+                            if (it == RouteRule.CombineOr) stringResource(R.string.routes_combine_or)
+                            else stringResource(R.string.routes_combine_and)
+                        },
+                    )
                     MatchFields(rule = branch, state = state, onChange = onChange)
                 }
             }
@@ -489,6 +586,7 @@ private fun matchOnlyBranch(source: RouteRule?): RouteRule = RouteRule(
     id = UUID.randomUUID().toString(),
     name = source?.name.orEmpty(),
     type = RouteRule.RuleTypeDefault,
+    combine = source?.combine ?: RouteRule.CombineOr,
     domain = source?.domain ?: emptyList(),
     domainSuffix = source?.domainSuffix ?: emptyList(),
     domainKeyword = source?.domainKeyword ?: emptyList(),
@@ -513,7 +611,6 @@ private fun compose(
     syncDnsServer: String,
     clientSubnet: String,
     enabled: Boolean,
-    logicalMode: String,
     jsonBody: String,
     ipFamily: String,
     ipPreference: String,
@@ -530,7 +627,8 @@ private fun compose(
             name = name, kind = kind, action = action, outbound = outbound,
             syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
             enabled = enabled, type = RouteRule.RuleTypeDefault,
-            logicalMode = logicalMode, rules = emptyList(),
+            combine = m.combine,
+            rules = emptyList(),
             ipFamily = ipFamily, ipPreference = ipPreference,
             domain = m.domain, domainSuffix = m.domainSuffix,
             domainKeyword = m.domainKeyword, domainRegex = m.domainRegex,
@@ -541,10 +639,15 @@ private fun compose(
             json = jsonBody,
         )
     }
+    // Multiple branches combine with OR: each branch is a self-contained
+    // match, and first-hit-wins routing means "any branch matches" is what
+    // a multi-branch rule reads as. Each branch keeps its own combine mode
+    // (the kernel accepts nested logical rules as long as only the outer
+    // rule carries an action — see ValidateNoNestedRuleActions).
     return base.copy(
         name = name, kind = kind, action = action, outbound = outbound,
         syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
-        enabled = enabled, logicalMode = logicalMode,
+        enabled = enabled, logicalMode = RouteRule.LogicalOr,
         type = RouteRule.RuleTypeLogical,
         ipFamily = ipFamily, ipPreference = ipPreference,
         rules = branches,

@@ -95,6 +95,9 @@ private fun RootScaffold(
             )
         },
     ) { padding ->
+        // The floating bar keeps its own margins inside the Scaffold slot,
+        // so content stops just above it and the background shows through
+        // the rounded corners — the depth cue the floating chrome is for.
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             NavHost(navController = nav, startDestination = Destination.Home.name) {
                 composable(Destination.Home.name) {

@@ -61,6 +61,212 @@ object ShareLinkParser {
     }
 
     /**
+     * Clash-style YAML detection: these bodies start with a top-level key
+     * (`proxies:`, `proxy-groups:`, …) rather than a share link. Panels serve
+     * this format at least as often as base64 link lists, and without a
+     * branch for it the whole subscription came back as "unsupported
+     * scheme" — one error per line, zero nodes.
+     */
+    private val yamlProxiesKey = Regex("^\\s*proxies\\s*:", RegexOption.MULTILINE)
+
+    /**
+     * Parses a Clash configuration's `proxies:` block into sing-box outbound
+     * JSON. Supports the two protocols this client ships (vless, ss) plus
+     * the transport/TLS knobs that map 1:1 onto sing-box options.
+     *
+     * This is a targeted reader, not a YAML implementation: it understands
+     * the indentation-based shape Clash configs actually use for the proxy
+     * list (block mappings, scalars, and inline `[a, b]` / `{k: v}` values)
+     * and ignores everything else. YAML features that don't appear in that
+     * subtree (anchors, multi-document, block scalars) are out of scope.
+     */
+    fun parseClashYaml(text: String): List<Result> {
+        val entries = extractProxies(text)
+        if (entries.isEmpty()) return emptyList()
+        return entries.map { entry ->
+            val type = entry["type"].orEmpty().lowercase()
+            when (type) {
+                "vless" -> clashVless(entry)
+                "ss" -> clashShadowsocks(entry)
+                else -> Result.Err("unsupported proxy type: $type", entry.toString())
+            }
+        }
+    }
+
+    /**
+     * Pulls every mapping under the top-level `proxies:` key. Returns one
+     * map per list item; nested maps (ws-opts, reality-opts, …) are flattened
+     * into dotted keys (`ws-opts.headers.Host`) so callers stay simple.
+     *
+     * A stack of (indent, key) tracks the open blocks: a scalar line deeper
+     * than the previous key means that key opened a block, and its own keys
+     * get the dotted prefix until the indentation returns to a shallower
+     * level.
+     */
+    private fun extractProxies(text: String): List<Map<String, String>> {
+        val lines = text.lines()
+        val start = lines.indexOfFirst { it.trimEnd().trimStart().startsWith("proxies:") }
+        if (start < 0) return emptyList()
+        val out = mutableListOf<Map<String, String>>()
+        var current: MutableMap<String, String>? = null
+        // Indentation of the `proxies:` key; items live deeper than it.
+        val baseIndent = lines[start].indexOf('p')
+        var started = false
+        // Open blocks inside the current list item: indent → key.
+        val stack = ArrayDeque<Pair<Int, String>>()
+
+        for (i in start + 1 until lines.size) {
+            val raw = lines[i]
+            if (raw.isBlank() || raw.trimStart().startsWith("#")) continue
+            val indent = raw.indexOfFirst { !it.isWhitespace() }
+            if (indent < 0) continue
+            // Back to a top-level key: the block ended.
+            if (indent <= baseIndent && !raw.trimStart().startsWith("-")) break
+            val trimmed = raw.trim()
+
+            if (trimmed.startsWith("- ") || trimmed == "-") {
+                // A new list item: flush the previous one and reset nesting.
+                current?.let { out += it }
+                current = mutableMapOf()
+                stack.clear()
+                started = true
+                val rest = trimmed.removePrefix("-").trim()
+                if (rest.isNotEmpty()) {
+                    val key = parseClashKey(rest)
+                    if (key != null) {
+                        val value = rest.substringAfter(':', missingDelimiterValue = "").trim()
+                        if (value.isNotEmpty()) current[key] = unquote(value) else {
+                            // Bare `- key:` opens a block at the dash indent.
+                            stack.addLast(indent to key)
+                        }
+                    }
+                }
+                continue
+            }
+            if (!started) {
+                // The block opened without a dash ("proxies:\n  name: x" is
+                // invalid Clash, but be forgiving about the first key).
+                current = mutableMapOf()
+                started = true
+            }
+            val map = current ?: continue
+
+            // Pop blocks the current line has left behind.
+            while (stack.isNotEmpty() && indent <= stack.last().first) stack.removeLast()
+            val prefix = stack.joinToString(".") { it.second }
+
+            val key = parseClashKey(trimmed) ?: continue
+            val value = trimmed.substringAfter(':', missingDelimiterValue = "").trim()
+            if (value.isEmpty()) {
+                // `key:` with no value — opens a nested block.
+                stack.addLast(indent to key)
+                continue
+            }
+            val full = if (prefix.isEmpty()) key else "$prefix.$key"
+            map[full] = unquote(value)
+        }
+        current?.let { out += it }
+        return out
+    }
+
+    /** The bare key of a `key: value` line, unquoted; null when there is none. */
+    private fun parseClashKey(line: String): String? {
+        val colon = line.indexOf(':')
+        if (colon <= 0) return null
+        return line.substring(0, colon).trim().removeSurrounding("\"").removeSurrounding("'").takeIf { it.isNotEmpty() }
+    }
+
+    private fun unquote(value: String): String = value
+        .removeSurrounding("\"")
+        .removeSurrounding("'")
+        .trim()
+
+    private fun clashVless(e: Map<String, String>): Result {
+        val server = e["server"] ?: return Result.Err("missing server", e.toString())
+        val port = e["port"]?.toIntOrNull() ?: return Result.Err("missing port", e.toString())
+        val uuid = e["uuid"] ?: return Result.Err("missing uuid", e.toString())
+        val name = e["name"].orEmpty().ifBlank { "$server:$port" }
+        val tls = e["tls"]?.equals("true", ignoreCase = true) == true
+        val reality = e["reality-opts.public-key"] != null
+
+        val config = buildConfigJson {
+            put("server", server)
+            put("server_port", port)
+            put("uuid", uuid)
+            e["flow"]?.takeIf { it.isNotBlank() }?.let { put("flow", it) }
+            // transport
+            when (e["network"]?.lowercase()) {
+                "ws" -> put("transport", buildJsonObject {
+                    put("type", "ws")
+                    put("path", e["ws-opts.path"] ?: "/")
+                    e["ws-opts.headers.Host"]?.let { host ->
+                        put("headers", buildJsonObject { put("Host", host) })
+                    }
+                    e["ws-opts.max-early-data"]?.toIntOrNull()?.let { put("max_early_data", it) }
+                    e["ws-opts.early-data-header-name"]?.let { put("early_data_header_name", it) }
+                })
+                "grpc" -> put("transport", buildJsonObject {
+                    put("type", "grpc")
+                    e["grpc-opts.grpc-service-name"]?.let { put("service_name", it) }
+                })
+                "http" -> put("transport", buildJsonObject {
+                    put("type", "http")
+                    put("path", e["http-opts.path"] ?: "/")
+                })
+            }
+            // TLS / reality
+            if (tls || reality) {
+                put("tls", buildJsonObject {
+                    put("enabled", true)
+                    e["servername"]?.takeIf { it.isNotBlank() }?.let { put("server_name", it) }
+                    e["client-fingerprint"]?.let { fp ->
+                        put("utls", buildJsonObject {
+                            put("enabled", true)
+                            put("fingerprint", fp)
+                        })
+                    }
+                    e["alpn"]?.let { alpn ->
+                        put("alpn", buildJsonArray { splitList(alpn).forEach(::add) })
+                    }
+                    e["skip-cert-verify"]?.toBoolean()?.let { if (it) put("insecure", true) }
+                    val publicKey = e["reality-opts.public-key"]
+                    if (publicKey != null) {
+                        put("reality", buildJsonObject {
+                            put("enabled", true)
+                            put("public_key", publicKey)
+                            e["reality-opts.short-id"]?.let { put("short_id", it) }
+                        })
+                    }
+                })
+            }
+        }
+        return Result.Ok("vless", config, name)
+    }
+
+    private fun clashShadowsocks(e: Map<String, String>): Result {
+        val server = e["server"] ?: return Result.Err("missing server", e.toString())
+        val port = e["port"]?.toIntOrNull() ?: return Result.Err("missing port", e.toString())
+        val method = e["cipher"] ?: e["method"] ?: return Result.Err("missing cipher", e.toString())
+        val password = e["password"] ?: return Result.Err("missing password", e.toString())
+        val name = e["name"].orEmpty().ifBlank { "$server:$port" }
+        val config = buildConfigJson {
+            put("server", server)
+            put("server_port", port)
+            put("method", method)
+            put("password", password)
+        }
+        return Result.Ok("shadowsocks", config, name)
+    }
+
+    /** `[a, b]` or `a,b` into its parts, quoted or not. */
+    private fun splitList(raw: String): List<String> = raw
+        .removePrefix("[")
+        .removeSuffix("]")
+        .split(',')
+        .map { unquote(it) }
+        .filter { it.isNotEmpty() }
+
+    /**
      * Parses a subscription body.
      *
      * Two shapes are common in the wild:
@@ -75,6 +281,14 @@ object ShareLinkParser {
     fun parseMany(text: String): List<Result> {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return emptyList()
+
+        // Shape 3: a Clash-style YAML configuration. Checked before the
+        // base64 branch because a YAML body is neither a link list nor a
+        // base64 blob, and its `proxies:` key is the reliable tell.
+        if (yamlProxiesKey.containsMatchIn(trimmed)) {
+            val parsed = parseClashYaml(trimmed)
+            if (parsed.isNotEmpty()) return parsed
+        }
 
         // Shape 2: the entire body is one base64 blob. Require a `://` in
         // the decoded result so random base64-looking noise is not treated
