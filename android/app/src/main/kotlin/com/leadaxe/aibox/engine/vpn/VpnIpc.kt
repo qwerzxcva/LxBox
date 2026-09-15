@@ -24,6 +24,9 @@ object VpnIpc {
     const val ACTION_REQUEST_SYNC = "com.leadaxe.aibox.vpn.REQUEST_SYNC"
     const val ACTION_PING = "com.leadaxe.aibox.vpn.PING"
     const val ACTION_PING_RESULT = "com.leadaxe.aibox.vpn.PING_RESULT"
+    const val ACTION_CONNECTIONS = "com.leadaxe.aibox.vpn.CONNECTIONS"
+    const val ACTION_CLOSE_CONNECTION = "com.leadaxe.aibox.vpn.CLOSE_CONNECTION"
+    const val ACTION_CONNECTIONS_PAUSED = "com.leadaxe.aibox.vpn.CONNECTIONS_PAUSED"
 
     const val EXTRA_STATE = "state"
     const val EXTRA_ERROR = "error"
@@ -43,6 +46,10 @@ object VpnIpc {
     const val EXTRA_PING_URL = "url"
     const val EXTRA_PING_DELAY = "delay"
     const val EXTRA_PING_ERROR = "pingError"
+
+    const val EXTRA_CONNECTIONS_JSON = "connectionsJson"
+    const val EXTRA_CLOSE_CONNECTION_ID = "closeConnId"
+    const val EXTRA_CONNECTIONS_PAUSED = "connectionsPaused"
 
     /** State names as they travel over the wire. */
     const val STATE_IDLE = "idle"
@@ -75,6 +82,23 @@ object VpnIpc {
     } else {
         0
     }
+
+    private val connectionsJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    /** Serialises the connection snapshot for the cross-process broadcast. */
+    fun connectionsToJson(list: List<BoxEngine.ConnectionInfo>): String =
+        connectionsJson.encodeToString(ConnectionSnapshot.serializer(), ConnectionSnapshot(list))
+
+    /** Parses a broadcast connection snapshot; empty list on malformed input. */
+    fun connectionsFromJson(json: String?): List<BoxEngine.ConnectionInfo> = runCatching {
+        connectionsJson.decodeFromString(
+            ConnectionSnapshot.serializer(),
+            json.orEmpty(),
+        ).connections
+    }.getOrDefault(emptyList())
+
+    @kotlinx.serialization.Serializable
+    data class ConnectionSnapshot(val connections: List<BoxEngine.ConnectionInfo>)
 }
 
 /**
@@ -98,6 +122,14 @@ class VpnRelay(context: Context) {
 
     private val _pings = MutableStateFlow<Map<String, PingResult>>(emptyMap())
     val pings: StateFlow<Map<String, PingResult>> = _pings.asStateFlow()
+
+    /** Live + historical connection view, relayed from the VPN process. */
+    private val _connections = MutableStateFlow<List<BoxEngine.ConnectionInfo>>(emptyList())
+    val connections: StateFlow<List<BoxEngine.ConnectionInfo>> = _connections.asStateFlow()
+
+    @Volatile
+    var connectionsPaused: Boolean = false
+        private set
 
     data class PingResult(val delayMillis: Int?, val error: String?)
 
@@ -126,6 +158,10 @@ class VpnRelay(context: Context) {
                         connectionsOut = intent.getIntExtra(VpnIpc.EXTRA_CONNECTIONS_OUT, 0),
                     )
                 }
+                VpnIpc.ACTION_CONNECTIONS -> {
+                    val json = intent.getStringExtra(VpnIpc.EXTRA_CONNECTIONS_JSON) ?: return
+                    _connections.value = VpnIpc.connectionsFromJson(json)
+                }
                 VpnIpc.ACTION_PING_RESULT -> {
                     val nodeId = intent.getStringExtra(VpnIpc.EXTRA_PING_NODE_ID) ?: return
                     val delay = intent.getIntExtra(VpnIpc.EXTRA_PING_DELAY, -1)
@@ -148,6 +184,7 @@ class VpnRelay(context: Context) {
             addAction(VpnIpc.ACTION_STATE)
             addAction(VpnIpc.ACTION_RUNTIME)
             addAction(VpnIpc.ACTION_PING_RESULT)
+            addAction(VpnIpc.ACTION_CONNECTIONS)
         }
         appContext.registerReceiver(receiver, filter, VpnIpc.receiverFlags())
         requestSync()
@@ -171,6 +208,21 @@ class VpnRelay(context: Context) {
             putExtra(VpnIpc.EXTRA_PING_NODE_ID, nodeId)
             putExtra(VpnIpc.EXTRA_PING_NODE_TAG, nodeTag)
             putExtra(VpnIpc.EXTRA_PING_URL, url)
+        }
+    }
+
+    /** Asks the service to kill one connection by kernel id. */
+    fun requestCloseConnection(id: String) {
+        send(VpnIpc.ACTION_CLOSE_CONNECTION) {
+            putExtra(VpnIpc.EXTRA_CLOSE_CONNECTION_ID, id)
+        }
+    }
+
+    /** Toggles the service-side connection recording. */
+    fun setConnectionsPaused(paused: Boolean) {
+        connectionsPaused = paused
+        send(VpnIpc.ACTION_CONNECTIONS_PAUSED) {
+            putExtra(VpnIpc.EXTRA_CONNECTIONS_PAUSED, paused)
         }
     }
 

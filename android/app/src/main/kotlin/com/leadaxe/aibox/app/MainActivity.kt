@@ -26,6 +26,7 @@ import com.leadaxe.aibox.engine.vpn.BoxController
 import com.leadaxe.aibox.ui.Destination
 import com.leadaxe.aibox.ui.LxBottomBar
 import com.leadaxe.aibox.ui.LocalizedApp
+import com.leadaxe.aibox.ui.screens.ConnectionsScreen
 import com.leadaxe.aibox.ui.screens.DnsScreen
 import com.leadaxe.aibox.ui.screens.HomeScreen
 import com.leadaxe.aibox.ui.screens.RoutesScreen
@@ -100,6 +101,10 @@ private fun RootScaffold(
                     HomeScreen(controller = controller, onRequestVpnConsent = onRequestVpnConsent)
                 }
                 composable(Destination.Subscriptions.name) { SubscriptionsScreen() }
+                composable(Destination.Connections.name) {
+                    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as AIBoxApp
+                    ConnectionsScreen(relay = app.vpnRelay)
+                }
                 composable(Destination.Routes.name) { RoutesScreen() }
                 composable(Destination.Dns.name) { DnsScreen() }
                 composable(Destination.Settings.name) { SettingsScreen() }

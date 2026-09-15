@@ -37,6 +37,8 @@ class AIVpnService : VpnService() {
     private lateinit var store: AppStateStore
     private lateinit var networkMonitor: NetworkMonitor
     private var stateJob: Job? = null
+    @Volatile
+    private var lastConnectionsFingerprint: String? = null
 
     private val screenLockReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
@@ -67,6 +69,14 @@ class AIVpnService : VpnService() {
                         sendBroadcast(reply)
                     }
                 }
+                VpnIpc.ACTION_CLOSE_CONNECTION -> {
+                    val id = intent?.getStringExtra(VpnIpc.EXTRA_CLOSE_CONNECTION_ID) ?: return
+                    engine.closeConnection(id)
+                }
+                VpnIpc.ACTION_CONNECTIONS_PAUSED -> {
+                    engine.connectionsPaused =
+                        intent?.getBooleanExtra(VpnIpc.EXTRA_CONNECTIONS_PAUSED, false) ?: false
+                }
             }
         }
     }
@@ -91,6 +101,8 @@ class AIVpnService : VpnService() {
             // UI-process requests (crossing the :vpn process boundary).
             addAction(VpnIpc.ACTION_REQUEST_SYNC)
             addAction(VpnIpc.ACTION_PING)
+            addAction(VpnIpc.ACTION_CLOSE_CONNECTION)
+            addAction(VpnIpc.ACTION_CONNECTIONS_PAUSED)
         }
         // RECEIVER_NOT_EXPORTED is mandatory on Android 13+ for runtime
         // registered receivers, otherwise the system throws on register.
@@ -280,6 +292,22 @@ class AIVpnService : VpnService() {
                     .putExtra(VpnIpc.EXTRA_MEMORY, rt.memoryBytes)
                     .putExtra(VpnIpc.EXTRA_CONNECTIONS_IN, rt.connectionsIn)
                     .putExtra(VpnIpc.EXTRA_CONNECTIONS_OUT, rt.connectionsOut)
+                sendBroadcast(intent)
+            }
+        }
+        // Connection snapshot relay: the connections page is the only
+        // consumer, and every UI pause/hide still costs a JSON serialise —
+        // so skip pushes while nothing changed.
+        scope.launch {
+            engine.connections.collect { list ->
+                val fingerprint = list.joinToString(",") { c ->
+                    "${c.id}:${c.uplinkTotal}:${c.downlinkTotal}:${c.closedAt}"
+                }
+                if (fingerprint == lastConnectionsFingerprint) return@collect
+                lastConnectionsFingerprint = fingerprint
+                val intent = Intent(VpnIpc.ACTION_CONNECTIONS)
+                    .setPackage(packageName)
+                    .putExtra(VpnIpc.EXTRA_CONNECTIONS_JSON, VpnIpc.connectionsToJson(list))
                 sendBroadcast(intent)
             }
         }

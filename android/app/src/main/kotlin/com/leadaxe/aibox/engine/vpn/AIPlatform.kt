@@ -27,6 +27,18 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 
+/** IP protocol numbers as the core passes them to [findConnectionOwner]. */
+private const val IPPROTO_TCP_NUM = 6
+private const val IPPROTO_UDP_NUM = 17
+
+/** Minimal [StringIterator] over an in-memory list, for gomobile callbacks. */
+private class ListStringIterator(private val values: List<String>) : StringIterator {
+    private var index = 0
+    override fun len(): Int = values.size
+    override fun hasNext(): Boolean = index < values.size
+    override fun next(): String = values[index++]
+}
+
 /**
  * Bridge between libbox's [PlatformInterface] and the Android runtime.
  *
@@ -149,7 +161,32 @@ class AIPlatform(private val context: Context) : PlatformInterface {
 
     override fun findConnectionOwner(
         ipVersion: Int, sourceAddress: String, sourcePort: Int, destinationAddress: String, destinationPort: Int,
-    ): ConnectionOwner? = null
+    ): ConnectionOwner? {
+        // ConnectivityManager.getConnectionOwnerUid is API 29+; below that we
+        // cannot attribute connections without root, so return null and the
+        // connection shows up without an owner.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
+        val protocol = if (ipVersion == IPPROTO_UDP_NUM) IPPROTO_UDP_NUM else IPPROTO_TCP_NUM
+        val uid = runCatching {
+            cm.getConnectionOwnerUid(
+                protocol,
+                java.net.InetSocketAddress(sourceAddress, sourcePort),
+                java.net.InetSocketAddress(destinationAddress, destinationPort),
+            )
+        }.getOrNull() ?: return null
+        if (uid <= 0) return null
+        return ConnectionOwner().apply {
+            setUserId(uid)
+            val pm = context.packageManager
+            val packages = runCatching {
+                pm.getPackagesForUid(uid)?.toList().orEmpty()
+            }.getOrDefault(emptyList())
+            if (packages.isNotEmpty()) {
+                setAndroidPackageNames(ListStringIterator(packages))
+            }
+        }
+    }
 
     override fun localDNSTransport(): LocalDNSTransport? = null
 

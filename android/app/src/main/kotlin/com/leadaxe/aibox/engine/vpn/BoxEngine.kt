@@ -74,6 +74,72 @@ class BoxEngine internal constructor(
     private val _runtime = MutableStateFlow(BoxRuntimeSnapshot())
     val runtime: StateFlow<BoxRuntimeSnapshot> = _runtime.asStateFlow()
 
+    /** Connection live-view as materialised from the kernel's event stream. */
+    @kotlinx.serialization.Serializable
+    data class ConnectionInfo(
+        val id: String,
+        val network: String,
+        val inbound: String,
+        val source: String,
+        val destination: String,
+        val domain: String,
+        val protocol: String,
+        val outbound: String,
+        val outboundType: String,
+        val chain: List<String>,
+        val rule: String,
+        val createdAt: Long,
+        val closedAt: Long,
+        val uplinkTotal: Long,
+        val downlinkTotal: Long,
+        val processPath: String,
+        val userId: Int,
+        val packageNames: List<String>,
+    ) {
+        val active: Boolean get() = closedAt == 0L
+        /** First hop of the chain is what the user picked (node or direct). */
+        val groupKey: String get() = chain.firstOrNull() ?: outbound.ifBlank { "unknown" }
+    }
+
+    private val _connections = MutableStateFlow<List<ConnectionInfo>>(emptyList())
+    val connections: StateFlow<List<ConnectionInfo>> = _connections.asStateFlow()
+
+    @Volatile
+    var connectionsPaused: Boolean = false
+
+    private fun connectionInfoFrom(c: io.nekohasekai.libbox.Connection): ConnectionInfo {
+        val chain = buildList {
+            val it = c.chain()
+            while (it.hasNext()) add(it.next())
+        }
+        val proc = c.processInfo
+        val packages = buildList {
+            proc?.packageNames()?.let { p ->
+                while (p.hasNext()) add(p.next())
+            }
+        }
+        return ConnectionInfo(
+            id = c.id,
+            network = c.network,
+            inbound = c.inbound,
+            source = c.source,
+            destination = c.destination,
+            domain = c.domain,
+            protocol = c.protocol,
+            outbound = c.outbound,
+            outboundType = c.outboundType,
+            chain = chain,
+            rule = c.rule,
+            createdAt = c.createdAt,
+            closedAt = c.closedAt,
+            uplinkTotal = c.uplinkTotal,
+            downlinkTotal = c.downlinkTotal,
+            processPath = proc?.processPath.orEmpty(),
+            userId = proc?.userID?.toInt() ?: -1,
+            packageNames = packages,
+        )
+    }
+
     /** Token to derive a fresh per-run command server secret. */
     private val startSequence = AtomicLong(0)
 
@@ -195,6 +261,7 @@ class BoxEngine internal constructor(
         val opts = io.nekohasekai.libbox.CommandClientOptions().apply {
             statusInterval = RUNTIME_PUSH_INTERVAL_MS
             addCommand(io.nekohasekai.libbox.Libbox.CommandStatus)
+            addCommand(io.nekohasekai.libbox.Libbox.CommandConnections)
         }
         val c = io.nekohasekai.libbox.CommandClient(this, opts)
         runCatching { c.connect() }
@@ -256,7 +323,60 @@ class BoxEngine internal constructor(
 
     override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) = Unit
 
-    override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) = Unit
+    override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) {
+        if (connectionsPaused) return
+        val updates = mutableListOf<ConnectionInfo>()
+        val closedIds = mutableListOf<String>()
+        val it = events.iterator()
+        while (it.hasNext()) {
+            val e = it.next()
+            when (e.type.toLong()) {
+                io.nekohasekai.libbox.Libbox.ConnectionEventNew ->
+                    e.connection?.let { updates += connectionInfoFrom(it) }
+                io.nekohasekai.libbox.Libbox.ConnectionEventUpdate ->
+                    e.connection?.let { updates += connectionInfoFrom(it) }
+                io.nekohasekai.libbox.Libbox.ConnectionEventClosed ->
+                    closedIds += e.id
+            }
+        }
+        if (events.reset) {
+            // Full snapshot: replaces whatever we tracked before.
+            val active = updates.associateBy { it.id }
+            val closed = _connections.value
+                .filter { it.id in closedIds }
+                .map { it.copy(closedAt = System.currentTimeMillis()) }
+                .associateBy { it.id }
+            _connections.value = (active + closed).values.toList()
+            return
+        }
+        _connections.update { current ->
+            val byId = current.associateBy { it.id }.toMutableMap()
+            updates.forEach { byId[it.id] = it }
+            closedIds.forEach { id ->
+                byId[id]?.let { byId[id] = it.copy(closedAt = it.closedAt.ifZero { System.currentTimeMillis() }) }
+            }
+            byId.values.toList()
+        }
+    }
+
+    private fun Long.ifZero(default: () -> Long): Long = if (this != 0L) this else default()
+
+    /** Closes one connection by id; the kernel pushes a CLOSED event after. */
+    fun closeConnection(id: String): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("engine not running"))
+        return runCatching { c.closeConnection(id) }
+    }
+
+    /** Closes every active connection. */
+    fun closeAllConnections(): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("engine not running"))
+        return runCatching { c.closeConnections() }
+    }
+
+    /** Clears the in-memory connection view (both live and history). */
+    fun clearConnections() {
+        _connections.value = emptyList()
+    }
 
     private fun filesDir(): File = context.filesDir
     private fun workDir(): File = File(context.filesDir, "box").apply { mkdirs() }
