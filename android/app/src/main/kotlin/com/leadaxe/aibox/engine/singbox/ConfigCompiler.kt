@@ -226,11 +226,55 @@ object ConfigCompiler {
                 })
             }
         }
+        // Route-rule derived DNS rules (lxbox-style linkage): a route rule
+        // with a DNS server pinned gets the same domain matchers compiled
+        // into a DNS rule here — no duplicated entries in the user's DNS
+        // list. Order: fakeip rules, then route-derived, then user rules.
+        state.routeRules.filter { it.enabled && it.syncDnsServer.isNotBlank() }.forEach { rr ->
+            compileRouteRuleDns(rr)?.let(::add)
+        }
         // User rules.
         state.dnsRules.filter { it.enabled }.forEach { rule ->
             when (rule.kind) {
                 DnsRule.KindJson -> addAll(compileJsonDnsRule(rule))
                 else -> compileInlineDnsRule(rule)?.let(::add)
+            }
+        }
+    }
+
+    /**
+     * Derives the DNS rule promised by [RouteRule.syncDnsServer]: the
+     * route rule's domain-class matchers, routed to that server. Returns
+     * null for IP-only rules (nothing name-based to steer).
+     */
+    private fun compileRouteRuleDns(rule: RouteRule): JsonObject? {
+        fun matcherOf(domain: List<String>, suffix: List<String>, keyword: List<String>, regex: List<String>, ruleSets: List<String>): JsonObject? {
+            val obj = buildJsonObject {
+                putStringList("domain", domain)
+                putStringList("domain_suffix", suffix)
+                putStringList("domain_keyword", keyword)
+                putStringList("domain_regex", regex)
+                putStringList("rule_set", ruleSets)
+            }
+            return if (obj.isEmpty()) null else obj
+        }
+        return if (rule.isLogical) {
+            val children = rule.rules.mapNotNull { sub ->
+                matcherOf(sub.domain, sub.domainSuffix, sub.domainKeyword, sub.domainRegex, sub.ruleSet)
+            }
+            if (children.isEmpty()) return null
+            buildJsonObject {
+                put("type", "logical")
+                put("mode", rule.logicalMode)
+                putJsonArray("rules") { children.forEach(::add) }
+                put("server", rule.syncDnsServer)
+            }
+        } else {
+            val matcher = matcherOf(rule.domain, rule.domainSuffix, rule.domainKeyword, rule.domainRegex, rule.ruleSet)
+                ?: return null
+            buildJsonObject {
+                for ((k, v) in matcher) put(k, v)
+                put("server", rule.syncDnsServer)
             }
         }
     }

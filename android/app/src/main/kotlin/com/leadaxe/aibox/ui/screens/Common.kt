@@ -16,8 +16,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 
 /** Reusable header used at the top of every scrollable screen. */
@@ -69,20 +74,35 @@ fun ListField(
     supporting: String = "",
     modifier: Modifier = Modifier,
 ) {
-    // One entry per line: values with commas (regex, CIDR lists) survive,
-    // and a long list is readable without horizontal scrolling.
-    val text = values.joinToString("\n")
+    // One entry per line. The raw text is kept locally while typing —
+    // normalising on every keystroke (filtering blank lines) would eat the
+    // newline the user just typed and yank the cursor back, making
+    // multi-line input impossible. The list is pushed back when the field
+    // loses focus, or when the content was changed externally.
+    var text by remember { mutableStateOf(values.joinToString("\n")) }
+    var lastExternal by remember { mutableStateOf(values.joinToString("\n")) }
+    if (values.joinToString("\n") != lastExternal) {
+        // External change (e.g. the editor saved and rebuilt the state):
+        // adopt it wholesale.
+        lastExternal = values.joinToString("\n")
+        text = lastExternal
+    }
     Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = text,
-            onValueChange = { raw ->
-                onValuesChange(raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() })
-            },
+            onValueChange = { text = it },
             label = { Text(label) },
             placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
             minLines = 3,
             maxLines = 8,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { st ->
+                    if (!st.isFocused) {
+                        val parsed = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+                        if (parsed != values) onValuesChange(parsed)
+                    }
+                },
         )
         if (supporting.isNotEmpty()) {
             Text(

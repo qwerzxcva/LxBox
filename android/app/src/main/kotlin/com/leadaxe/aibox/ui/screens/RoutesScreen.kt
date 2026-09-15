@@ -153,13 +153,8 @@ fun RoutesScreen() {
             onDismiss = { creating = false },
             onSave = { rule ->
                 val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, rule)
-                val dnsAdd = syncedDnsRule(state.dnsRules, normalized)
                 store.update { st ->
-                    st.copy(
-                        routeRules = st.routeRules + normalized,
-                        ruleSets = st.ruleSets + adds,
-                        dnsRules = dnsAdd?.let { st.dnsRules + it } ?: st.dnsRules,
-                    )
+                    st.copy(routeRules = st.routeRules + normalized, ruleSets = st.ruleSets + adds)
                 }
                 creating = false
             },
@@ -172,12 +167,10 @@ fun RoutesScreen() {
             onDismiss = { editing = null },
             onSave = { updated ->
                 val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, updated)
-                val dnsAdd = syncedDnsRule(state.dnsRules, normalized)
                 store.update { st ->
                     st.copy(
                         routeRules = st.routeRules.map { if (it.id == normalized.id) normalized else it },
                         ruleSets = st.ruleSets + adds,
-                        dnsRules = dnsAdd?.let { dn -> st.dnsRules + dn } ?: st.dnsRules,
                     )
                 }
                 editing = null
@@ -245,52 +238,6 @@ internal fun materializeRuleSetReferences(
     materializeRuleSetTags(existing, rule.ruleSet).let { (adds, tags) ->
         Pair(adds, rule.copy(ruleSet = tags))
     }
-
-/**
- * Builds the DNS rule promised by [RouteRule.syncDnsRule]: same matchers,
- * routed to the picked server. IP-only rules get null (nothing to sync).
- * Dedupes against existing DNS rules by id="sync-<routeRuleId>" so saving
- * the same route rule twice never duplicates the DNS side.
- */
-internal fun syncedDnsRule(
-    existingDnsRules: List<com.leadaxe.aibox.app.DnsRule>,
-    rule: RouteRule,
-): com.leadaxe.aibox.app.DnsRule? {
-    if (!rule.syncDnsRule) return null
-    val hasDomainMatchers = rule.domain.isNotEmpty() || rule.domainSuffix.isNotEmpty() ||
-        rule.domainKeyword.isNotEmpty() || rule.domainRegex.isNotEmpty() || rule.ruleSet.isNotEmpty() ||
-        rule.rules.any { sub ->
-            sub.domain.isNotEmpty() || sub.domainSuffix.isNotEmpty() ||
-                sub.domainKeyword.isNotEmpty() || sub.domainRegex.isNotEmpty() || sub.ruleSet.isNotEmpty()
-        }
-    if (!hasDomainMatchers || rule.syncDnsServer.isBlank()) return null
-    val id = "sync-${rule.id}"
-    if (existingDnsRules.any { it.id == id }) return null
-    return com.leadaxe.aibox.app.DnsRule(
-        id = id,
-        name = rule.name.ifBlank { rule.id.take(8) },
-        type = rule.type,
-        logicalMode = rule.logicalMode,
-        rules = rule.rules.map { sub ->
-            com.leadaxe.aibox.app.DnsRule(
-                id = sub.id,
-                name = sub.name,
-                type = sub.type,
-                domain = sub.domain,
-                domainSuffix = sub.domainSuffix,
-                domainKeyword = sub.domainKeyword,
-                domainRegex = sub.domainRegex,
-                ruleSet = sub.ruleSet,
-            )
-        },
-        domain = rule.domain,
-        domainSuffix = rule.domainSuffix,
-        domainKeyword = rule.domainKeyword,
-        domainRegex = rule.domainRegex,
-        ruleSet = rule.ruleSet,
-        server = rule.syncDnsServer,
-    )
-}
 
 /**
  * Renders a list with per-row move-up/move-down affordances. Order matters in
@@ -531,7 +478,6 @@ private fun RuleEditor(
     var ipIsPrivate by remember { mutableStateOf(initial?.ipIsPrivate ?: false) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
     var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
-    var syncDnsRule by remember { mutableStateOf(initial?.syncDnsRule ?: true) }
     var syncDnsServer by remember { mutableStateOf(initial?.syncDnsServer.orEmpty()) }
     var logicalMode by remember { mutableStateOf(initial?.logicalMode ?: RouteRule.LogicalAnd) }
     var subRules by remember { mutableStateOf(initial?.rules ?: emptyList()) }
@@ -782,23 +728,19 @@ private fun RuleEditor(
                     onCheckedChange = { enabled = it },
                 )
                 if (dnsSyncApplicable) {
-                    SwitchRow(
-                        label = stringResource(R.string.routes_sync_dns),
-                        supporting = stringResource(R.string.routes_sync_dns_desc),
-                        checked = syncDnsRule,
-                        onCheckedChange = { syncDnsRule = it },
+                    // lxbox-style DNS linkage: pick a server here and the
+                    // compiler derives the DNS rule from this rule's domain
+                    // matchers — no entries copied into the DNS list.
+                    SingleChoiceChips(
+                        label = stringResource(R.string.routes_sync_dns_server),
+                        options = listOf("") + state.dnsServers.filter { it.enabled }.map { it.tag },
+                        selected = syncDnsServer,
+                        onSelect = { syncDnsServer = it },
+                        display = { tag ->
+                            if (tag.isEmpty()) stringResource(R.string.routes_sync_dns_none)
+                            else state.dnsServers.firstOrNull { s -> s.tag == tag }?.name?.ifBlank { tag } ?: tag
+                        },
                     )
-                    if (syncDnsRule) {
-                        SingleChoiceChips(
-                            label = stringResource(R.string.routes_sync_dns_server),
-                            options = state.dnsServers.filter { it.enabled }.map { it.tag },
-                            selected = syncDnsServer,
-                            onSelect = { syncDnsServer = it },
-                            display = { tag ->
-                                state.dnsServers.firstOrNull { s -> s.tag == tag }?.name?.ifBlank { tag } ?: tag
-                            },
-                        )
-                    }
                 } else if (kind == RouteRule.KindInline) {
                     Text(
                         stringResource(R.string.routes_sync_dns_na),
@@ -838,7 +780,6 @@ private fun RuleEditor(
                             ipIsPrivate = ipIsPrivate,
                             json = jsonBody,
                             clientSubnet = clientSubnet,
-                            syncDnsRule = syncDnsRule,
                             syncDnsServer = syncDnsServer,
                         ),
                     )

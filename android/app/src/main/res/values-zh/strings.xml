@@ -229,9 +229,9 @@
     <string name="subs_edit">编辑订阅</string>
     <string name="dns_response_rcode">响应码匹配（rcode）</string>
     <string name="dns_response_rcode_hint">按 DNS 应答码匹配，如 NOERROR、NXDOMAIN、SERVFAIL。</string>
-    <string name="routes_sync_dns">同时创建 DNS 规则</string>
-    <string name="routes_sync_dns_desc">按相同域名条件生成 DNS 规则，由所选服务器解析。纯 IP 规则不适用。</string>
-    <string name="routes_sync_dns_server">DNS 规则使用的服务器</string>
+    <string name="routes_sync_dns_desc">lxbox 式联动：编译时按此规则的域名条件自动生成 DNS 规则 — 不会往 DNS 规则列表里复制条目。</string>
+    <string name="routes_sync_dns_server">本规则的 DNS 解析</string>
+    <string name="routes_sync_dns_none">跟随默认</string>
     <string name="routes_sync_dns_na">纯 IP 规则：不创建 DNS 规则（IP 规则直接匹配解析后的地址）。</string>
     <string name="routes_section_builtin">内置规则</string>
     <string name="routes_fakeip_bypass">Fake-IP 绕过规则</string>

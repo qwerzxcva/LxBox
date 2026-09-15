@@ -231,9 +231,9 @@
     <string name="subs_edit">Edit subscription</string>
     <string name="dns_response_rcode">Response rcode</string>
     <string name="dns_response_rcode_hint">Match DNS responses by return code, e.g. NOERROR, NXDOMAIN, SERVFAIL.</string>
-    <string name="routes_sync_dns">Create matching DNS rule</string>
-    <string name="routes_sync_dns_desc">Adds a DNS rule with the same domain matchers, resolved by the chosen server. IP-only rules cannot use this.</string>
-    <string name="routes_sync_dns_server">DNS server for the synced rule</string>
+    <string name="routes_sync_dns_desc">lxbox-style: the compiler derives a DNS rule from the domain matchers of this rule — nothing is copied into the DNS rule list.</string>
+    <string name="routes_sync_dns_server">DNS resolution for this rule</string>
+    <string name="routes_sync_dns_none">Follow default</string>
     <string name="routes_sync_dns_na">IP-only rule: no DNS rule is created (matches happen on resolved addresses).</string>
     <string name="routes_section_builtin">Built-in</string>
     <string name="routes_fakeip_bypass">Fake-IP bypass rule</string>

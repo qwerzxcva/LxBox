@@ -322,13 +322,12 @@ data class RouteRule(
     /** EDNS client subnet for the resolve action, e.g. "1.2.3.0/24". Empty = off. */
     val clientSubnet: String = "",
     /**
-     * Domain-class rules usually want a matching DNS rule (same matchers,
-     * resolved by the chosen server) so the domain list actually steers
-     * resolution. IP-class matchers (ip_cidr) match on addresses and need
-     * no DNS rule; keeping the flag separate lets the user decide.
+     * DNS linkage, lxbox-style: when [syncDnsServer] is set, the compiler
+     * derives a DNS rule from this route rule's domain matchers at compile
+     * time — the domain list steers DNS without duplicating entries in the
+     * DNS rule list. IP-only matchers never produce one (they match on
+     * resolved addresses, not names).
      */
-    val syncDnsRule: Boolean = true,
-    /** DNS server tag used by the synced DNS rule; empty = no sync. */
     val syncDnsServer: String = "",
     // ----- json kind -----
     val json: String = "",
