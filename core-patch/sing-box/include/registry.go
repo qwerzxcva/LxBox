@@ -1,0 +1,155 @@
+package include
+
+// AIBox-slim registry: only the protocol/endpoint/service surface the app
+// can actually compile into a config — vless + shadowsocks outbounds, the
+// local socks/http/mixed inbounds (subscription fetch + LAN proxy), tun,
+// group/urltest, direct/block/dns, and the DNS transports (incl. group +
+// fakeip). Everything else (vmess/trojan/naive/tor/ssh/snell/anytls/
+// shadowtls + openvpn/openconnect/tailscale/wireguard endpoints + usbip/
+// derp/ccm/ssmapi services) is gone: smaller .so, less attack surface,
+// faster startup.
+
+import (
+	"context"
+
+	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/adapter/certificate"
+	"github.com/sagernet/sing-box/adapter/endpoint"
+	"github.com/sagernet/sing-box/adapter/inbound"
+	"github.com/sagernet/sing-box/adapter/outbound"
+	"github.com/sagernet/sing-box/adapter/provider"
+	"github.com/sagernet/sing-box/dns"
+	"github.com/sagernet/sing-box/dns/transport"
+	"github.com/sagernet/sing-box/dns/transport/fakeip"
+	"github.com/sagernet/sing-box/dns/transport/hosts"
+	"github.com/sagernet/sing-box/dns/transport/local"
+	"github.com/sagernet/sing-box/dns/transport/mdns"
+	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing-box/protocol/block"
+	"github.com/sagernet/sing-box/protocol/direct"
+	"github.com/sagernet/sing-box/protocol/group"
+	"github.com/sagernet/sing-box/protocol/http"
+	"github.com/sagernet/sing-box/protocol/mixed"
+	"github.com/sagernet/sing-box/protocol/shadowsocks"
+	"github.com/sagernet/sing-box/protocol/socks"
+	"github.com/sagernet/sing-box/protocol/tun"
+	"github.com/sagernet/sing-box/protocol/vless"
+	providerLocal "github.com/sagernet/sing-box/provider/local"
+	"github.com/sagernet/sing-box/provider/remote"
+	"github.com/sagernet/sing-box/service/api"
+	"github.com/sagernet/sing-box/service/resolved"
+	"github.com/sagernet/sing-box/adapter/service"
+	C "github.com/sagernet/sing-box/constant"
+	E "github.com/sagernet/sing/common/exceptions"
+)
+
+
+func Context(ctx context.Context) context.Context {
+	return box.Context(ctx, InboundRegistry(), ProviderRegistry(), OutboundRegistry(), EndpointRegistry(), DNSTransportRegistry(), ServiceRegistry(), CertificateProviderRegistry())
+}
+func InboundRegistry() *inbound.Registry {
+	registry := inbound.NewRegistry()
+
+	tun.RegisterInbound(registry)
+	direct.RegisterInbound(registry)
+
+	socks.RegisterInbound(registry)
+	http.RegisterInbound(registry)
+	mixed.RegisterInbound(registry)
+
+	shadowsocks.RegisterInbound(registry)
+	vless.RegisterInbound(registry)
+
+	registerStubForRemovedInbounds(registry)
+
+	return registry
+}
+
+func ProviderRegistry() *provider.Registry {
+	registry := provider.NewRegistry()
+
+	providerLocal.RegisterProviderInline(registry)
+	providerLocal.RegisterProviderLocal(registry)
+	remote.RegisterProvider(registry)
+
+	return registry
+}
+
+func OutboundRegistry() *outbound.Registry {
+	registry := outbound.NewRegistry()
+
+	direct.RegisterOutbound(registry)
+
+	block.RegisterOutbound(registry)
+
+	group.RegisterSelector(registry)
+	group.RegisterURLTest(registry)
+
+	socks.RegisterOutbound(registry)
+	http.RegisterOutbound(registry)
+	shadowsocks.RegisterOutbound(registry)
+	vless.RegisterOutbound(registry)
+
+	registerStubForRemovedOutbounds(registry)
+
+	return registry
+}
+
+func EndpointRegistry() *endpoint.Registry {
+	registry := endpoint.NewRegistry()
+
+	return registry
+}
+
+func DNSTransportRegistry() *dns.TransportRegistry {
+	registry := dns.NewTransportRegistry()
+
+	transport.RegisterTCP(registry)
+	transport.RegisterUDP(registry)
+	transport.RegisterTLS(registry)
+	transport.RegisterHTTPS(registry)
+	transport.RegisterGroup(registry)
+	hosts.RegisterTransport(registry)
+	local.RegisterTransport(registry)
+	mdns.RegisterTransport(registry)
+	fakeip.RegisterTransport(registry)
+	resolved.RegisterTransport(registry)
+
+	registerDHCPTransport(registry)
+
+	return registry
+}
+
+func ServiceRegistry() *service.Registry {
+	registry := service.NewRegistry()
+
+	api.RegisterService(registry)
+	resolved.RegisterService(registry)
+
+	registerOOMKillerService(registry)
+
+	return registry
+}
+
+func CertificateProviderRegistry() *certificate.Registry {
+	registry := certificate.NewRegistry()
+
+	return registry
+}
+
+func registerStubForRemovedInbounds(registry *inbound.Registry) {
+	inbound.Register[option.ShadowsocksInboundOptions](registry, C.TypeShadowsocksR, func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ShadowsocksInboundOptions) (adapter.Inbound, error) {
+		return nil, E.New("ShadowsocksR is deprecated and removed in sing-box 1.6.0")
+	})
+}
+
+func registerStubForRemovedOutbounds(registry *outbound.Registry) {
+	outbound.Register[option.ShadowsocksROutboundOptions](registry, C.TypeShadowsocksR, func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ShadowsocksROutboundOptions) (adapter.Outbound, error) {
+		return nil, E.New("ShadowsocksR is deprecated and removed in sing-box 1.6.0")
+	})
+	outbound.Register[option.StubOptions](registry, C.TypeWireGuard, func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.StubOptions) (adapter.Outbound, error) {
+		return nil, E.New("WireGuard outbound is deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0, use WireGuard endpoint instead")
+	})
+}
