@@ -27,8 +27,23 @@ android {
         applicationId = "com.leadaxe.aibox"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "3.0.0"
+        // versionCode grows with the commit count so every build strictly
+        // increases; versionName follows the release tag (v3.0.0 -> 3.0.0)
+        // when CI injects RELEASE_TAG.
+        versionCode = runCatching {
+            providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+                .standardOutput.asText.get().trim().toInt() * 10
+        }.getOrDefault(10)
+        // Accept only v-prefixed versions so a branch-name ref never
+        // becomes the version string.
+        versionName = System.getenv("RELEASE_TAG")
+            ?.takeIf { Regex("^v\\d+").containsMatchIn(it) }
+            ?.removePrefix("v")
+            ?: "3.0.0"
+
+        // Keep only the locales the app actually ships; drops the dozens of
+        // translations bundled by AndroidX/Compose libraries.
+        resourceConfigurations += listOf("en", "zh", "zh-rCN")
     }
 
     // arm64-v8a is the only shipped target: the user's devices are all
