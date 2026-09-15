@@ -60,8 +60,8 @@ fun DnsScreen() {
 
     var editingServer: DnsServerState? by remember { mutableStateOf(null) }
     var creatingServer by remember { mutableStateOf(false) }
-    var editingRule: DnsRule? by remember { mutableStateOf(null) }
-    var creatingRule by remember { mutableStateOf(false) }
+    var editingRule: DnsRule? by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(null) }
+    var creatingRule by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
 
     // Rule editor as a second-level page (replaces the list while open).
     // The dialog version clipped long forms and could not scroll properly.
