@@ -33,9 +33,12 @@ and is **not** vendored — CI compiles it from source on every run
 (`Build libbox AAR from reF1nd source` step). Local builds can reuse the same
 steps or drop a prebuilt AAR at `app/libs/libbox.aar` (gitignored).
 
-Only five build tags are enabled: `with_gvisor`, `with_quic`, `with_utls`,
-`with_clash_api`, `tfogo_checklinkname0`. Everything else — wireguard,
-tailscale, naive, usbip, openvpn, openconnect, ebpf — is compiled out.
+Only four build tags are enabled: `with_quic`, `with_utls`, `with_clash_api`,
+`tfogo_checklinkname0`. Everything else — wireguard, tailscale, naive, usbip,
+openvpn, openconnect, ebpf, **gvisor** — is compiled out. The TUN uses
+sing-tun's own Go stack (the gvisor/mixed/system stacks are deprecated since
+1.15 and their runtime was removed with the `with_gvisor` tag, which also
+dropped ~26% off the core AAR).
 
 ## Project layout
 

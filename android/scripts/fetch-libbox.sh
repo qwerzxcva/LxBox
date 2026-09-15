@@ -64,7 +64,7 @@ echo "→ gomobile bind (arm64-v8a only, SDK 24)"
     -javapkg=io.nekohasekai \
     -libname=box \
     -ldflags "-X github.com/sagernet/sing-box/constant.Version=$REF_TAG -s -w" \
-    -tags "with_gvisor,with_quic,with_utls,with_clash_api,tfogo_checklinkname0" \
+    -tags "with_quic,with_utls,with_clash_api,tfogo_checklinkname0" \
     ./experimental/libbox
 
 echo "OK: $(du -h "$OUT_FILE" | cut -f1) → $OUT_FILE"

@@ -217,7 +217,7 @@ jobs:
             -javapkg=io.nekohasekai \
             -libname=box \
             -ldflags "-X github.com/sagernet/sing-box/constant.Version=$REF_TAG -s -w" \
-            -tags "with_gvisor,with_quic,with_utls,with_clash_api,tfogo_checklinkname0" \
+            -tags "with_quic,with_utls,with_clash_api,tfogo_checklinkname0" \
             ./experimental/libbox
 
           mkdir -p "$GITHUB_WORKSPACE/android/app/libs"
@@ -231,7 +231,7 @@ jobs:
           set -euo pipefail
           SIZE=$(stat -c%s android/app/libs/libbox.aar)
           echo "libbox.aar size: $SIZE bytes"
-          if [ "$SIZE" -lt 15000000 ]; then
+          if [ "$SIZE" -lt 10000000 ]; then
             echo "::error::libbox.aar is suspiciously small — build likely failed partway."
             exit 1
           fi
