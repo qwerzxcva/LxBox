@@ -118,7 +118,9 @@ object ConfigCompiler {
             // through when the proxy chain is the only way out.
             val resolverTag = pickDefaultResolver(state)
             if (resolverTag != null) put("default_domain_resolver", resolverTag)
-            put("final", ProxySelectorTag)
+            // "Unknown traffic" exit: the route `final` catch-all. Empty =
+            // the main proxy selector.
+            put("final", state.unknownTrafficOutbound.ifBlank { ProxySelectorTag })
             put("auto_detect_interface", true)
         }
     }
@@ -462,6 +464,7 @@ object ConfigCompiler {
                         if (fallback) FALLBACK_PROBE_INTERVAL else defaultUrlTestInterval()
                     }
                     put("interval", interval)
+                    if (group.unifiedDelay) put("urltest_unified_delay", true)
                     val tolerance = if (group.tolerance > 0) {
                         group.tolerance
                     } else if (fallback) {
@@ -488,6 +491,25 @@ object ConfigCompiler {
     // ----------------------------------------------------------------- route
 
     private fun compileRouteRules(state: AppState): List<JsonObject> = buildList {
+        // Built-in: fake-IP bypass. Any packet addressed into the fake pool
+        // goes straight to direct — an app that cached a fake address past
+        // the tunnel's lifetime must not loop it back through the proxy.
+        if (state.fakeIpBypass && state.enableFakeIp) {
+            val v4 = state.fakeIpInet4Range.ifBlank { "198.18.0.0/15" }
+            add(buildJsonObject {
+                putJsonArray("ip_cidr") { add(v4) }
+                put("action", "route")
+                put("outbound", DirectOutboundTag)
+            })
+            if (state.enableIpv6) {
+                val v6 = state.fakeIpInet6Range.ifBlank { "fc00::/18" }
+                add(buildJsonObject {
+                    putJsonArray("ip_cidr") { add(v6) }
+                    put("action", "route")
+                    put("outbound", DirectOutboundTag)
+                })
+            }
+        }
         // Power-saving: route private IPs straight to direct. With LAN bypass
         // in the tun this should rarely fire, but apps that bind to RFC1918
         // and then try to reach other RFC1918 destinations will still go

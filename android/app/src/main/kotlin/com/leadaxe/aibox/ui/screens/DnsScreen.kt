@@ -365,9 +365,12 @@ private fun DnsServerEditor(
     val detourOptions = remember(state.outbounds) {
         listOf(DnsDetourDirect, DnsDetourProxy) + state.outbounds.map { it.tag }
     }
-    // Candidate members for a group: every other server, by tag.
+    // Candidate members for a group: every concrete (non-group) server
+    // except this one — groups cannot nest groups.
     val groupCandidates = remember(state.dnsServers, initial) {
-        state.dnsServers.filter { it.id != initial?.id }.map { it.tag }
+        state.dnsServers
+            .filter { it.id != initial?.id && it.type != "group" }
+            .map { it.tag }
     }
 
     AlertDialog(

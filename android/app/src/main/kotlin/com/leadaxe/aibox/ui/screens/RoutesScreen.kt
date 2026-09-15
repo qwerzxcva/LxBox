@@ -105,42 +105,42 @@ fun RoutesScreen() {
         }
 
         item {
-            SectionHeader(stringResource(R.string.routes_section_rulesets, state.ruleSets.size))
+            SectionHeader(stringResource(R.string.routes_section_builtin))
         }
-        items(state.ruleSets, key = { it.id }) { rs ->
-            val cached = remember(rs.id, rs.lastUpdatedEpochMillis) {
-                java.io.File(context.filesDir, "box/ruleset/${rs.id}.${rs.extension}").isFile
-            }
-            // One line per rule set, matching the rule rows above: tag,
-            // format, cache state, then the actions. The URL is truncated
-            // rather than wrapped so every row keeps the same height.
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = rs.tag + "  ·  " + rs.format,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                        )
-                        Text(
-                            text = stringResource(if (cached) R.string.rulesets_cached else R.string.rulesets_not_cached) +
-                                "  ·  " + rs.url,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                        )
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SwitchRow(
+                        label = stringResource(R.string.routes_fakeip_bypass),
+                        supporting = stringResource(R.string.routes_fakeip_bypass_desc),
+                        checked = state.fakeIpBypass,
+                        onCheckedChange = { v -> store.update { it.copy(fakeIpBypass = v) } },
+                    )
+                    val outboundOptions = remember(state.outbounds, state.outboundGroups) {
+                        listOf("", DirectOutboundTag) +
+                            state.outboundGroups.filter { it.enabled }.map { it.tag } +
+                            state.outbounds.map { it.tag }
                     }
-                    IconButton(onClick = { editingRuleSet = rs }) {
-                        Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
-                    }
-                    IconButton(onClick = {
-                        store.update { st -> st.copy(ruleSets = st.ruleSets.filterNot { it.id == rs.id }) }
-                    }) {
-                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
-                    }
+                    SingleChoiceChips(
+                        label = stringResource(R.string.routes_unknown_traffic),
+                        options = outboundOptions,
+                        selected = state.unknownTrafficOutbound,
+                        onSelect = { v -> store.update { it.copy(unknownTrafficOutbound = v) } },
+                        display = { tag ->
+                            when (tag) {
+                                "" -> stringResource(R.string.routes_unknown_traffic_proxy)
+                                DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+                                else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                                    ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                                    ?: tag
+                            }
+                        },
+                    )
+                    Text(
+                        stringResource(R.string.routes_unknown_traffic_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -181,19 +181,6 @@ fun RoutesScreen() {
                     )
                 }
                 editing = null
-            },
-        )
-    }
-
-    editingRuleSet?.let { rs ->
-        RuleSetEditor(
-            initial = rs,
-            onDismiss = { editingRuleSet = null },
-            onSave = { updated ->
-                store.update { st ->
-                    st.copy(ruleSets = st.ruleSets.map { if (it.id == updated.id) updated else it })
-                }
-                editingRuleSet = null
             },
         )
     }
@@ -1009,81 +996,6 @@ private fun SubRuleEditor(
                         ),
                     )
                 },
-            ) { Text(stringResource(R.string.common_save)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
-}
-/**
- * Editor for a managed rule-set (.srs / source .json) resource. The tag is
- * what inline route and DNS rules reference via `rule_set`; the URL is
- * downloaded to `filesDir/box/ruleset/<id>.<ext>` and reused as a local
- * rule set when the cache exists.
- */
-@Composable
-private fun RuleSetEditor(
-    initial: com.leadaxe.aibox.app.RuleSetResource?,
-    onDismiss: () -> Unit,
-    onSave: (com.leadaxe.aibox.app.RuleSetResource) -> Unit,
-) {
-    var tag by remember { mutableStateOf(initial?.tag.orEmpty()) }
-    var format by remember { mutableStateOf(initial?.format ?: "binary") }
-    var url by remember { mutableStateOf(initial?.url.orEmpty()) }
-    var interval by remember { mutableStateOf((initial?.updateIntervalHours ?: 168).toString()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(if (initial == null) R.string.rulesets_new else R.string.rulesets_edit))
-        },
-        text = {
-            FormBody {
-                StringField(
-                    label = stringResource(R.string.rulesets_tag),
-                    value = tag,
-                    onValueChange = { tag = it },
-                    placeholder = stringResource(R.string.rulesets_tag_hint),
-                )
-                SingleChoiceChips(
-                    label = stringResource(R.string.rulesets_format),
-                    options = listOf("binary", "source"),
-                    selected = format,
-                    onSelect = { format = it },
-                    display = {
-                        if (it == "source") stringResource(R.string.rulesets_format_source)
-                        else stringResource(R.string.rulesets_format_binary)
-                    },
-                )
-                StringField(
-                    label = stringResource(R.string.rulesets_url),
-                    value = url,
-                    onValueChange = { url = it },
-                    placeholder = stringResource(R.string.rulesets_url_hint),
-                )
-                StringField(
-                    label = stringResource(R.string.rulesets_interval),
-                    value = interval,
-                    onValueChange = { interval = it.filter { c -> c.isDigit() } },
-                    placeholder = stringResource(R.string.rulesets_interval_hint),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(
-                        (initial ?: com.leadaxe.aibox.app.RuleSetResource(
-                            id = java.util.UUID.randomUUID().toString(),
-                            tag = "",
-                        )).copy(
-                            tag = tag.trim(),
-                            format = format,
-                            url = url.trim(),
-                            updateIntervalHours = interval.toIntOrNull() ?: 0,
-                        ),
-                    )
-                },
-                enabled = tag.isNotBlank() && url.isNotBlank(),
             ) { Text(stringResource(R.string.common_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
