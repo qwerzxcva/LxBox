@@ -134,6 +134,30 @@ data class AppState(
     // ------------------------------------------------------------- engine
     val logLevel: String = "warn",
     val appendLogToFile: Boolean = true,
+
+    // ------------------------------------------------------------- mux
+    /**
+     * Multiplex every eligible outbound over one connection.
+     *
+     * VLESS nodes that carry a `flow` value are exempt: the kernel rejects
+     * mux combined with flow (`flow` pins a distinct stream style), so those
+     * nodes always dial their own connection.
+     */
+    val muxEnabled: Boolean = false,
+    /** [MuxProtocolH2mux] | [MuxProtocolSmux] | [MuxProtocolYamux]. */
+    val muxProtocol: String = MuxProtocolH2mux,
+    /** Aggregate cap on concurrent multiplexed connections; 0 = engine default. */
+    val muxMaxConnections: Int = 0,
+    /** Streams below this count open a new connection early; 0 = default. */
+    val muxMinStreams: Int = 0,
+    /** Hard cap on concurrent streams per connection; 0 = default. */
+    val muxMaxStreams: Int = 0,
+    /** Pad mux frames to obscure traffic shape (h2mux/yamux). */
+    val muxPadding: Boolean = false,
+    /** Brutal congestion control, an alternative to BBR on lossy links. */
+    val muxBrutalEnabled: Boolean = false,
+    val muxBrutalUpMbps: Int = 0,
+    val muxBrutalDownMbps: Int = 0,
     /** Persist rule-set / fake-IP caches to disk (experimental.cache_file). */
     val enableCacheFile: Boolean = true,
     /**
@@ -189,6 +213,14 @@ val SnifferProtocolOptions = listOf(
 )
 
 val SingBoxLogLevels = listOf("trace", "debug", "info", "warn", "error", "fatal", "panic")
+
+// ----- multiplex -----
+
+const val MuxProtocolH2mux = "h2mux"
+const val MuxProtocolSmux = "smux"
+const val MuxProtocolYamux = "yamux"
+
+val MuxProtocols = listOf(MuxProtocolH2mux, MuxProtocolSmux, MuxProtocolYamux)
 
 /**
  * DNS server transport types. `local` uses the OS resolver; `direct` forces
@@ -328,6 +360,21 @@ data class RouteRule(
     /** "default" matches its own fields; "logical" combines `rules` with `logicalMode`. */
     val type: String = RuleTypeDefault,
     val logicalMode: String = LogicalAnd,
+    /**
+     * How this rule's own conditions combine.
+     *
+     * "" (legacy) / [CombineAnd] — the kernel-native default rule: ordinary
+     * items (package, port, …) are AND'ed, the destination-address family
+     * forms one OR group.
+     *
+     * [CombineOr] — every condition family is OR'ed: matching any of the
+     * listed domains, packages, ports, … is enough. Compiles to a nested
+     * logical OR so the two shapes stay distinguishable.
+     *
+     * New sub-rules default to [CombineOr]; existing rules keep "" so their
+     * compiled behaviour does not change under them.
+     */
+    val combine: String = "",
     val invert: Boolean = false,
     val rules: List<RouteRule> = emptyList(),
     // ----- inline: match fields (default rules) -----
@@ -374,6 +421,12 @@ data class RouteRule(
     val ipPreference: String = "prefer_ipv6",
     // ----- json kind -----
     val json: String = "",
+    /**
+     * Set when a built-in preset created this rule (see RulePresets). Lets
+     * the routes page show the preset as installed and remove its rules in
+     * one tap; null for hand-made rules.
+     */
+    val presetId: String? = null,
 ) {
     val isLogical: Boolean get() = type == RuleTypeLogical
 
@@ -384,6 +437,8 @@ data class RouteRule(
         const val RuleTypeLogical = "logical"
         const val LogicalAnd = "and"
         const val LogicalOr = "or"
+        const val CombineAnd = "and"
+        const val CombineOr = "or"
         const val RuleActionRoute = "route"
         const val RuleActionReject = "reject"
         const val RuleActionResolve = "resolve"

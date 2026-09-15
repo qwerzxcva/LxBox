@@ -4,7 +4,7 @@
 
     <!-- bottom navigation -->
     <string name="nav_home">Home</string>
-    <string name="nav_subscriptions">Subscriptions</string>
+    <string name="nav_subscriptions">Groups</string>
     <string name="nav_routes">Routes</string>
     <string name="nav_dns">DNS</string>
     <string name="nav_settings">Settings</string>
@@ -36,8 +36,23 @@
     <string name="subs_paste_link">Paste link</string>
     <string name="subs_section_subscriptions">Subscriptions (%1$d)</string>
     <string name="subs_section_nodes">Nodes (%1$d)</string>
+    <string name="subs_section_subscriptions_title">Sources</string>
+    <string name="subs_section_sources_short">Subscription URLs these nodes come from</string>
+    <string name="subs_section_nodes_title">Nodes</string>
+    <string name="subs_section_nodes_short">Every node imported from the sources</string>
+    <string name="subs_nodes_empty_hint">No nodes yet — add a subscription above.</string>
+    <string name="subs_folder_count">%1$d subscription(s)</string>
+    <string name="subs_groups_section_title">Folders</string>
+    <string name="groups_section_title">Groups</string>
+    <string name="groups_section_short">Selector and URL-test groups built on the nodes</string>
+    <string name="settings_mux_disabled_short">Off — tap to configure</string>
     <string name="subs_name">Name</string>
     <string name="subs_url">Subscription URL</string>
+    <string name="subs_url_edit_hint">Change the link here when the panel rotates it; saving refetches the nodes automatically.</string>
+    <string name="subs_update_section">Update</string>
+    <string name="subs_fetch_via_desc">Direct uses your network as-is; Proxy fetches through the running tunnel (needed when the panel is blocked); Auto tries direct first and falls back to the tunnel.</string>
+    <string name="subs_last_updated">updated %1$s</string>
+    <string name="subs_never_updated">never updated</string>
     <string name="subs_fetch_via">Fetch nodes via</string>
     <string name="subs_fetch_via_auto">Auto (direct, then proxy)</string>
     <string name="subs_fetch_via_direct">Direct</string>
@@ -54,6 +69,7 @@
     <string name="subs_group_name">Folder name</string>
     <string name="subs_duplicates_dropped">%1$d duplicate(s) dropped</string>
     <string name="subs_no_nodes_hint">No nodes imported. Check the subscription URL, or switch the fetch path to proxy.</string>
+    <string name="subs_no_nodes_reason">No nodes imported (%1$s). Check the subscription URL or the update mode.</string>
     <string name="subs_add_action">Add</string>
     <string name="subs_cancel">Cancel</string>
     <string name="subs_refresh">Refresh</string>
@@ -112,6 +128,11 @@
     <string name="routes_logical_mode">Combine</string>
     <string name="routes_logical_and">AND</string>
     <string name="routes_logical_or">OR</string>
+    <string name="routes_combine_mode">Combine conditions</string>
+    <string name="routes_combine_or">OR (any match)</string>
+    <string name="routes_combine_and">AND (all match)</string>
+    <string name="routes_json_invalid">Invalid JSON</string>
+    <string name="routes_json_recognized">Recognised</string>
     <string name="routes_invert">Invert match</string>
     <string name="routes_action">Action</string>
     <string name="routes_action_route">Route to outbound</string>
@@ -189,6 +210,7 @@
 
     <!-- fakeip -->
     <string name="fakeip_title">Fake IP</string>
+    <string name="fakeip_disabled">Disabled — tap the pencil to configure</string>
     <string name="fakeip_desc">Answer matching domains with synthetic addresses so routing can work before real DNS resolves.</string>
     <string name="fakeip_enable">Enable Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 range</string>
@@ -208,6 +230,49 @@
     <string name="settings_battery_ok">Battery optimization is disabled for AIBox — the system won\'t freeze the tunnel in the background.</string>
     <string name="settings_battery_prompt">AIBox is subject to battery optimization: the system may freeze the tunnel in the background.</string>
     <string name="settings_battery_action">Exempt from battery optimization</string>
+    <string name="settings_battery_app_settings">Open app system settings</string>
+    <string name="settings_battery_manual_hint">If the dialog does not appear: Settings → Apps → AIBox → Battery → Unrestricted.</string>
+    <string name="settings_battery_tunnel_policy">Tunnel power policy</string>
+    <string name="settings_battery_tunnel_policy_desc">Screen off pauses the tunnel and closes idle connections. Doze deep-suspend stops the kernel timers entirely; the next wake resets the network so pushes arrive fresh. Network switches (Wi-Fi ↔ cellular) close half-dead sockets and reload the config automatically.</string>
+    <string name="settings_section_mux">Multiplex (mux)</string>
+    <string name="settings_mux_enable">Enable multiplexing</string>
+    <string name="settings_mux_enable_desc">Carry many streams over one connection. Fewer handshakes, lower latency on reconnect — and it helps against servers that rate-limit new connections.</string>
+    <string name="settings_mux_protocol">Protocol</string>
+    <string name="settings_mux_protocol_h2mux">h2mux</string>
+    <string name="settings_mux_protocol_smux">smux</string>
+    <string name="settings_mux_protocol_yamux">yamux</string>
+    <string name="settings_mux_protocol_desc">h2mux is the default and the one most panels expect; smux has a smaller frame overhead; yamux keeps a window per stream and is the most throughput-friendly.</string>
+    <string name="settings_mux_max_connections">Max connections</string>
+    <string name="settings_mux_max_connections_desc">Upper bound of carrier connections kept open. Empty = engine default.</string>
+    <string name="settings_mux_min_streams">Min streams</string>
+    <string name="settings_mux_min_streams_desc">A carrier with fewer live streams is replaced once its count drops below this. Empty = engine default (8).</string>
+    <string name="settings_mux_max_streams">Max streams</string>
+    <string name="settings_mux_max_streams_desc">Hard cap on concurrent streams per carrier connection. Empty = engine default.</string>
+    <string name="settings_mux_padding">Frame padding</string>
+    <string name="settings_mux_padding_desc">Pad mux frames to obscure their length. Costs a little bandwidth; hides traffic shape.</string>
+    <string name="settings_mux_brutal">Brutal congestion control</string>
+    <string name="settings_mux_brutal_desc">Ignore the congestion window and send at a fixed rate. Great on lossy long-haul links, but it saturates the link — bandwidth is taken from other traffic on the same wire.</string>
+    <string name="settings_mux_brutal_up">Brutal upload</string>
+    <string name="settings_mux_brutal_down">Brutal download</string>
+    <string name="settings_mux_default">default</string>
+    <string name="settings_mux_brutal_hint">Set to roughly 80% of your line speed so the carrier link stays stable.</string>
+    <string name="settings_mux_flow_hint">Nodes carrying a flow value (xtls-rprx-vision) bypass mux automatically — the combination is rejected by the core.</string>
+
+    <!-- built-in rule presets -->
+    <string name="preset_section">Built-in rule sets</string>
+    <string name="preset_add">Add</string>
+    <string name="preset_added">Added</string>
+    <string name="preset_installed">Installed — its rules are in the list above; enable, edit or delete them there.</string>
+    <string name="preset_block_ads">Block ads</string>
+    <string name="preset_block_ads_desc">Reject ad and tracker domains. Downloads a ~1 MB rule set on first use.</string>
+    <string name="preset_private_ip">Private IPs</string>
+    <string name="preset_private_ip_desc">Route LAN and private ranges directly. Keeps local devices reachable while the tunnel is up.</string>
+    <string name="preset_bittorrent">BitTorrent</string>
+    <string name="preset_bittorrent_desc">Route BitTorrent traffic directly instead of through the proxy.</string>
+    <string name="preset_vowifi">VoWiFi (carrier calling)</string>
+    <string name="preset_vowifi_desc">Keep Wi-Fi Calling off the tunnel: the carrier IMS gateway (epdg) and its IKEv2 ports stay direct, so calls do not pick up extra latency.</string>
+    <string name="preset_fcm">Google push (FCM)</string>
+    <string name="preset_fcm_desc">Send only FCM push traffic (ports 5228-5230 and Google push hosts) outside the tunnel, so notifications arrive promptly with the screen off.</string>
     <string name="settings_battery_desc">Recommended on ColorOS/realme UI and other vendors that aggressively kill VPN apps. Doze deep-suspend is handled automatically either way: the tunnel is paused in Doze and resumes on wake.</string>
     <string name="settings_tls_fragment">TLS fragmentation (DPI hardening)</string>
     <string name="settings_tls_fragment_none">Off</string>

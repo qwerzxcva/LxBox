@@ -203,7 +203,7 @@ class SubscriptionFetcher(private val context: Context) {
         val headers = subscriptionHeaders(subscription)
         return when (mode) {
             FetchViaProxy -> {
-                val proxy = boxProxy() ?: error("VPN is not running")
+                val proxy = boxProxy() ?: error("tunnel is not running — enable AIBox first, or switch the fetch mode to direct")
                 openStream(url, proxy, pinnedAddress = null, extraHeaders = headers)
             }
             FetchViaDirect -> {
@@ -216,8 +216,9 @@ class SubscriptionFetcher(private val context: Context) {
                     val pinned = pinnedAddress(subscription, dnsServers, url)
                     openStream(url, proxy = null, pinnedAddress = pinned, extraHeaders = headers)
                 }.getOrElse { first ->
-                    val proxy = boxProxy()
-                        ?: throw IllegalStateException(first.message ?: "fetch failed")
+                    val proxy = boxProxy() ?: throw IllegalStateException(
+                        "direct fetch failed (${first.message ?: "no route"}) and the tunnel is not running — enable AIBox and retry",
+                    )
                     openStream(url, proxy, pinnedAddress = null, extraHeaders = headers)
                 }
             }
@@ -252,8 +253,21 @@ class SubscriptionFetcher(private val context: Context) {
 
     /** Local HTTP proxy exposed by the running box, or null when it is not up. */
     private fun boxProxy(): Proxy? {
-        val port = com.leadaxe.aibox.engine.singbox.ConfigCompiler.currentLocalProxyPort() ?: return null
-        return Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port))
+        // The fetch port is fixed (ConfigCompiler.SubscriptionFetchPort), but
+        // ConfigCompiler itself is an in-process singleton: the UI process
+        // never compiles a configuration, so asking it for the port always
+        // answers 0 there and every proxy-path fetch failed with "VPN is not
+        // running" even while the tunnel was up. Probe the loopback port
+        // instead — if the box is running, its mixed inbound is listening.
+        val port = com.leadaxe.aibox.engine.singbox.ConfigCompiler.SubscriptionFetchPort
+        val reachable = runCatching {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(LOOPBACK, port), PROBE_TIMEOUT_MS)
+            }
+            true
+        }.getOrDefault(false)
+        if (!reachable) return null
+        return Proxy(Proxy.Type.HTTP, InetSocketAddress(LOOPBACK, port))
     }
 
     /**
@@ -304,6 +318,7 @@ class SubscriptionFetcher(private val context: Context) {
         proxy: Proxy?,
         pinnedAddress: InetAddress?,
         extraHeaders: Map<String, String> = emptyMap(),
+        depth: Int = 0,
     ): String {
         val realHost = url.host
         val connectUrl = if (pinnedAddress != null && url.protocol == "https") {
@@ -319,7 +334,13 @@ class SubscriptionFetcher(private val context: Context) {
         conn.connectTimeout = 15_000
         conn.readTimeout = 30_000
         conn.requestMethod = "GET"
+        // Panels redirect (http→https, vanity host→edge node) and answer
+        // with gzip; following manually keeps SNI and Host correct across
+        // the hop, which the built-in follower does not guarantee once a
+        // pinned address is in play.
+        conn.instanceFollowRedirects = false
         conn.setRequestProperty("User-Agent", "sing-box/1.14.0")
+        conn.setRequestProperty("Accept-Encoding", "gzip")
         if (pinnedAddress != null) {
             conn.setRequestProperty("Host", realHost)
         }
@@ -329,8 +350,39 @@ class SubscriptionFetcher(private val context: Context) {
         }
         try {
             val code = conn.responseCode
+            if (code in 300..399) {
+                val location = conn.getHeaderField("Location")
+                    ?: error("HTTP $code without Location")
+                if (depth >= MAX_REDIRECTS) error("too many redirects")
+                val next = runCatching { URL(url, location) }.getOrElse {
+                    error("bad redirect target: $location")
+                }
+                // A redirect to another host must not keep the pinned
+                // address or the old Host header.
+                val sameHost = next.host == realHost
+                return openStream(
+                    next,
+                    proxy = proxy,
+                    pinnedAddress = if (sameHost) pinnedAddress else null,
+                    extraHeaders = extraHeaders,
+                    depth = depth + 1,
+                )
+            }
             if (code !in 200..299) error("HTTP $code")
-            return conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            val stream = if (conn.contentEncoding?.contains("gzip", ignoreCase = true) == true) {
+                java.util.zip.GZIPInputStream(conn.inputStream)
+            } else {
+                conn.inputStream
+            }
+            val text = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            // A panel behind a captive portal or a parked domain answers
+            // 200 with an HTML page; saying so beats "0 nodes".
+            val head = text.trimStart().take(64).lowercase()
+            if (head.startsWith("<!doctype html") || head.startsWith("<html")) {
+                error("the server returned an HTML page, not a subscription (check the URL)")
+            }
+            if (text.isBlank()) error("empty response")
+            return text
         } finally {
             conn.disconnect()
         }
@@ -391,4 +443,14 @@ class SubscriptionFetcher(private val context: Context) {
 
     @Suppress("unused")
     private val unusedCert: X509Certificate? = null
+
+    private companion object {
+        const val LOOPBACK = "127.0.0.1"
+
+        /** How long to wait for the loopback probe before giving up. */
+        const val PROBE_TIMEOUT_MS = 400
+
+        /** Redirect hops accepted before giving up (panel → edge → sign). */
+        const val MAX_REDIRECTS = 5
+    }
 }

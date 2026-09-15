@@ -28,18 +28,18 @@ android {
         minSdk = 26
         targetSdk = 36
         // versionCode grows with the commit count so every build strictly
-        // increases; versionName follows the release tag (v3.0.0 -> 3.0.0)
+        // increases; versionName follows the release tag (v0.1 -> 0.1)
         // when CI injects RELEASE_TAG.
         versionCode = runCatching {
             providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
                 .standardOutput.asText.get().trim().toInt() * 10
         }.getOrDefault(10)
-        // Accept only v-prefixed versions so a branch-name ref never
-        // becomes the version string.
+        // Accept only v-prefixed versions (v0.1, v1.2.3) so a branch-name
+        // ref never becomes the version string.
         versionName = System.getenv("RELEASE_TAG")
-            ?.takeIf { Regex("^v\\d+").containsMatchIn(it) }
+            ?.takeIf { Regex("^v\\d+(\\.\\d+)*$").matches(it) }
             ?.removePrefix("v")
-            ?: "3.0.0"
+            ?: "0.1"
 
         // Keep only the locales the app actually ships; drops the dozens of
         // translations bundled by AndroidX/Compose libraries.

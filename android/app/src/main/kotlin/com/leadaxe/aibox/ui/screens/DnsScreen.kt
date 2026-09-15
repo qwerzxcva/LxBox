@@ -1,5 +1,6 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -65,14 +66,6 @@ fun DnsScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FakeIpSection(state = state, onChange = { store.update(it) })
-                }
-            }
-        }
-
-        item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = { creatingServer = true }) {
                     Icon(Icons.Outlined.Add, contentDescription = null)
@@ -107,7 +100,14 @@ fun DnsScreen() {
                 }
             }
         }
-        item { SectionHeader(stringResource(R.string.dns_section_rules, state.dnsRules.size)) }
+        item { SectionHeader(stringResource(R.string.dns_section_rules, state.dnsRules.size + 1)) }
+        // Fake-IP lives in the rule list: it is a routing decision like any
+        // other, and hiding its settings in a separate card above the list
+        // made the page read as two unrelated things. One compact row with a
+        // pencil that expands in place keeps the page scannable.
+        item {
+            FakeIpRow(state = state, onChange = { store.update(it) })
+        }
         itemsIndexedWithActions(
             items = state.dnsRules,
             onMove = { from, to ->
@@ -234,51 +234,102 @@ fun DnsScreen() {
 
 // ---------------------------------------------------------------- fake-ip
 
+/**
+ * Fake-IP as a rule-list row: title + state on one line, a pencil that
+ * expands the pool settings inline. The row is deliberately the same shape
+ * as a DNS rule card so the list reads as one table.
+ */
 @Composable
-private fun FakeIpSection(state: AppState, onChange: (AppState.() -> AppState) -> Unit) {
-    SwitchRow(
-        label = stringResource(R.string.fakeip_title),
-        supporting = stringResource(R.string.fakeip_desc),
-        checked = state.enableFakeIp,
-        onCheckedChange = { v -> onChange { copy(enableFakeIp = v) } },
-    )
-    if (state.enableFakeIp) {
-        StringField(
-            label = stringResource(R.string.fakeip_inet4_range),
-            value = state.fakeIpInet4Range,
-            onValueChange = { v -> onChange { copy(fakeIpInet4Range = v) } },
-            placeholder = stringResource(R.string.fakeip_default_range4),
-        )
-        // Always visible: the pool works best when the user sees the v6
-        // range next to the v4 one, even if tun IPv6 is currently off —
-        // the field is simply not compiled into the config until IPv6 is
-        // enabled, and the supporting text says so.
-        StringField(
-            label = stringResource(R.string.fakeip_inet6_range),
-            value = state.fakeIpInet6Range,
-            onValueChange = { v -> onChange { copy(fakeIpInet6Range = v) } },
-            placeholder = stringResource(R.string.fakeip_default_range6),
-        )
-        if (!state.enableIpv6) {
-            Text(
-                stringResource(R.string.fakeip_inet6_needs_ipv6),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        ListField(
-            label = stringResource(R.string.fakeip_filter),
-            values = state.fakeIpFilter,
-            onValuesChange = { v -> onChange { copy(fakeIpFilter = v) } },
-            placeholder = stringResource(R.string.fakeip_filter_hint),
-        )
-        if (state.fakeIpFilter.isNotEmpty()) {
-            SwitchRow(
-                label = stringResource(R.string.fakeip_filter_exclude),
-                supporting = stringResource(R.string.fakeip_filter_exclude_desc),
-                checked = state.fakeIpFilterExclude,
-                onCheckedChange = { v -> onChange { copy(fakeIpFilterExclude = v) } },
-            )
+private fun FakeIpRow(state: AppState, onChange: (AppState.() -> AppState) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.fakeip_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        if (state.enableFakeIp) {
+                            val v4 = state.fakeIpInet4Range.ifBlank { "198.18.0.0/15" }
+                            val v6 = state.fakeIpInet6Range.ifBlank { "fc00::/18" }
+                            "$v4 · $v6" + if (state.fakeIpFilter.isNotEmpty()) {
+                                " · ${state.fakeIpFilter.size} filter"
+                            } else ""
+                        } else {
+                            stringResource(R.string.fakeip_disabled)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                FilterChip(
+                    selected = state.enableFakeIp,
+                    onClick = { onChange { copy(enableFakeIp = !state.enableFakeIp) } },
+                    label = { Text(if (state.enableFakeIp) "on" else "off") },
+                )
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
+                }
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.fakeip_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    StringField(
+                        label = stringResource(R.string.fakeip_inet4_range),
+                        value = state.fakeIpInet4Range,
+                        onValueChange = { v -> onChange { copy(fakeIpInet4Range = v) } },
+                        placeholder = stringResource(R.string.fakeip_default_range4),
+                    )
+                    // Always visible: the pool works best when the user sees
+                    // the v6 range next to the v4 one, even if tun IPv6 is
+                    // currently off — the field is simply not compiled into
+                    // the config until IPv6 is enabled, and the supporting
+                    // text says so.
+                    StringField(
+                        label = stringResource(R.string.fakeip_inet6_range),
+                        value = state.fakeIpInet6Range,
+                        onValueChange = { v -> onChange { copy(fakeIpInet6Range = v) } },
+                        placeholder = stringResource(R.string.fakeip_default_range6),
+                    )
+                    if (!state.enableIpv6) {
+                        Text(
+                            stringResource(R.string.fakeip_inet6_needs_ipv6),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    ListField(
+                        label = stringResource(R.string.fakeip_filter),
+                        values = state.fakeIpFilter,
+                        onValuesChange = { v -> onChange { copy(fakeIpFilter = v) } },
+                        placeholder = stringResource(R.string.fakeip_filter_hint),
+                    )
+                    if (state.fakeIpFilter.isNotEmpty()) {
+                        SwitchRow(
+                            label = stringResource(R.string.fakeip_filter_exclude),
+                            supporting = stringResource(R.string.fakeip_filter_exclude_desc),
+                            checked = state.fakeIpFilterExclude,
+                            onCheckedChange = { v -> onChange { copy(fakeIpFilterExclude = v) } },
+                        )
+                    }
+                    SwitchRow(
+                        label = stringResource(R.string.routes_fakeip_bypass),
+                        supporting = stringResource(R.string.routes_fakeip_bypass_desc),
+                        checked = state.fakeIpBypass,
+                        onCheckedChange = { v -> onChange { copy(fakeIpBypass = v) } },
+                    )
+                }
+            }
         }
     }
 }

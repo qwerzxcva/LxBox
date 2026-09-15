@@ -73,7 +73,13 @@ fun SubscriptionsScreen() {
     var addDialogFolderId by remember { mutableStateOf<String?>(null) }
     var pasteDialog by remember { mutableStateOf(false) }
     var creatingFolder by remember { mutableStateOf(false) }
+    // Section collapse state: groups and mux open (they are the page's
+    // primary content), the raw lists stay closed until asked for.
+    var groupsExpanded by remember { mutableStateOf(true) }
+    var muxExpanded by remember { mutableStateOf(false) }
     var nodesExpanded by remember { mutableStateOf(false) }
+    var sourcesExpanded by remember { mutableStateOf(false) }
+    var foldersExpanded by remember { mutableStateOf(false) }
     val relay = remember { app.vpnRelay }
     // Latency results come back through the relay from the :vpn process.
     val remotePings by relay.pings.collectAsState()
@@ -98,8 +104,10 @@ fun SubscriptionsScreen() {
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             contentPadding = PaddingValues(vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // Actions row: compact icon buttons; each section below carries
+            // its own add affordance, so this row stays short.
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = { addDialog = true }) {
@@ -110,8 +118,17 @@ fun SubscriptionsScreen() {
                         scope.launch {
                             val r = fetcher.refreshAll(state.subscriptions, state.dnsServers)
                             store.update { current ->
+                                // A subscription that failed to refresh keeps
+                                // its nodes: wiping them would turn one bad
+                                // fetch into a lost node list. Nodes that do
+                                // not come from a subscription (pasted
+                                // share links) are kept as well.
+                                val failed = r.failures.keys
+                                val kept = current.outbounds.filter {
+                                    it.subscriptionId == null || it.subscriptionId in failed
+                                }
                                 current.copy(
-                                    outbounds = r.outbounds,
+                                    outbounds = kept + r.outbounds,
                                     subscriptions = current.subscriptions.map { sub ->
                                         if (sub.id in r.failures) sub else sub.copy(lastUpdatedEpochMillis = System.currentTimeMillis())
                                     },
@@ -134,6 +151,138 @@ fun SubscriptionsScreen() {
                         Icon(Icons.Outlined.ContentPaste, contentDescription = null)
                         Text(stringResource(R.string.subs_paste_link))
                     }
+                }
+            }
+
+            // ----- outbound groups (the tab's namesake, expanded by default)
+            item {
+                CollapsibleSection(
+                    title = stringResource(R.string.groups_section_title),
+                    expanded = groupsExpanded,
+                    onToggle = { groupsExpanded = !groupsExpanded },
+                    count = state.outboundGroups.size,
+                    subtitle = stringResource(R.string.groups_section_short),
+                ) {
+                    state.outboundGroups.forEach { group ->
+                        GroupRow(
+                            group = group,
+                            state = state,
+                            onEdit = { editingGroup = group },
+                            onDelete = {
+                                store.update { st ->
+                                    st.copy(
+                                        outboundGroups = st.outboundGroups.filterNot { it.id == group.id },
+                                        // Drop the selection if it pointed at the deleted group.
+                                        selectedOutbound = st.selectedOutbound.takeIf { it != group.tag } ?: "",
+                                    )
+                                }
+                            },
+                        )
+                    }
+                    FilledTonalButton(onClick = { creatingGroup = true }) {
+                        Icon(Icons.Outlined.Add, contentDescription = null)
+                        Text(stringResource(R.string.groups_add))
+                    }
+                }
+            }
+
+            // ----- multiplex, next to the nodes it affects
+            item {
+                CollapsibleSection(
+                    title = stringResource(R.string.settings_section_mux),
+                    expanded = muxExpanded,
+                    onToggle = { muxExpanded = !muxExpanded },
+                    subtitle = if (state.muxEnabled) state.muxProtocol else stringResource(R.string.settings_mux_disabled_short),
+                ) {
+                    MuxSettingsContent(state = state, onChange = { reducer -> store.update(reducer) })
+                }
+            }
+
+            // ----- nodes, collapsed by default (they can be hundreds)
+            item {
+                CollapsibleSection(
+                    title = stringResource(R.string.subs_section_nodes_title),
+                    expanded = nodesExpanded,
+                    onToggle = { nodesExpanded = !nodesExpanded },
+                    count = state.outbounds.size,
+                    subtitle = stringResource(R.string.subs_section_nodes_short),
+                ) {
+                    if (state.outbounds.isNotEmpty()) {
+                        FilledTonalButton(onClick = {
+                            // Sequential probes: requests go to the :vpn
+                            // process one at a time, keeping the list
+                            // readable and avoiding a connection burst.
+                            scope.launch {
+                                for (node in state.outbounds) {
+                                    pingResults = pingResults + (node.id to PingState.Triggered)
+                                    relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                }
+                            }
+                        }) { Text(stringResource(R.string.subs_ping_all)) }
+                    }
+                    state.outbounds.forEach { node ->
+                        NodeRow(
+                            node = node,
+                            selected = node.tag == state.selectedOutbound,
+                            pingState = pingResults[node.id],
+                            onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                            onPing = {
+                                scope.launch {
+                                    pingResults = pingResults + (node.id to PingState.Triggered)
+                                    relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                }
+                            },
+                        )
+                    }
+                    if (state.outbounds.isEmpty()) {
+                        Text(
+                            stringResource(R.string.subs_nodes_empty_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // ----- sources (subscriptions), collapsed by default
+            item {
+                CollapsibleSection(
+                    title = stringResource(R.string.subs_section_subscriptions_title),
+                    expanded = sourcesExpanded,
+                    onToggle = { sourcesExpanded = !sourcesExpanded },
+                    count = state.subscriptions.size,
+                    subtitle = stringResource(R.string.subs_section_sources_short),
+                ) {
+                    state.subscriptions.forEach { sub ->
+                        SubscriptionRow(
+                            sub = sub,
+                            state = state,
+                            onEdit = { editingSubscription = sub },
+                            onDelete = {
+                                store.update { st ->
+                                    st.copy(
+                                        subscriptions = st.subscriptions.filterNot { it.id == sub.id },
+                                        outbounds = st.outbounds.filterNot { it.subscriptionId == sub.id },
+                                    )
+                                }
+                            },
+                            onRefresh = {
+                                scope.launch {
+                                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers) }
+                                        .onSuccess { r ->
+                                            store.update { st ->
+                                                st.copy(
+                                                    outbounds = (st.outbounds.filterNot { it.subscriptionId == sub.id } + r.outbounds),
+                                                    subscriptions = st.subscriptions.map { it.takeIf { s -> s.id != sub.id } ?: sub.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) },
+                                                )
+                                            }
+                                            snackbar.showSnackbar(context.getString(R.string.subs_nodes_added, sub.name, r.outbounds.size))
+                                        }
+                                        .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, sub.name, it.message ?: "fetch failed")) }
+                                }
+                            },
+                        )
+                    }
                     FilledTonalButton(onClick = { creatingFolder = true }) {
                         Icon(Icons.Outlined.CreateNewFolder, contentDescription = null)
                         Text(stringResource(R.string.subs_group_add))
@@ -141,153 +290,57 @@ fun SubscriptionsScreen() {
                 }
             }
 
+            // ----- folders (presentational grouping of subscriptions)
             if (state.subscriptionGroups.isNotEmpty()) {
-                item { SectionHeader(stringResource(R.string.subs_groups_section, state.subscriptionGroups.size)) }
-                items(state.subscriptionGroups, key = { it.id }) { folder ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    folder.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    "${state.subscriptions.count { it.groupId == folder.id }}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            IconButton(onClick = {
-                                // Open the add dialog pre-filed into this folder:
-                                // a folder card is where a user naturally wants
-                                // to put a new subscription.
-                                addDialogFolderId = folder.id
-                                addDialog = true
-                            }) {
-                                Icon(
-                                    Icons.Outlined.Add,
-                                    contentDescription = stringResource(R.string.subs_folder_add_url),
-                                )
-                            }
-                            IconButton(onClick = {
-                                store.update { st ->
-                                    st.copy(
-                                        subscriptionGroups = st.subscriptionGroups.filterNot { it.id == folder.id },
-                                        // Orphaned subscriptions become ungrouped rather than disappearing.
-                                        subscriptions = st.subscriptions.map {
-                                            if (it.groupId == folder.id) it.copy(groupId = null) else it
-                                        },
+                item {
+                    CollapsibleSection(
+                        title = stringResource(R.string.subs_groups_section_title),
+                        expanded = foldersExpanded,
+                        onToggle = { foldersExpanded = !foldersExpanded },
+                        count = state.subscriptionGroups.size,
+                    ) {
+                        state.subscriptionGroups.forEach { folder ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        folder.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        stringResource(R.string.subs_folder_count, state.subscriptions.count { it.groupId == folder.id }),
+                                        style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
-                            }) {
-                                Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
-                            }
-                        }
-                    }
-                }
-            }
-
-            item { SectionHeader(stringResource(R.string.subs_section_subscriptions, state.subscriptions.size)) }
-            items(state.subscriptions, key = { it.id }) { sub ->
-                SubscriptionRow(
-                    sub = sub,
-                    onEdit = { editingSubscription = sub },
-                    onDelete = {
-                        store.update { st ->
-                            st.copy(
-                                subscriptions = st.subscriptions.filterNot { it.id == sub.id },
-                                outbounds = st.outbounds.filterNot { it.subscriptionId == sub.id },
-                            )
-                        }
-                    },
-                    onRefresh = {
-                        scope.launch {
-                            runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers) }
-                                .onSuccess { r ->
+                                IconButton(onClick = {
+                                    // Open the add dialog pre-filed into this
+                                    // folder: a folder card is where a user
+                                    // naturally wants to put a new source.
+                                    addDialogFolderId = folder.id
+                                    addDialog = true
+                                }) {
+                                    Icon(
+                                        Icons.Outlined.Add,
+                                        contentDescription = stringResource(R.string.subs_folder_add_url),
+                                    )
+                                }
+                                IconButton(onClick = {
                                     store.update { st ->
                                         st.copy(
-                                            outbounds = (st.outbounds.filterNot { it.subscriptionId == sub.id } + r.outbounds),
-                                            subscriptions = st.subscriptions.map { it.takeIf { s -> s.id != sub.id } ?: sub.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) },
+                                            subscriptionGroups = st.subscriptionGroups.filterNot { it.id == folder.id },
+                                            // Orphaned subscriptions become ungrouped rather than disappearing.
+                                            subscriptions = st.subscriptions.map {
+                                                if (it.groupId == folder.id) it.copy(groupId = null) else it
+                                            },
                                         )
                                     }
-                                    snackbar.showSnackbar(context.getString(R.string.subs_nodes_added, sub.name, r.outbounds.size))
+                                }) {
+                                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
                                 }
-                                .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, sub.name, it.message ?: "fetch failed")) }
-                        }
-                    },
-                )
-            }
-
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionHeader(
-                        stringResource(R.string.subs_section_nodes, state.outbounds.size),
-                    )
-                    Spacer(Modifier.weight(1f))
-                    if (state.outbounds.isNotEmpty()) {
-                        if (nodesExpanded) {
-                            TextButton(onClick = {
-                                // Sequential probes: requests go to the :vpn
-                                // process one at a time, keeping the list
-                                // readable and avoiding a connection burst.
-                                scope.launch {
-                                    for (node in state.outbounds) {
-                                        pingResults = pingResults + (node.id to PingState.Triggered)
-                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
-                                    }
-                                }
-                            }) { Text(stringResource(R.string.subs_ping_all)) }
-                        }
-                        IconButton(onClick = { nodesExpanded = !nodesExpanded }) {
-                            Icon(
-                                if (nodesExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                                contentDescription = stringResource(
-                                    if (nodesExpanded) R.string.subs_nodes_collapse else R.string.subs_nodes_expand,
-                                ),
-                            )
+                            }
                         }
                     }
                 }
-            }
-            if (nodesExpanded) {
-                items(state.outbounds, key = { it.id }) { node ->
-                    NodeRow(
-                        node = node,
-                        selected = node.tag == state.selectedOutbound,
-                        pingState = pingResults[node.id],
-                        onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
-                        onPing = {
-                            scope.launch {
-                                pingResults = pingResults + (node.id to PingState.Triggered)
-                                relay.requestPing(node.id, node.tag, state.speedTestUrl)
-                            }
-                        },
-                    )
-                }
-            }
-
-            item {
-                FilledTonalButton(onClick = { creatingGroup = true }) {
-                    Icon(Icons.Outlined.Add, contentDescription = null)
-                    Text(stringResource(R.string.groups_add))
-                }
-            }
-            item { SectionHeader(stringResource(R.string.groups_section, state.outboundGroups.size)) }
-            items(state.outboundGroups, key = { it.id }) { group ->
-                GroupRow(
-                    group = group,
-                    state = state,
-                    onEdit = { editingGroup = group },
-                    onDelete = {
-                        store.update { st ->
-                            st.copy(
-                                outboundGroups = st.outboundGroups.filterNot { it.id == group.id },
-                                // Drop the selection if it pointed at the deleted group.
-                                selectedOutbound = st.selectedOutbound.takeIf { it != group.tag } ?: "",
-                            )
-                        }
-                    },
-                )
             }
         }
         SnackbarHost(
@@ -314,14 +367,34 @@ fun SubscriptionsScreen() {
                             store.update { st ->
                                 st.copy(outbounds = st.outbounds + r.outbounds)
                             }
-                            val msg = if (r.outbounds.isEmpty()) {
-                                context.getString(R.string.subs_no_nodes_hint)
-                            } else {
-                                context.getString(R.string.subs_nodes_added, sub.name.ifBlank { sub.url }, r.outbounds.size)
+                            val msg = when {
+                                r.outbounds.isNotEmpty() ->
+                                    context.getString(R.string.subs_nodes_added, sub.name.ifBlank { sub.url }, r.outbounds.size)
+                                // Fetched fine but nothing usable came out:
+                                // name the first parse error so the user knows
+                                // whether the panel served another format or
+                                // an expired link.
+                                r.errors.isNotEmpty() ->
+                                    context.getString(
+                                        R.string.subs_no_nodes_reason,
+                                        r.errors.first().reason,
+                                    )
+                                else -> context.getString(R.string.subs_no_nodes_hint)
                             }
                             snackbar.showSnackbar(msg)
                         }
-                        .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, sub.name.ifBlank { sub.url }, it.message ?: "fetch failed")) }
+                        .onFailure {
+                            // Fetch-level failure (network, HTTP, HTML page):
+                            // keep the message the fetcher produced — it
+                            // already names the cause.
+                            snackbar.showSnackbar(
+                                context.getString(
+                                    R.string.subs_fetch_failed,
+                                    sub.name.ifBlank { sub.url },
+                                    it.message ?: "fetch failed",
+                                ),
+                            )
+                        }
                 }
                 addDialog = false
             },
@@ -405,6 +478,39 @@ fun SubscriptionsScreen() {
                     st.copy(subscriptions = st.subscriptions.map { if (it.id == updated.id) updated else it })
                 }
                 editingSubscription = null
+                // The link or the update mode changed — refetch so the node
+                // list matches what the user just configured, instead of
+                // silently keeping nodes from the old URL. Replaces this
+                // subscription's nodes only.
+                scope.launch {
+                    runCatching { fetcher.fetch(updated, dnsServers = state.dnsServers) }
+                        .onSuccess { r ->
+                            store.update { st ->
+                                st.copy(
+                                    outbounds = st.outbounds.filterNot { it.subscriptionId == updated.id } + r.outbounds,
+                                    subscriptions = st.subscriptions.map {
+                                        if (it.id == updated.id) it.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) else it
+                                    },
+                                )
+                            }
+                            snackbar.showSnackbar(
+                                context.getString(
+                                    R.string.subs_nodes_added,
+                                    updated.name.ifBlank { updated.url },
+                                    r.outbounds.size,
+                                ),
+                            )
+                        }
+                        .onFailure {
+                            snackbar.showSnackbar(
+                                context.getString(
+                                    R.string.subs_fetch_failed,
+                                    updated.name.ifBlank { updated.url },
+                                    it.message ?: "fetch failed",
+                                ),
+                            )
+                        }
+                }
             },
         )
     }
@@ -413,6 +519,7 @@ fun SubscriptionsScreen() {
 @Composable
 private fun SubscriptionRow(
     sub: Subscription,
+    state: com.leadaxe.aibox.app.AppState,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
     onEdit: () -> Unit,
@@ -422,6 +529,26 @@ private fun SubscriptionRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(sub.name.ifBlank { sub.url }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(sub.url, style = MaterialTheme.typography.bodySmall)
+                // Node count + last update: the first thing to look at when
+                // a refresh "does nothing" — it tells apart "the fetch
+                // failed" from "the panel returned nothing new".
+                val nodes = state.outbounds.count { it.subscriptionId == sub.id }
+                val updated = if (sub.lastUpdatedEpochMillis > 0) {
+                    stringResource(
+                        R.string.subs_last_updated,
+                        android.text.format.DateFormat.format(
+                            "yyyy-MM-dd HH:mm",
+                            sub.lastUpdatedEpochMillis,
+                        ).toString(),
+                    )
+                } else {
+                    stringResource(R.string.subs_never_updated)
+                }
+                Text(
+                    stringResource(R.string.subs_nodes_count, nodes) + " · " + updated,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
@@ -448,6 +575,7 @@ private fun EditSubscriptionDialog(
     onSave: (Subscription) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial.name) }
+    var url by remember { mutableStateOf(initial.url) }
     var fetchVia by remember { mutableStateOf(initial.fetchVia) }
     var resolver by remember { mutableStateOf(initial.dnsServer) }
     var enableEch by remember { mutableStateOf(initial.enableEch) }
@@ -468,6 +596,22 @@ private fun EditSubscriptionDialog(
                     value = name,
                     onValueChange = { name = it },
                 )
+                // The URL is editable: panels rotate the subscription token
+                // without changing anything else, and re-adding the whole
+                // subscription just to paste a new link loses the nodes the
+                // user already has selected.
+                StringField(
+                    label = stringResource(R.string.subs_url),
+                    value = url,
+                    onValueChange = { url = it },
+                    placeholder = "https://panel.example/sub",
+                    supporting = stringResource(R.string.subs_url_edit_hint),
+                )
+                Text(
+                    stringResource(R.string.subs_update_section),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 SingleChoiceChips(
                     label = stringResource(R.string.subs_fetch_via),
                     options = com.leadaxe.aibox.app.FetchViaOptions,
@@ -480,6 +624,11 @@ private fun EditSubscriptionDialog(
                             else -> stringResource(R.string.subs_fetch_via_auto)
                         }
                     },
+                )
+                Text(
+                    stringResource(R.string.subs_fetch_via_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SingleChoiceChips(
                     label = stringResource(R.string.subs_resolver),
@@ -517,10 +666,12 @@ private fun EditSubscriptionDialog(
         },
         confirmButton = {
             Button(
+                enabled = url.isNotBlank(),
                 onClick = {
                     onSave(
                         initial.copy(
-                            name = name.ifBlank { initial.url },
+                            name = name.ifBlank { url },
+                            url = url.trim(),
                             fetchVia = fetchVia,
                             dnsServer = resolver,
                             enableEch = enableEch,
