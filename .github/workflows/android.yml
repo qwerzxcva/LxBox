@@ -73,7 +73,12 @@ jobs:
         with:
           targets: aarch64-linux-android
 
-      - name: Test and build aibox-core (Rust)
+      - name: Test and build Rust (aibox-core + rsxm)
+        # One workspace since the route-check feature: aibox-core links
+        # rsxm-rules, and the rsxm crates (rules/core/dns/tun + agent CLI)
+        # live under rust/rsxm/crates. `cargo test` runs the whole workspace;
+        # the release build produces both the Android .so and the agent
+        # binary for the same target.
         working-directory: rust
         env:
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: /usr/local/lib/android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
@@ -83,17 +88,6 @@ jobs:
           cargo build --release --locked --target aarch64-linux-android
           install -D target/aarch64-linux-android/release/libaibox_core.so \
             ../android/app/src/main/jniLibs/arm64-v8a/libaibox_core.so
-
-      - name: Test rsxm (Rust micro-kernel prototype)
-        # The rsxm workspace is developed on rsxm-dev; it runs its full test
-        # suite and a cross-compile here so the prototype never bit-rots.
-        working-directory: rust/rsxm
-        env:
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: /usr/local/lib/android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
-        run: |
-          set -euo pipefail
-          cargo test --locked
-          cargo build --release --locked --target aarch64-linux-android
           test -x target/aarch64-linux-android/release/rsxm-agent
 
       - name: Cache Gradle
