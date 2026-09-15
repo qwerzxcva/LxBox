@@ -177,33 +177,34 @@ jobs:
           go-version: '1.25.5'
           cache: false
 
-      - name: Build libbox AAR from reF1nd source
-        # The AAR isn't vendored and isn't committed (see
-        # android/.gitignore). Instead of downloading a prebuilt binary we
-        # build it from reF1nd/sing-box @ v1.15.0-alpha.3-reF1nd — the same
-        # source pin as local builds, arm64-v8a only (the only shipped
-        # target). CI runners are x86_64, so the stock
+      - name: Build libbox AAR from the vendored core
+        # The AAR isn't vendored as a binary and isn't committed (see
+        # android/.gitignore). Instead of cloning upstream reF1nd and
+        # re-applying patches, we build from the *vendored* source in
+        # core-patch/sing-box — that tree carries the AIBox-slim edits
+        # (registry diet, QUIC surface trim, shell/bridge cuts) and is the
+        # same source local builds use inside the container. arm64-v8a is
+        # the only shipped target. CI runners are x86_64, so the stock
         # gomobile + official NDK work without the aarch64-host patch.
         env:
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/29.0.14206865
         run: |
           set -euo pipefail
           REF_TAG=v1.15.0-alpha.3-reF1nd
-          echo "==> clone reF1nd/sing-box @ $REF_TAG"
-          git clone --depth 1 -b "$REF_TAG" https://github.com/reF1nd/sing-box.git /tmp/refsrc
-          cd /tmp/refsrc
-          # The shallow clone already carries the tag from the remote; a plain
-          # 'git tag' would fail with 128 ('already exists') and kill the step.
-          git tag -f "$REF_TAG" 2>/dev/null || true
+          SRC="$GITHUB_WORKSPACE/core-patch/sing-box"
+          test -d "$SRC" || { echo "::error::vendored core missing at $SRC"; exit 1; }
+          cd "$SRC"
+          # The vendored tree has no .git; version stamping via ldflags only.
 
           echo "==> stub Go-1.25-incompatible linkname files"
-          # pidfd_android.go linknames os.checkPidfdOnce, removed in newer Go.
-          rm experimental/libbox/pidfd_android.go
-          printf '%s\n' 'package libbox' '' '// Stub: the original file linknamed os.checkPidfdOnce, which newer' '// Go toolchains no longer export. pidfd is not required here.' > experimental/libbox/pidfd_android.go
-          # oomprofile linknames runtime/pprof internals; replace with a stub.
-          rm -rf experimental/libbox/internal/oomprofile
-          mkdir -p experimental/libbox/internal/oomprofile
-          printf '%s\n' '//go:build darwin || linux || windows' '' 'package oomprofile' '' 'import "errors"' '' 'func WriteFile(_ string, _ string) error {' '  return errors.New("oom profiling disabled in this build")' '}' > experimental/libbox/internal/oomprofile/oomprofile.go
+          # The vendored tree already ships the stubs; re-apply only when a
+          # future re-vendoring brings the original files back.
+          if grep -q "checkPidfdOnce" experimental/libbox/pidfd_android.go 2>/dev/null; then
+            printf '%s\n' 'package libbox' '' '// Stub: the original file linknamed os.checkPidfdOnce, which newer' '// Go toolchains no longer export. pidfd is not required here.' > experimental/libbox/pidfd_android.go
+          fi
+          if [ -d experimental/libbox/internal/oomprofile ] && [ ! -f experimental/libbox/internal/oomprofile/oomprofile.go ]; then
+            printf '%s\n' '//go:build darwin || linux || windows' '' 'package oomprofile' '' 'import "errors"' '' 'func WriteFile(_ string, _ string) error {' '  return errors.New("oom profiling disabled in this build")' '}' > experimental/libbox/internal/oomprofile/oomprofile.go
+          fi
 
           echo "==> install sagernet gomobile v0.1.13"
           go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
