@@ -97,7 +97,6 @@
 
     <!-- routes -->
     <string name="routes_section_rules">Rules (%1$d)</string>
-    <string name="routes_section_rulesets">Rule sets (%1$d)</string>
     <string name="routes_add_rule">Add rule</string>
     <string name="routes_edit_rule">Edit rule</string>
     <string name="routes_new_rule">New rule</string>
@@ -139,20 +138,6 @@
     <string name="routes_move_down">Move down</string>
 
     <!-- rule sets (srs) -->
-    <string name="rulesets_add">Add rule set</string>
-    <string name="rulesets_new">New rule set</string>
-    <string name="rulesets_edit">Edit rule set</string>
-    <string name="rulesets_tag">Tag (referenced by rules)</string>
-    <string name="rulesets_tag_hint">e.g. geosite-cn</string>
-    <string name="rulesets_format">Format</string>
-    <string name="rulesets_format_binary">Binary (.srs)</string>
-    <string name="rulesets_format_source">Source (.json)</string>
-    <string name="rulesets_url">Download URL</string>
-    <string name="rulesets_url_hint">https://example.com/rules.srs</string>
-    <string name="rulesets_interval">Auto-update interval (hours)</string>
-    <string name="rulesets_interval_hint">0 = never</string>
-    <string name="rulesets_cached">cached</string>
-    <string name="rulesets_not_cached">not downloaded yet</string>
 
     <!-- dns -->
     <string name="dns_section_servers">DNS servers (%1$d)</string>
@@ -250,6 +235,14 @@
     <string name="routes_sync_dns_desc">Adds a DNS rule with the same domain matchers, resolved by the chosen server. IP-only rules cannot use this.</string>
     <string name="routes_sync_dns_server">DNS server for the synced rule</string>
     <string name="routes_sync_dns_na">IP-only rule: no DNS rule is created (matches happen on resolved addresses).</string>
+    <string name="routes_section_builtin">Built-in</string>
+    <string name="routes_fakeip_bypass">Fake-IP bypass rule</string>
+    <string name="routes_fakeip_bypass_desc">Send packets addressed to the fake-IP range straight to direct — protects against apps caching fake addresses past the tunnel lifetime. Needs Fake-IP enabled.</string>
+    <string name="routes_unknown_traffic">Unknown traffic (final) exit</string>
+    <string name="routes_unknown_traffic_proxy">Proxy (default)</string>
+    <string name="routes_unknown_traffic_desc">Where connections go when no rule matched: the main proxy selector, a node/group, or direct.</string>
+    <string name="groups_unified_delay">Unified delay</string>
+    <string name="groups_unified_delay_desc">Show one shared delay for the group instead of per-node values (urltest_unified_delay).</string>
     <string name="nav_connections">Connections</string>
     <string name="connections_title">Connections</string>
     <string name="connections_live_subtitle">%1$d active — recording</string>

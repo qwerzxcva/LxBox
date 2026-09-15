@@ -27,6 +27,18 @@ data class AppState(
     val hijackDns: Boolean = true,
     val dnsStrategy: String = "",
     /**
+     * Built-in route rule: send any packet addressed to the fake-IP range
+     * straight to direct. Protects against fake-IP leakage when an app
+     * caches a fake address past the tunnel's lifetime.
+     */
+    val fakeIpBypass: Boolean = true,
+    /**
+     * Where "unknown traffic" goes — connections that matched no user rule
+     * and are not DNS. Empty = the main proxy selector (sing-box `final`).
+     * Set to a node/group tag or "direct" to steer the fallback.
+     */
+    val unknownTrafficOutbound: String = "",
+    /**
      * Expose local socks5 / HTTP proxy inbounds on the loopback interface so
      * other apps (or the same device via 127.0.0.1) can use AIBox without
      * the TUN. Traffic rides the same rules and DNS as the tunnel.
@@ -364,6 +376,8 @@ data class OutboundGroup(
     val stickyHash: List<String> = defaultStickyHash(),
     /** Selector only: currently chosen member tag. Empty = first member. */
     val selected: String = "",
+    /** UrlTest only: one shared delay number for the group instead of per-node. */
+    val unifiedDelay: Boolean = false,
 ) {
     val tag: String get() = "group-$id"
 

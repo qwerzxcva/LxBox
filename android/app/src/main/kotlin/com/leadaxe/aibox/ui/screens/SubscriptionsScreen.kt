@@ -911,6 +911,7 @@ private fun GroupEditor(
     var url by remember { mutableStateOf(initial?.url.orEmpty()) }
     var interval by remember { mutableStateOf(initial?.interval.orEmpty()) }
     var tolerance by remember { mutableStateOf((initial?.tolerance ?: 0).toString()) }
+    var unifiedDelay by remember { mutableStateOf(initial?.unifiedDelay ?: false) }
     var mode by remember { mutableStateOf(initial?.mode ?: com.leadaxe.aibox.app.OutboundGroup.ModeLeastTest) }
     var pool by remember { mutableStateOf((initial?.pool ?: 0).toString()) }
     var poolTolerance by remember { mutableStateOf((initial?.poolTolerance ?: 0).toString()) }
@@ -992,6 +993,12 @@ private fun GroupEditor(
                         onValueChange = { tolerance = it.filter { c -> c.isDigit() } },
                         placeholder = "50",
                     )
+                    SwitchRow(
+                        label = stringResource(R.string.groups_unified_delay),
+                        supporting = stringResource(R.string.groups_unified_delay_desc),
+                        checked = unifiedDelay,
+                        onCheckedChange = { unifiedDelay = it },
+                    )
                     SingleChoiceChips(
                         label = stringResource(R.string.groups_mode),
                         options = com.leadaxe.aibox.app.OutboundGroupModes,
@@ -1052,6 +1059,7 @@ private fun GroupEditor(
                             url = url,
                             interval = interval,
                             tolerance = tolerance.toIntOrNull() ?: 0,
+                            unifiedDelay = unifiedDelay,
                             mode = mode,
                             pool = pool.toIntOrNull() ?: 0,
                             poolTolerance = poolTolerance.toIntOrNull() ?: 0,
