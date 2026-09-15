@@ -39,6 +39,14 @@ data class AppState(
      */
     val unknownTrafficOutbound: String = "",
     /**
+     * Lightweight TUN mode: forward the VPN interface through hev-socks5-
+     * tunnel into a loopback SOCKS5 server instead of the full sing-box
+     * engine. Skips the rule engine — every connection goes to the node
+     * the tunnel's SOCKS5 server is bound to. Requires the core's local
+     * socks5 inbound (see [enableLocalSocks5]).
+     */
+    val hevTunMode: Boolean = false,
+    /**
      * Expose local socks5 / HTTP proxy inbounds on the loopback interface so
      * other apps (or the same device via 127.0.0.1) can use AIBox without
      * the TUN. Traffic rides the same rules and DNS as the tunnel.

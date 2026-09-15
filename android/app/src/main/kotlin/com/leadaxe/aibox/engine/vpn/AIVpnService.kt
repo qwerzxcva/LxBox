@@ -200,6 +200,19 @@ class AIVpnService : VpnService() {
             return
         }
         platform.setTun(fd)
+        if (HevTunMode.enabled(state)) {
+            // Lightweight TUN: skip the box entirely and feed the interface
+            // into hev-socks5-tunnel, which dials a loopback SOCKS5 server.
+            // That server is the sing-box local socks5 inbound (started
+            // below with the full engine so subscription fetches and per-
+            // app paths still work) — everything reaching HEV goes to the
+            // selected node through it.
+            val cfg = HevTunMode.writeConfig(filesDir, state)
+            if (!HevTun.start(cfg.readText(), fd.detachFd())) {
+                fail("hev tunnel failed to start (lib missing or fd invalid)")
+                return
+            }
+        }
         engine.start(state)
         networkMonitor.start()
         // Refresh stale rule sets in the background after the box is up;
@@ -247,6 +260,7 @@ class AIVpnService : VpnService() {
     }
 
     private fun handleDisconnect() {
+        if (HevTun.isRunning()) HevTun.stop()
         networkMonitor.stop()
         engine.stop()
         platform.clearTun()

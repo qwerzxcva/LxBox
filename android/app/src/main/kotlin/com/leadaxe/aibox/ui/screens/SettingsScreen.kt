@@ -124,6 +124,12 @@ fun SettingsScreen() {
                     onCheckedChange = { v -> store.update { it.copy(udpOverTcp = v) } },
                 )
                 SwitchRow(
+                    label = stringResource(R.string.settings_hev_tun),
+                    supporting = stringResource(R.string.settings_hev_tun_desc),
+                    checked = state.hevTunMode,
+                    onCheckedChange = { v -> store.update { it.copy(hevTunMode = v) } },
+                )
+                SwitchRow(
                     label = stringResource(R.string.settings_local_socks5),
                     supporting = stringResource(R.string.settings_local_socks5_desc),
                     checked = state.enableLocalSocks5,

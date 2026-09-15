@@ -241,6 +241,8 @@
     <string name="routes_unknown_traffic_desc">未命中任何规则的连接走向：主代理选择器、某个节点/分组，或直连。</string>
     <string name="groups_unified_delay">统一延迟</string>
     <string name="groups_unified_delay_desc">延迟测试只显示组的一个延迟值，而非每节点单独数值（urltest_unified_delay）。</string>
+    <string name="settings_hev_tun">轻量 TUN 模式（HEV）</string>
+    <string name="settings_hev_tun_desc">VPN 接口经极小的 HEV 内核转入本地 SOCKS5 服务器 — CPU/耗电极低，但无规则引擎和 DNS 分流，所有连接都走所选节点。sing-box 内核仍运行以提供本地 SOCKS5 服务。</string>
     <string name="nav_connections">连接</string>
     <string name="connections_title">连接监控</string>
     <string name="connections_live_subtitle">%1$d 条活跃 — 记录中</string>

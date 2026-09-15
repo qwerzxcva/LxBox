@@ -243,6 +243,8 @@
     <string name="routes_unknown_traffic_desc">Where connections go when no rule matched: the main proxy selector, a node/group, or direct.</string>
     <string name="groups_unified_delay">Unified delay</string>
     <string name="groups_unified_delay_desc">Show one shared delay for the group instead of per-node values (urltest_unified_delay).</string>
+    <string name="settings_hev_tun">Lightweight TUN mode (HEV)</string>
+    <string name="settings_hev_tun_desc">Forward the VPN interface through the tiny HEV core into a loopback SOCKS5 server — minimal CPU/battery, no rules or DNS splitting; every connection goes to the selected node. The sing-box core still runs for the local SOCKS5 server.</string>
     <string name="nav_connections">Connections</string>
     <string name="connections_title">Connections</string>
     <string name="connections_live_subtitle">%1$d active — recording</string>
