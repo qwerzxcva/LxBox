@@ -18,6 +18,7 @@ name: Android
 on:
   push:
     branches: [main, develop]
+    tags: ['v*']
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
@@ -26,6 +27,9 @@ on:
     paths:
       - 'android/**'
       - '.github/workflows/android.yml'
+  # Tag pushes whose commit already ran CI can be skipped by the paths
+  # filter above; dispatch is the manual fallback for that case.
+  workflow_dispatch: null
 
 concurrency:
   group: android-${{ github.workflow }}-${{ github.ref }}
@@ -331,15 +335,48 @@ jobs:
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
         run: |
           set -euo pipefail
-          APK=android/app/build/outputs/apk/release/app-release.apk
+          APK=android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
           test -s "$APK" || { echo "::error::APK missing or empty: $APK"; exit 1; }
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | head -1)
           "$AAPT" dump badging "$APK" | head -20
 
-      - name: Upload APK
+      - name: Upload APK (arm64)
         uses: actions/upload-artifact@v4
         with:
           name: aibox-android-release
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aibox-android-release
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          APK="AIBox-${TAG}-arm64-v8a.apk"
+          cp dist/app-arm64-v8a-release.apk "dist/$APK"
+          SHA=$(sha256sum "dist/$APK" | cut -d' ' -f1)
+          {
+            echo "## AIBox ${TAG}"
+            echo
+            echo "- Native Android client (Kotlin/Compose) on the reF1nd sing-box core"
+            echo "- Signed arm64-v8a APK, ~20 MB; armeabi-v7a / x86_64 build on demand from the same workflow"
+            echo "- sha256: \`$SHA\`"
+          } > notes.md
+          gh release create "$TAG" "dist/$APK" --title "AIBox $TAG" --notes-file notes.md
