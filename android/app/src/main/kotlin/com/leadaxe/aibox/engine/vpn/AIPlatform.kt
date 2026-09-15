@@ -164,7 +164,7 @@ class AIPlatform(private val context: Context) : PlatformInterface {
                 "sing-box",
                 NotificationManager.IMPORTANCE_LOW,
             )
-            ch.description = "Background notifications from the LxBox VPN engine."
+            ch.description = "Background notifications from the AIBox VPN engine."
             nm.createNotificationChannel(ch)
         }
     }
