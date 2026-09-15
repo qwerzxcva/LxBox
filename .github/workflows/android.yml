@@ -21,11 +21,13 @@ on:
     tags: ['v*']
     paths:
       - 'android/**'
+      - 'rust/**'
       - '.github/workflows/android.yml'
   pull_request:
     branches: [main, develop]
     paths:
       - 'android/**'
+      - 'rust/**'
       - '.github/workflows/android.yml'
   # Tag pushes whose commit already ran CI can be skipped by the paths
   # filter above; dispatch is the manual fallback for that case.

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/rsxm-core",
     "crates/rsxm-rules",
+    "crates/rsxm-dns",
     "crates/rsxm-tun",
     "crates/rsxm-agent",
 ]

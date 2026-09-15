@@ -52,6 +52,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsxm-dns"
+version = "0.1.0"
+
+[[package]]
 name = "rsxm-rules"
 version = "0.1.0"
 dependencies = [
