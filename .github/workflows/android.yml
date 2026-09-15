@@ -167,36 +167,21 @@ jobs:
           cd /tmp/refsrc
           git tag "$REF_TAG"
 
+          echo "==> stub Go-1.25-incompatible linkname files"
+          # pidfd_android.go linknames os.checkPidfdOnce, removed in newer Go.
+          rm experimental/libbox/pidfd_android.go
+          printf '%s\n' 'package libbox' '' '// Stub: the original file linknamed os.checkPidfdOnce, which newer' '// Go toolchains no longer export. pidfd is not required here.' > experimental/libbox/pidfd_android.go
+          # oomprofile linknames runtime/pprof internals; replace with a stub.
+          rm -rf experimental/libbox/internal/oomprofile
+          mkdir -p experimental/libbox/internal/oomprofile
+          printf '%s\n' '//go:build darwin || linux || windows' '' 'package oomprofile' '' 'import "errors"' '' 'func WriteFile(_ string, _ string) error {' '  return errors.New("oom profiling disabled in this build")' '}' > experimental/libbox/internal/oomprofile/oomprofile.go
+
           echo "==> install sagernet gomobile v0.1.13"
           go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
           go install github.com/sagernet/gomobile/cmd/gobind@v0.1.13
 
-          echo "==> stub Go-1.25-incompatible linkname files"
-          # pidfd_android.go linknames os.checkPidfdOnce, removed in newer Go.
-          rm experimental/libbox/pidfd_android.go
-          cat > experimental/libbox/pidfd_android.go <<'EOF'
-          package libbox
-
-          // Stub: the original file linknamed os.checkPidfdOnce, which newer
-          // Go toolchains no longer export. pidfd is not required here.
-          EOF
-          # oomprofile linknames runtime/pprof internals; replace with a stub.
-          rm -rf experimental/libbox/internal/oomprofile
-          mkdir -p experimental/libbox/internal/oomprofile
-          cat > experimental/libbox/internal/oomprofile/oomprofile.go <<'EOF'
-          //go:build darwin || linux || windows
-
-          package oomprofile
-
-          import "errors"
-
-          func WriteFile(_ string, _ string) error {
-              return errors.New("oom profiling disabled in this build")
-          }
-          EOF
-
           echo "==> gomobile bind (all 4 ABIs, SDK 24)"
-          gomobile bind -v \
+          "$(go env GOPATH)/bin/gomobile" bind \
             -o libbox.aar \
             -target android \
             -androidapi 24 \
@@ -204,7 +189,7 @@ jobs:
             -libname=box \
             -ldflags "-X github.com/sagernet/sing-box/constant.Version=$REF_TAG -s -w" \
             -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,tfogo_checklinkname0" \
-            ./experimental/libbox 2>&1 | tail -4
+            ./experimental/libbox
 
           mkdir -p "$GITHUB_WORKSPACE/android/app/libs"
           cp libbox.aar "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
