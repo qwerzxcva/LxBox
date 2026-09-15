@@ -338,9 +338,68 @@ class BoxEngine internal constructor(
 
     override fun writeLogs(logs: io.nekohasekai.libbox.LogIterator) = Unit
 
-    override fun writeGroups(groups: io.nekohasekai.libbox.OutboundGroupIterator) = Unit
+    /**
+     * Group snapshots: the tag → delay map feeds single-node ping replies.
+     * `URLTest` is fire-and-forget in the kernel — the measured delay comes
+     * back through this stream, keyed by the outbound tag. The service maps
+     * tags to pending ping requests and answers them.
+     */
+    override fun writeGroups(groups: io.nekohasekai.libbox.OutboundGroupIterator) {
+        while (groups.hasNext()) {
+            val group = groups.next()
+            val items = group.items
+            while (items.hasNext()) {
+                val item = items.next()
+                pendingPingReply?.invoke(item.tag, item.urlTestDelay)
+            }
+        }
+    }
 
-    override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) = Unit
+    override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) {
+        while (outbounds.hasNext()) {
+            val item = outbounds.next()
+            pendingPingReply?.invoke(item.tag, item.getURLTestDelay())
+        }
+    }
+
+    /**
+     * Set by [awaitPingResult]: receives (tag, delayMillis) for every
+     * outbound snapshot tick until the wait is satisfied or times out.
+     */
+    @Volatile
+    private var pendingPingReply: ((String, Int) -> Unit)? = null
+
+    /**
+     * Blocking variant of [pingOutbound] for the VPN process: triggers the
+     * probe and waits for the delay to arrive through the outbounds stream
+     * (the kernel's URLTest RPC itself is fire-and-forget). Returns the
+     * measured delay, or a failure when the probe timed out or errored.
+     */
+    fun pingOutboundAwaiting(tag: String, timeoutMillis: Long = 8_000): Result<Int> {
+        val c = client ?: return Result.failure(IllegalStateException("engine not running"))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var measured = -1
+        var errored: String? = null
+        val previous = pendingPingReply
+        pendingPingReply = { receivedTag, delay ->
+            if (receivedTag == tag && delay > 0) {
+                measured = delay
+                latch.countDown()
+            }
+        }
+        try {
+            runCatching { c.urlTest(tag) }.onFailure {
+                return Result.failure(it)
+            }
+            if (!latch.await(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                errored = "probe timed out"
+            }
+        } finally {
+            pendingPingReply = previous
+        }
+        return if (measured > 0) Result.success(measured)
+        else Result.failure(IllegalStateException(errored ?: "no delay reported"))
+    }
 
     override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) {
         if (connectionsPaused) return

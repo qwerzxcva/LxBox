@@ -47,6 +47,12 @@
     <string name="groups_section_short">Selector and URL-test groups built on the nodes</string>
     <string name="settings_mux_disabled_short">Off — tap to configure</string>
     <string name="subs_name">Name</string>
+    <string name="subs_name_optional">Name (optional — taken from the panel when blank)</string>
+    <string name="subs_update_interval">Auto-update</string>
+    <string name="subs_interval_off">Off</string>
+    <string name="subs_interval_12h">12 h</string>
+    <string name="subs_interval_24h">Daily</string>
+    <string name="subs_interval_72h">3 days</string>
     <string name="subs_url">Subscription URL</string>
     <string name="subs_url_edit_hint">Change the link here when the panel rotates it; saving refetches the nodes automatically.</string>
     <string name="subs_update_section">Update</string>
@@ -402,6 +408,22 @@
     <!-- common -->
     <string name="common_save">Save</string>
     <string name="common_cancel">Cancel</string>
+    <string name="common_select_all">Select all</string>
+    <string name="common_select_none">Clear</string>
+
+    <!-- node editor -->
+    <string name="node_edit_title">Edit node: %1$s</string>
+    <string name="node_edit_common">Common</string>
+    <string name="node_edit_name">Display name</string>
+    <string name="node_edit_server">Server</string>
+    <string name="node_edit_port">Port</string>
+    <string name="node_edit_secret">UUID / password</string>
+    <string name="node_edit_sni">TLS SNI</string>
+    <string name="node_edit_sni_hint">Server name the TLS handshake presents; usually the masked domain.</string>
+    <string name="node_edit_advanced">Advanced override (JSON)</string>
+    <string name="node_edit_override">Override JSON</string>
+    <string name="node_edit_override_hint">Deep-merged over the node config at compile time — any sing-box outbound key works (transport, reality, flow, …).</string>
+    <string name="node_edit_survival_note">Edits are kept when the subscription refreshes: your changes overwrite the freshly served values for the same node.</string>
     <string name="common_delete">Delete</string>
     <string name="common_add">Add</string>
     <string name="common_edit">Edit</string>
@@ -454,6 +476,7 @@
     <string name="routes_hide_advanced">Hide advanced fields</string>
     <string name="routes_outbound_shared_hint">Every sub-rule below shares this exit.</string>
     <string name="routes_sync_dns_desc_shared">The compiler derives a matching DNS rule for the whole group — nothing is copied into the DNS list.</string>
+    <string name="routes_sync_dns_json_hint">A DNS rule is created alongside this one (JSON, named "sync-…") — inspect or edit it in the DNS tab.</string>
     <string name="routes_edit_sub_rule">Edit sub-rule</string>
 
     <!-- field hints -->

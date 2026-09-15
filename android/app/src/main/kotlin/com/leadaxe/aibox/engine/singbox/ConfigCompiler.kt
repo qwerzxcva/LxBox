@@ -253,13 +253,12 @@ object ConfigCompiler {
                 })
             }
         }
-        // Route-rule derived DNS rules (lxbox-style linkage): a route rule
-        // with a DNS server pinned gets the same domain matchers compiled
-        // into a DNS rule here — no duplicated entries in the user's DNS
-        // list. Order: fakeip rules, then route-derived, then user rules.
-        state.routeRules.filter { it.enabled && it.syncDnsServer.isNotBlank() }.forEach { rr ->
-            compileRouteRuleDns(rr)?.let(::add)
-        }
+        // Route-rule derived DNS rules are materialised as JSON dnsRules at
+        // save time (RoutesScreen), so they appear in the DNS tab exactly
+        // like any other rule — the `sync-<id>` name marks their origin.
+        // Nothing is injected here any more: no duplication, and editing or
+        // deleting the derived rule is the same interaction as for the
+        // hand-made ones.
         // User rules.
         state.dnsRules.filter { it.enabled }.forEach { rule ->
             when (rule.kind) {
@@ -275,6 +274,8 @@ object ConfigCompiler {
      * null for IP-only rules (nothing name-based to steer).
      */
     private fun compileRouteRuleDns(rule: RouteRule): JsonObject? {
+        // Kept for reference/parity tests; the materialised JSON dnsRules
+        // produced at save time carry the same shape.
         fun matcherOf(domain: List<String>, suffix: List<String>, keyword: List<String>, regex: List<String>, ruleSets: List<String>): JsonObject? {
             val obj = buildJsonObject {
                 putStringList("domain", domain)
@@ -472,7 +473,10 @@ object ConfigCompiler {
         state.outbounds.forEach { profile ->
             val parsed = runCatching { json.parseToJsonElement(profile.config).jsonObject }
                 .getOrNull() ?: return@forEach
-            add(JsonObject(parsed.toMutableMap().apply {
+            // User overrides win over the subscription's values: a deep
+            // merge keeps nodes edited by hand stable across refreshes.
+            val effective = applyNodeOverride(parsed, profile.override)
+            add(JsonObject(effective.toMutableMap().apply {
                 put("type", JsonPrimitive(profile.type))
                 put("tag", JsonPrimitive(profile.tag))
                 // UDP-over-TCP: let the VLESS stream carry datagrams, so
@@ -564,6 +568,31 @@ object ConfigCompiler {
                 }
             }
         }
+
+    /**
+     * Deep-merges the user's override JSON over a node's config: objects
+     * merge recursively, everything else replaces. Invalid override JSON
+     * is ignored (the base config wins) rather than failing the whole build.
+     */
+    private fun applyNodeOverride(base: JsonObject, overrideJson: String): JsonObject {
+        if (overrideJson.isBlank()) return base
+        val override = runCatching { json.parseToJsonElement(overrideJson).jsonObject }.getOrNull()
+            ?: return base
+        return mergeJsonObjects(base, override)
+    }
+
+    private fun mergeJsonObjects(base: JsonObject, override: JsonObject): JsonObject {
+        val merged = base.toMutableMap()
+        for ((key, value) in override) {
+            val existing = merged[key]
+            merged[key] = if (existing is JsonObject && value is JsonObject) {
+                mergeJsonObjects(existing, value)
+            } else {
+                value
+            }
+        }
+        return JsonObject(merged)
+    }
 
     /**
      * Injects the multiplex block into an outbound. Rules the kernel
@@ -703,13 +732,30 @@ object ConfigCompiler {
     private fun compileJsonRule(rule: RouteRule): List<JsonObject> {
         val text = rule.json.trim()
         if (text.isEmpty()) return emptyList()
+        // Accept the wrapper shapes too (a full config / route section with
+        // the rules under route.rules) — same contract as the editor's
+        // validator, so what it accepts is what compiles.
         val parsed = runCatching { json.parseToJsonElement(text) }.getOrNull() ?: return emptyList()
         return when (parsed) {
-            is JsonObject -> listOf(parsed)
+            is JsonObject -> {
+                val route = parsed["route"] as? JsonObject
+                when {
+                    route != null ->
+                        (route["rules"] as? JsonArray)?.filterIsInstance<JsonObject>()
+                            ?: listOf(route)
+                    parsed["rules"] is JsonArray && parsed["domain"].isNullish() &&
+                        parsed["ip_cidr"].isNullish() && parsed["package_name"].isNullish() ->
+                        (parsed["rules"] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
+                    else -> listOf(parsed)
+                }
+            }
             is JsonArray -> parsed.filterIsInstance<JsonObject>()
             else -> emptyList()
         }
     }
+
+    private fun JsonElement?.isNullish(): Boolean =
+        this == null || this is JsonArray && this.isEmpty()
 
     /** Compiles an inline rule (default or logical) into a sing-box route rule. */
     private fun compileInlineRule(rule: RouteRule, state: AppState): JsonObject? {

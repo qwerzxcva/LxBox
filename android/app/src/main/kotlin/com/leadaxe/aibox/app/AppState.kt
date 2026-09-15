@@ -1,5 +1,6 @@
 package com.leadaxe.aibox.app
 
+import com.leadaxe.aibox.R
 import kotlinx.serialization.Serializable
 
 /** Root immutable application state, persisted as a single JSON document. */
@@ -239,6 +240,15 @@ data class OutboundProfile(
     val type: String,
     val config: String,
     val subscriptionId: String? = null,
+    /**
+     * User edits merged over the subscription-provided config at compile
+     * time, so a refresh does not wipe hand-made changes. A JSON object
+     * whose keys override the node's top-level fields (server, port,
+     * uuid, tls.*, …). Empty = no override.
+     */
+    val override: String = "",
+    /** True when the user edited [override]; such nodes skip auto-name. */
+    val edited: Boolean = false,
 ) {
     val tag: String get() = "node-$id"
 }
@@ -297,6 +307,16 @@ data class Subscription(
     val echQueryServerName: String = "",
     /** Explicit base64 ECH config list; empty = core auto-fetches. */
     val echConfig: String = "",
+    /**
+     * Auto-refresh interval in hours; 0 = manual only. The UI offers presets
+     * (off / 12h / 24h / 72h); the fetcher checks staleness lazily.
+     */
+    val updateIntervalHours: Int = 0,
+    /**
+     * User override of the display name; empty = derived from the panel's
+     * `profile-title` header (or the URL host) on first successful fetch.
+     */
+    val autoName: Boolean = true,
 )
 
 /** A folder that groups subscriptions in the UI. Purely presentational. */
@@ -514,6 +534,14 @@ val OutboundGroupModes = listOf(
 )
 
 val StickyHashComponents = listOf("process", "domain", "source_ip", "dest_ip", "dest_port")
+
+/** Subscription auto-update presets: hours → label resource. */
+val UpdateIntervalOptions: List<Pair<Int, Int>> = listOf(
+    0 to R.string.subs_interval_off,
+    12 to R.string.subs_interval_12h,
+    24 to R.string.subs_interval_24h,
+    72 to R.string.subs_interval_72h,
+)
 
 fun defaultStickyHash(): List<String> = listOf("process", "domain")
 

@@ -78,12 +78,19 @@ class AIVpnService : VpnService() {
                     val reply = Intent(VpnIpc.ACTION_PING_RESULT).setPackage(packageName)
                         .putExtra(VpnIpc.EXTRA_PING_NODE_ID, nodeId)
                     scope.launch {
+                        // The kernel's URLTest RPC is fire-and-forget; the
+                        // delay arrives on the outbounds stream. Await it
+                        // here so the UI's "measuring" state always resolves
+                        // to either a number or an error.
                         val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            engine.pingOutbound(nodeTag, url)
+                            engine.pingOutboundAwaiting(nodeTag)
                         }
-                        if (result.isFailure) {
-                            reply.putExtra(VpnIpc.EXTRA_PING_ERROR, result.exceptionOrNull()?.message ?: "failed")
-                        }
+                        result.fold(
+                            onSuccess = { reply.putExtra(VpnIpc.EXTRA_PING_DELAY, it) },
+                            onFailure = {
+                                reply.putExtra(VpnIpc.EXTRA_PING_ERROR, it.message ?: "failed")
+                            },
+                        )
                         sendBroadcast(reply)
                     }
                 }

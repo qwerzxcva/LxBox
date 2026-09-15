@@ -176,6 +176,23 @@ class SubscriptionParsingTest {
     }
 
     @Test
+    fun `route-wrapped payload is accepted and unpacked`() {
+        // The shape the official docs show and lxbox exported: a route
+        // section (optionally with its own rule_set) wrapping the rules.
+        val wrapped = """
+            {"route": {
+                "rule_set": [{"tag":"unknown-apps","type":"inline","rules":[{"invert":true,"package_name_regex":"^"}]}],
+                "rules": [{"rule_set":"unknown-apps","action":"reject"}]
+            }}
+        """.trimIndent()
+        assertNull(RouteJson.validate(wrapped))
+        val summary = RouteJson.describe(wrapped)
+        assertTrue(summary.valid)
+        assertEquals(1, summary.ruleCount)
+        assertEquals("reject", summary.primaryAction)
+    }
+
+    @Test
     fun `route rule without outbound is rejected`() {
         val problem = RouteJson.validate("""{"domain_suffix":["a.example"],"action":"route"}""")
         assertNotNull(problem)

@@ -68,27 +68,49 @@ internal object RouteJson {
      * the UI can render the line.
      */
     fun validate(text: String): Problem? {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return Problem("empty", -1)
-
-        val element = try {
-            json.parseToJsonElement(trimmed)
-        } catch (t: Throwable) {
-            return Problem(parseMessage(t), parseOffset(t))
-        }
-
-        val rules = when (element) {
-            is JsonObject -> listOf(element)
-            is JsonArray -> element.mapIndexed { index, item ->
-                item as? JsonObject
-                    ?: return Problem("array entry ${index + 1} is not an object", -1)
-            }
-            else -> return Problem("top level must be an object or an array of objects", -1)
-        }
+        val rules = runCatching { extractRules(text) }
+            .getOrElse { return Problem(it.message ?: "invalid JSON", -1) }
+            ?: return Problem("empty", -1)
         if (rules.isEmpty()) return Problem("the array is empty", -1)
-
         rules.forEachIndexed { index, rule -> validateRule(rule, index, rules.size)?.let { return it } }
         return null
+    }
+
+    /**
+     * Accepts every legal shape a rule payload can arrive in:
+     *
+     *  - a bare rule object: `{"domain": [...], "outbound": "proxy"}`
+     *  - an array of rule objects
+     *  - a `{"route": {...}}` wrapper — a full sing-box config or route
+     *    section, where the rules live under `route.rules` (or a single
+     *    rule object sits directly under `route`); this is the shape the
+     *    official docs show and lxbox exported
+     *  - a `{"rule_set": [...], "rules": [...]}` route-section fragment
+     *    without the outer `route` key
+     */
+    private fun extractRules(text: String): List<JsonObject>? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        val element = json.parseToJsonElement(trimmed)
+        val rules: List<JsonObject> = when (element) {
+            is JsonObject -> {
+                val route = element["route"] as? JsonObject
+                when {
+                    route != null -> {
+                        (route["rules"] as? JsonArray)?.filterIsInstance<JsonObject>()
+                            ?: listOf(route)
+                    }
+                    element["rules"] is JsonArray ->
+                        (element["rules"] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty()
+                    else -> listOf(element)
+                }
+            }
+            is JsonArray -> element.map { item ->
+                item as? JsonObject ?: throw IllegalArgumentException("array entry is not an object")
+            }
+            else -> throw IllegalArgumentException("top level must be an object or an array of objects")
+        }
+        return rules
     }
 
     private fun validateRule(rule: JsonObject, index: Int, total: Int): Problem? {
@@ -156,15 +178,8 @@ internal object RouteJson {
      * need the reason call [validate].
      */
     fun describe(text: String): Summary {
-        val trimmed = text.trim()
-        if (trimmed.isEmpty()) return Summary(valid = false)
-        val element = runCatching { json.parseToJsonElement(trimmed) }.getOrNull()
+        val rules = runCatching { extractRules(text) }.getOrNull()
             ?: return Summary(valid = false)
-        val rules = when (element) {
-            is JsonObject -> listOf(element)
-            is JsonArray -> element.filterIsInstance<JsonObject>()
-            else -> return Summary(valid = false)
-        }
         if (rules.isEmpty()) return Summary(valid = false)
 
         val actions = LinkedHashSet<String>()

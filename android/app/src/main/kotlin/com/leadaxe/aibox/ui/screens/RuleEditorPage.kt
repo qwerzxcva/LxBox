@@ -235,6 +235,8 @@ fun RuleEditorPage(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
+                            // Action + combine + invert on one row, English
+                            // tokens as the user asked ("or" "and" "invert").
                             SingleChoiceChips(
                                 label = stringResource(R.string.routes_action),
                                 options = listOf(
@@ -264,21 +266,20 @@ fun RuleEditorPage(
                                     onSelect = { outbound = it },
                                     display = { outboundDisplayLabel(it, state) },
                                 )
-                                Text(
-                                    stringResource(R.string.routes_outbound_shared_hint),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                             }
-                            if (action == RouteRule.RuleActionResolve) {
-                                StringField(
-                                    label = stringResource(R.string.routes_client_subnet),
-                                    value = clientSubnet,
-                                    onValueChange = { clientSubnet = it },
-                                    placeholder = "1.2.3.0/24",
-                                    supporting = stringResource(R.string.hint_client_subnet),
-                                )
-                            }
+                            // ECS / client subnet is a rule-level decision,
+                            // not tied to the resolve action: any rule can
+                            // carry a client_subnet for its DNS linkage.
+                            StringField(
+                                label = stringResource(R.string.routes_client_subnet),
+                                value = clientSubnet,
+                                onValueChange = { clientSubnet = it },
+                                placeholder = "1.2.3.0/24",
+                                supporting = stringResource(R.string.hint_client_subnet),
+                            )
+                            // DNS linkage: creating a DNS rule alongside this
+                            // route rule. The created rule shows in the DNS
+                            // tab as JSON (it is derived, not hand-edited).
                             val dnsOptions = remember(state.dnsServers) {
                                 listOf("") + state.dnsServers.filter { it.enabled }.map { it.tag }
                             }
@@ -293,11 +294,13 @@ fun RuleEditorPage(
                                         ?.name?.ifBlank { tag } ?: tag
                                 },
                             )
-                            Text(
-                                stringResource(R.string.routes_sync_dns_desc_shared),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            if (syncDnsServer.isNotBlank()) {
+                                Text(
+                                    stringResource(R.string.routes_sync_dns_json_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                             SwitchRow(
                                 label = stringResource(R.string.routes_enabled),
                                 checked = enabled,
@@ -460,18 +463,19 @@ private fun BranchCard(
             }
             AnimatedVisibility(visible = !collapsed) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Each sub-rule decides how its own conditions combine.
-                    // Default is OR: a list of domains is meant as "any of
-                    // these", which is also how first-hit-wins routing reads.
+                    // Combine + invert on one row, plain English tokens:
+                    // matching any condition (or) vs all of them (and).
                     SingleChoiceChips(
                         label = stringResource(R.string.routes_combine_mode),
                         options = listOf(RouteRule.CombineOr, RouteRule.CombineAnd),
                         selected = branch.combine.ifBlank { RouteRule.CombineOr },
                         onSelect = { onChange(branch.copy(combine = it)) },
-                        display = {
-                            if (it == RouteRule.CombineOr) stringResource(R.string.routes_combine_or)
-                            else stringResource(R.string.routes_combine_and)
-                        },
+                        display = { it },
+                    )
+                    SwitchRow(
+                        label = "invert",
+                        checked = branch.invert,
+                        onCheckedChange = { onChange(branch.copy(invert = it)) },
                     )
                     MatchFields(rule = branch, state = state, onChange = onChange)
                 }
@@ -568,11 +572,6 @@ private fun MatchFields(
                 label = stringResource(R.string.routes_ip_private),
                 checked = rule.ipIsPrivate,
                 onCheckedChange = { onChange(rule.copy(ipIsPrivate = it)) },
-            )
-            SwitchRow(
-                label = stringResource(R.string.routes_invert),
-                checked = rule.invert,
-                onCheckedChange = { onChange(rule.copy(invert = it)) },
             )
         }
     }

@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,8 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.leadaxe.aibox.R
 
 /** Reusable header used at the top of every scrollable screen. */
 @Composable
@@ -256,9 +259,21 @@ fun MultiChoiceChips(
     selected: Collection<String>,
     onToggle: (String) -> Unit,
     display: @Composable (String) -> String = { it },
+    selectAllAction: (() -> Unit)? = null,
 ) {
     Column {
-        Text(label, style = MaterialTheme.typography.labelLarge)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            if (selectAllAction != null && options.isNotEmpty()) {
+                TextButton(onClick = selectAllAction) {
+                    Text(
+                        if (selected.containsAll(options)) stringResource(R.string.common_select_none)
+                        else stringResource(R.string.common_select_all),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+        }
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),

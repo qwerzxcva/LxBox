@@ -106,11 +106,22 @@ fun HomeScreen(
             onChange = { mode -> store.update { it.copy(clashMode = mode) } },
         )
 
-        NodePickerPreview(
-            outbounds = appState.outbounds,
-            selected = appState.selectedOutbound,
-            onSelect = { tag -> store.update { it.copy(selectedOutbound = tag) } },
-        )
+        // The home tab is for *looking* (bettbox-style): status, traffic and
+        // mode. Node selection lives in Groups → Nodes; repeating it here
+        // made the page a second control surface.
+        if (boxState is BoxState.Connected) {
+            val via = appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
+                ?.name?.ifBlank { appState.selectedOutbound }
+                ?: appState.outboundGroups.firstOrNull { it.tag == appState.selectedOutbound }
+                    ?.name?.ifBlank { appState.selectedOutbound }
+            if (!via.isNullOrBlank()) {
+                Text(
+                    text = stringResource(R.string.home_via_node, via),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -266,34 +277,6 @@ private fun ClashModeRow(
                     )
                 },
             )
-        }
-    }
-}
-
-@Composable
-private fun NodePickerPreview(
-    outbounds: List<com.leadaxe.aibox.app.OutboundProfile>,
-    selected: String,
-    onSelect: (String) -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.home_select_outbound), style = MaterialTheme.typography.titleMedium)
-            if (outbounds.isEmpty()) {
-                Text(
-                    stringResource(R.string.home_no_nodes),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                outbounds.take(8).forEach { node ->
-                    FilterChip(
-                        selected = node.tag == selected,
-                        onClick = { onSelect(node.tag) },
-                        label = { Text(node.name.ifBlank { node.tag }) },
-                    )
-                }
-            }
         }
     }
 }

@@ -45,6 +45,12 @@
     <string name="groups_section_short">基于节点构建的选择器与自动测速组</string>
     <string name="settings_mux_disabled_short">未启用 — 点击配置</string>
     <string name="subs_name">名称</string>
+    <string name="subs_name_optional">名称（可留空 — 自动取机场名）</string>
+    <string name="subs_update_interval">自动更新</string>
+    <string name="subs_interval_off">关闭</string>
+    <string name="subs_interval_12h">12 小时</string>
+    <string name="subs_interval_24h">每天</string>
+    <string name="subs_interval_72h">3 天</string>
     <string name="subs_url">订阅地址</string>
     <string name="subs_url_edit_hint">机场更换链接时在这里改；保存后会自动重新获取节点。</string>
     <string name="subs_update_section">更新方式</string>
@@ -400,6 +406,22 @@
     <!-- common -->
     <string name="common_save">保存</string>
     <string name="common_cancel">取消</string>
+    <string name="common_select_all">全选</string>
+    <string name="common_select_none">清除</string>
+
+    <!-- node editor -->
+    <string name="node_edit_title">编辑节点：%1$s</string>
+    <string name="node_edit_common">常用</string>
+    <string name="node_edit_name">显示名称</string>
+    <string name="node_edit_server">服务器</string>
+    <string name="node_edit_port">端口</string>
+    <string name="node_edit_secret">UUID / 密码</string>
+    <string name="node_edit_sni">TLS SNI</string>
+    <string name="node_edit_sni_hint">TLS 握手出示的服务器名，通常是伪装域名。</string>
+    <string name="node_edit_advanced">高级覆盖（JSON）</string>
+    <string name="node_edit_override">覆盖 JSON</string>
+    <string name="node_edit_override_hint">编译时深度合并进节点配置 — 任何 sing-box 出站键都可用（transport、reality、flow 等）。</string>
+    <string name="node_edit_survival_note">订阅刷新时会保留你的修改：对同一节点的更改将覆盖新下发的值。</string>
     <string name="common_delete">删除</string>
     <string name="common_add">添加</string>
     <string name="common_edit">编辑</string>
@@ -452,6 +474,7 @@
     <string name="routes_hide_advanced">隐藏高级字段</string>
     <string name="routes_outbound_shared_hint">下方所有子规则共用此出口。</string>
     <string name="routes_sync_dns_desc_shared">编译器为整组条件生成对应的 DNS 规则 — 不会往 DNS 列表里复制条目。</string>
+    <string name="routes_sync_dns_json_hint">将同时创建一条 DNS 规则（JSON 格式，命名 "sync-…"）— 可在 DNS 页查看或编辑。</string>
     <string name="routes_edit_sub_rule">编辑子规则</string>
 
     <!-- 字段说明 -->

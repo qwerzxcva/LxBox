@@ -67,6 +67,10 @@ class SubscriptionFetcher(private val context: Context) {
         val errors: List<ShareLinkParser.Result.Err>,
         /** Nodes dropped as duplicates of existing ones (same fingerprint). */
         val duplicates: Int = 0,
+        /** Panel-provided display name (profile-title header), if any. */
+        val suggestedName: String? = null,
+        /** Panel-provided homepage URL (profile-web-page-url header), if any. */
+        val suggestedHomePage: String? = null,
     )
 
     /**
@@ -99,8 +103,19 @@ class SubscriptionFetcher(private val context: Context) {
         subscription: Subscription,
         existing: List<OutboundProfile> = emptyList(),
         dnsServers: List<DnsServerState> = emptyList(),
+        /** Same subscription's current nodes: edited nodes pass their
+         *  override/name down to the fresh copy by fingerprint match. */
+        existingFor: List<OutboundProfile> = emptyList(),
     ): FetchResult = withContext(Dispatchers.IO) {
-        val body = download(subscription, dnsServers)
+        val (body, headers) = downloadWithMeta(subscription, dnsServers)
+        // Panels advertise their display name and homepage on every
+        // subscription response; picking them up here lets the user leave
+        // the name blank and still get a labelled subscription.
+        val suggestedName = headers["profile-title"]
+            ?.trim()
+            ?.removeSurrounding("\"")
+            ?.takeIf { it.isNotBlank() && it != "Subscription" && it != "subscription" }
+        val suggestedHomePage = headers["profile-web-page-url"]?.trim()?.takeIf { it.isNotBlank() }
         val parsed = ShareLinkParser.parseMany(body)
         val decoded = parsed.mapNotNull { res ->
             when (res) {
@@ -116,8 +131,27 @@ class SubscriptionFetcher(private val context: Context) {
         }
         val errors = parsed.filterIsInstance<ShareLinkParser.Result.Err>()
 
+        // Hand edits survive refreshes: a freshly served node inherits the
+        // override/name of the edited node it replaces (matched by
+        // fingerprint — same server, port, credentials).
+        val editedByFingerprint = existingFor
+            .filter { it.edited || it.override.isNotBlank() }
+            .associateBy { fingerprint(it.type, it.config) }
+        val inherited = decoded.map { node ->
+            val previous = editedByFingerprint[fingerprint(node.type, node.config)]
+            if (previous != null) {
+                node.copy(
+                    override = previous.override,
+                    edited = previous.edited,
+                    name = if (previous.edited) previous.name else node.name,
+                )
+            } else {
+                node
+            }
+ }
+
         if (!subscription.deduplicate) {
-            return@withContext FetchResult(decoded, errors, 0)
+            return@withContext FetchResult(inherited, errors, 0, suggestedName, suggestedHomePage)
         }
         // Fingerprint = the outbound JSON minus volatile fields (tag/id) plus
         // the type. Same server + port + credentials collapses to one node,
@@ -126,7 +160,7 @@ class SubscriptionFetcher(private val context: Context) {
         val seen = existing.map { fingerprint(it.type, it.config) }.toMutableSet()
         val kept = ArrayList<OutboundProfile>(decoded.size)
         var dropped = 0
-        for (node in decoded) {
+        for (node in inherited) {
             val fp = fingerprint(node.type, node.config)
             if (!seen.add(fp)) {
                 dropped++
@@ -134,19 +168,24 @@ class SubscriptionFetcher(private val context: Context) {
             }
             kept += node
         }
-        FetchResult(kept, errors, dropped)
+        FetchResult(kept, errors, dropped, suggestedName, suggestedHomePage)
     }
 
     /** Refresh every subscription, collapsing duplicates across the batch. */
     suspend fun refreshAll(
         state: List<Subscription>,
         dnsServers: List<DnsServerState> = emptyList(),
+        /** All current nodes; edited nodes pass their overrides down. */
+        existingFor: List<OutboundProfile> = emptyList(),
     ): RefreshAllResult = withContext(Dispatchers.IO) {
         val collected = mutableListOf<OutboundProfile>()
         val failures = mutableMapOf<String, String>()
         var duplicates = 0
         for (sub in state) {
-            runCatching { fetch(sub, existing = collected, dnsServers = dnsServers) }
+            val currentSubNodes = existingFor.filter { it.subscriptionId == sub.id }
+            runCatching {
+                fetch(sub, existing = collected, dnsServers = dnsServers, existingFor = currentSubNodes)
+            }
                 .onSuccess {
                     collected += it.outbounds
                     duplicates += it.duplicates
@@ -197,29 +236,36 @@ class SubscriptionFetcher(private val context: Context) {
 
     // ------------------------------------------------------------- download
 
-    private fun download(subscription: Subscription, dnsServers: List<DnsServerState>): String {
+    private fun download(subscription: Subscription, dnsServers: List<DnsServerState>): String =
+        downloadWithMeta(subscription, dnsServers).first
+
+    /** [download] plus the response headers the panel advertised. */
+    private fun downloadWithMeta(
+        subscription: Subscription,
+        dnsServers: List<DnsServerState>,
+    ): Pair<String, Map<String, String>> {
         val url = URL(subscription.url)
         val mode = subscription.fetchVia
         val headers = subscriptionHeaders(subscription)
         return when (mode) {
             FetchViaProxy -> {
                 val proxy = boxProxy() ?: error("tunnel is not running — enable AIBox first, or switch the fetch mode to direct")
-                openStream(url, proxy, pinnedAddress = null, extraHeaders = headers)
+                openStreamWithMeta(url, proxy, pinnedAddress = null, extraHeaders = headers)
             }
             FetchViaDirect -> {
                 val pinned = pinnedAddress(subscription, dnsServers, url)
-                openStream(url, proxy = null, pinnedAddress = pinned, extraHeaders = headers)
+                openStreamWithMeta(url, proxy = null, pinnedAddress = pinned, extraHeaders = headers)
             }
             else -> {
                 // auto: try the plain path first, then route through the box.
                 runCatching {
                     val pinned = pinnedAddress(subscription, dnsServers, url)
-                    openStream(url, proxy = null, pinnedAddress = pinned, extraHeaders = headers)
+                    openStreamWithMeta(url, proxy = null, pinnedAddress = pinned, extraHeaders = headers)
                 }.getOrElse { first ->
                     val proxy = boxProxy() ?: throw IllegalStateException(
                         "direct fetch failed (${first.message ?: "no route"}) and the tunnel is not running — enable AIBox and retry",
                     )
-                    openStream(url, proxy, pinnedAddress = null, extraHeaders = headers)
+                    openStreamWithMeta(url, proxy, pinnedAddress = null, extraHeaders = headers)
                 }
             }
         }
@@ -313,13 +359,17 @@ class SubscriptionFetcher(private val context: Context) {
 
     // --------------------------------------------------------------- http
 
-    private fun openStream(
+    private fun openStream(url: URL, proxy: Proxy?, pinnedAddress: InetAddress?, extraHeaders: Map<String, String> = emptyMap()): String =
+        openStreamWithMeta(url, proxy, pinnedAddress, extraHeaders).first
+
+    /** [openStream] plus the response headers (profile-title and friends). */
+    private fun openStreamWithMeta(
         url: URL,
         proxy: Proxy?,
         pinnedAddress: InetAddress?,
         extraHeaders: Map<String, String> = emptyMap(),
         depth: Int = 0,
-    ): String {
+    ): Pair<String, Map<String, String>> {
         val realHost = url.host
         val connectUrl = if (pinnedAddress != null && url.protocol == "https") {
             // Keep the real host in the Host header / SNI while dialing the
@@ -360,7 +410,7 @@ class SubscriptionFetcher(private val context: Context) {
                 // A redirect to another host must not keep the pinned
                 // address or the old Host header.
                 val sameHost = next.host == realHost
-                return openStream(
+                return openStreamWithMeta(
                     next,
                     proxy = proxy,
                     pinnedAddress = if (sameHost) pinnedAddress else null,
@@ -382,7 +432,13 @@ class SubscriptionFetcher(private val context: Context) {
                 error("the server returned an HTML page, not a subscription (check the URL)")
             }
             if (text.isBlank()) error("empty response")
-            return text
+            val meta = conn.headerFields
+                ?.filterKeys { it != null && it.startsWith("profile-", ignoreCase = true) }
+                ?.mapKeys { it.key.lowercase() }
+                ?.mapValues { it.value.firstOrNull().orEmpty() }
+                ?.filterValues { it.isNotBlank() }
+                .orEmpty()
+            return text to meta
         } finally {
             conn.disconnect()
         }

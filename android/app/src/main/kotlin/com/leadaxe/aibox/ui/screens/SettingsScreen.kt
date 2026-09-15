@@ -278,12 +278,6 @@ fun SettingsScreen() {
         }
 
         item {
-            SettingsSection(stringResource(R.string.settings_section_mux)) {
-                MuxSettingsContent(state = state, onChange = { reducer -> store.update(reducer) })
-            }
-        }
-
-        item {
             SettingsSection(stringResource(R.string.settings_section_logging)) {
                 SingleChoiceChips(
                     label = stringResource(R.string.settings_log_level),

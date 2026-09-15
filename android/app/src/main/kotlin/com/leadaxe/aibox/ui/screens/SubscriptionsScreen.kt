@@ -86,6 +86,7 @@ fun SubscriptionsScreen() {
     var pingResults by remember { mutableStateOf<Map<String, PingState>>(emptyMap()) }
     var editingGroup: com.leadaxe.aibox.app.OutboundGroup? by remember { mutableStateOf(null) }
     var editingSubscription: Subscription? by remember { mutableStateOf(null) }
+    var editingNode: OutboundProfile? by remember { mutableStateOf(null) }
     var creatingGroup by remember { mutableStateOf(false) }
 
     // Remote ping answers (from the :vpn process) fold into the local map.
@@ -116,7 +117,7 @@ fun SubscriptionsScreen() {
                     }
                     FilledTonalButton(onClick = {
                         scope.launch {
-                            val r = fetcher.refreshAll(state.subscriptions, state.dnsServers)
+                            val r = fetcher.refreshAll(state.subscriptions, state.dnsServers, existingFor = state.outbounds)
                             store.update { current ->
                                 // A subscription that failed to refresh keeps
                                 // its nodes: wiping them would turn one bad
@@ -232,6 +233,7 @@ fun SubscriptionsScreen() {
                                     relay.requestPing(node.id, node.tag, state.speedTestUrl)
                                 }
                             },
+                            onEdit = { editingNode = node },
                         )
                     }
                     if (state.outbounds.isEmpty()) {
@@ -268,7 +270,7 @@ fun SubscriptionsScreen() {
                             },
                             onRefresh = {
                                 scope.launch {
-                                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers) }
+                                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers, existingFor = state.outbounds) }
                                         .onSuccess { r ->
                                             store.update { st ->
                                                 st.copy(
@@ -362,10 +364,23 @@ fun SubscriptionsScreen() {
                     st.copy(subscriptions = st.subscriptions + sub)
                 }
                 scope.launch {
-                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers) }
+                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers, existingFor = emptyList()) }
                         .onSuccess { r ->
                             store.update { st ->
-                                st.copy(outbounds = st.outbounds + r.outbounds)
+                                // Blank name: adopt the panel's profile-title
+                                // (or the URL host) so the list stays readable.
+                                val named = if (sub.autoName && sub.name.isBlank()) {
+                                    sub.copy(
+                                        name = r.suggestedName
+                                            ?: runCatching { java.net.URL(sub.url).host }.getOrDefault(sub.url),
+                                    )
+                                } else sub
+                                st.copy(
+                                    outbounds = st.outbounds + r.outbounds,
+                                    subscriptions = st.subscriptions.map {
+                                        if (it.id == named.id) named.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) else it
+                                    },
+                                )
                             }
                             val msg = when {
                                 r.outbounds.isNotEmpty() ->
@@ -468,6 +483,18 @@ fun SubscriptionsScreen() {
             },
         )
     }
+    editingNode?.let { node ->
+        NodeEditorPage(
+            initial = node,
+            onDismiss = { editingNode = null },
+            onSave = { updated ->
+                store.update { st ->
+                    st.copy(outbounds = st.outbounds.map { if (it.id == updated.id) updated else it })
+                }
+                editingNode = null
+            },
+        )
+    }
     editingSubscription?.let { sub ->
         EditSubscriptionDialog(
             state = state,
@@ -483,7 +510,7 @@ fun SubscriptionsScreen() {
                 // silently keeping nodes from the old URL. Replaces this
                 // subscription's nodes only.
                 scope.launch {
-                    runCatching { fetcher.fetch(updated, dnsServers = state.dnsServers) }
+                    runCatching { fetcher.fetch(updated, dnsServers = state.dnsServers, existingFor = state.outbounds) }
                         .onSuccess { r ->
                             store.update { st ->
                                 st.copy(
@@ -693,6 +720,7 @@ private fun NodeRow(
     pingState: PingState?,
     onSelect: (String) -> Unit,
     onPing: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -719,15 +747,9 @@ private fun NodeRow(
                     contentDescription = stringResource(R.string.subs_ping),
                 )
             }
-            FilterChip(
-                selected = selected,
-                onClick = { onSelect(node.tag) },
-                label = {
-                    Text(
-                        stringResource(if (selected) R.string.subs_selected else R.string.subs_tap_to_use),
-                    )
-                },
-            )
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
+            }
         }
     }
 }
@@ -781,6 +803,7 @@ private fun AddSubscriptionDialog(
     var enableEch by remember { mutableStateOf(false) }
     var echQueryServerName by remember { mutableStateOf("") }
     var echConfig by remember { mutableStateOf("") }
+    var updateInterval by remember { mutableStateOf(0) }
     // Pre-filed when the user opened the dialog from a folder card.
     var groupId by remember(presetGroupId) { mutableStateOf(presetGroupId) }
 
@@ -795,7 +818,7 @@ private fun AddSubscriptionDialog(
         text = {
             FormBody {
                 StringField(
-                    label = stringResource(R.string.subs_name),
+                    label = stringResource(R.string.subs_name_optional),
                     value = name,
                     onValueChange = { name = it },
                 )
@@ -835,6 +858,19 @@ private fun AddSubscriptionDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_update_interval),
+                    options = com.leadaxe.aibox.app.UpdateIntervalOptions.map { it.first.toString() },
+                    selected = updateInterval.toString(),
+                    onSelect = { updateInterval = it.toIntOrNull() ?: 0 },
+                    display = { value ->
+                        com.leadaxe.aibox.app.UpdateIntervalOptions
+                            .firstOrNull { it.first.toString() == value }
+                            ?.second
+                            ?.let { stringResource(it) }
+                            ?: value
+                    },
+                )
                 SwitchRow(
                     label = stringResource(R.string.subs_deduplicate),
                     supporting = stringResource(R.string.subs_deduplicate_desc),
@@ -927,7 +963,9 @@ private fun AddSubscriptionDialog(
                     onAdd(
                         com.leadaxe.aibox.app.Subscription(
                             id = UUID.randomUUID().toString(),
-                            name = name.ifBlank { url },
+                            // Blank name = the panel's profile-title fills it
+                            // in on the first successful fetch.
+                            name = name,
                             url = url,
                             groupId = groupId,
                             fetchVia = fetchVia,
@@ -939,6 +977,7 @@ private fun AddSubscriptionDialog(
                             enableEch = enableEch,
                             echQueryServerName = echQueryServerName,
                             echConfig = echConfig,
+                            updateIntervalHours = updateInterval,
                         ),
                     )
                 },
@@ -1105,6 +1144,9 @@ private fun GroupEditor(
                     onToggle = { tag -> members = if (tag in members) members - tag else members + tag },
                     display = { tag ->
                         state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
+                    },
+                    selectAllAction = {
+                        members = if (members.containsAll(nodeTags)) emptyList() else nodeTags.toList()
                     },
                 )
                 if (state.outbounds.isEmpty()) {

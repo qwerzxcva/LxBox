@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +56,12 @@ import com.leadaxe.aibox.engine.rust.AiboxCore
 import com.leadaxe.aibox.engine.singbox.ConfigCompiler
 import com.leadaxe.aibox.engine.singbox.RouteJson
 import java.util.UUID
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 @Composable
 fun RoutesScreen() {
@@ -62,8 +69,10 @@ fun RoutesScreen() {
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
     val state by store.state.collectAsState()
 
-    var editing: RouteRule? by remember { mutableStateOf(null) }
-    var creating by remember { mutableStateOf(false) }
+    // Saveable across config changes / process death so the editor never
+    // silently drops the user back out of the form mid-edit.
+    var editing: RouteRule? by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(null) }
+    var creating by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var editingRuleSet: com.leadaxe.aibox.app.RuleSetResource? by remember { mutableStateOf(null) }
 
     // Second-level page: the editor replaces the list while open, and the
@@ -81,13 +90,25 @@ fun RoutesScreen() {
                 // the planner see what the kernel will actually run.
                 val synced = if (rule.kind == RouteRule.KindJson) RouteJson.syncMirror(rule) else rule
                 val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, synced)
+                // DNS linkage: materialise the derived DNS rule as JSON so it
+                // shows up in the DNS tab exactly like a hand-made rule —
+                // editable/inspectable, visibly marked as route-derived.
+                val (dnsRuleAdd, dnsRule) = materializeSyncedDnsRule(state, normalized)
                 store.update { st ->
                     val list = if (creating) {
                         st.routeRules + normalized
                     } else {
                         st.routeRules.map { if (it.id == normalized.id) normalized else it }
                     }
-                    st.copy(routeRules = list, ruleSets = st.ruleSets + adds)
+                    st.copy(
+                        routeRules = list,
+                        ruleSets = st.ruleSets + adds,
+                        dnsRules = if (dnsRule != null) {
+                            st.dnsRules.filterNot { it.id == dnsRule.id } + dnsRule
+                        } else {
+                            st.dnsRules.filterNot { it.id == "sync-${normalized.id}" }
+                        },
+                    )
                 }
                 creating = false
                 editing = null
@@ -332,12 +353,13 @@ internal fun materializeRuleSetReferences(
     }
 
 /**
- * Renders a list with per-row move-up/move-down affordances. Order matters in
- * sing-box routing — rules are tried top to bottom — so reordering needs to
- * be one tap away, not buried in the editor.
+ * Renders a list with per-row drag affordances. Order matters in sing-box
+ * routing — rules are tried top to bottom — so reordering needs to be one
+ * gesture away.
  *
- * Reordering: long-press the handle icon and drag. The dragged row follows
- * the finger; on drop, the permutation is applied via [onMove] calls.
+ * Row identity: keys stay stable across moves (the item's own hash), which
+ * keeps LazyColumn's item animations (insert/remove/move) smooth while the
+ * permutation is applied.
  */
 internal fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWithActions(
     items: List<T>,
@@ -345,7 +367,7 @@ internal fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWith
     itemContent: @Composable (Int, T) -> Unit,
 ) {
     items.forEachIndexed { index, value ->
-        item(key = "${index}-${value.hashCode()}") {
+        item(key = "route-${value.hashCode()}") {
             DragDropRow(
                 index = index,
                 itemsCount = items.size,
@@ -357,10 +379,10 @@ internal fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWith
 }
 
 /**
- * Row wrapper with a drag handle. Long-press the handle to lift the row,
- * drag to the target position, release to drop. Uses a simple offset shift
- * and calls [onMove] on release; the store rewrite re-renders the list in
- * the new order.
+ * Row wrapper with a drag handle. Long-press anywhere on the handle to lift
+ * the row (it grows a shadow and scales slightly), drag past a neighbour to
+ * swap live, release to settle. The offset animates back to zero on drop so
+ * the row glides into its slot instead of snapping.
  */
 @Composable
 internal fun DragDropRow(
@@ -369,24 +391,44 @@ internal fun DragDropRow(
     onMove: (Int, Int) -> Unit,
     content: @Composable () -> Unit,
 ) {
-    var offsetX by remember { mutableStateOf(0f) }
-    var offsetY by remember { mutableStateOf(0f) }
     var dragging by remember { mutableStateOf(false) }
+    var offsetY by remember { mutableStateOf(0f) }
+    // Real row height (measured), not a guess: rows are two text lines tall
+    // and vary with font scale.
+    var rowHeightPx by remember { mutableStateOf(0f) }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val rowHeightPx = with(density) { 64.dp.toPx() }
+
+    val liftScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (dragging) 1.03f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+        ),
+        label = "lift",
+    )
+    val settleSpec = androidx.compose.animation.core.spring<Float>(
+        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+        stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+    )
+    val settleY by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (dragging) offsetY else 0f,
+        animationSpec = settleSpec,
+        label = "settle",
+    )
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(
             modifier = Modifier
                 .weight(1f)
+                .onGloballyPositioned { rowHeightPx = it.size.height.toFloat() }
                 .graphicsLayer {
-                    translationX = offsetX
-                    translationY = offsetY
-                    if (dragging) {
-                        shadowElevation = 16f
-                        scaleX = 1.02f
-                        scaleY = 1.02f
-                    }
+                    translationY = if (dragging) offsetY else settleY
+                    shadowElevation = if (dragging) 24f else 0f
+                    val s = if (dragging) liftScale else 1f
+                    scaleX = s
+                    scaleY = s
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                    clip = false
                 }
                 .zIndex(if (dragging) 1f else 0f),
         ) { content() }
@@ -398,28 +440,25 @@ internal fun DragDropRow(
                         onDragStart = { dragging = true },
                         onDragEnd = {
                             dragging = false
-                            offsetX = 0f
                             offsetY = 0f
                         },
                         onDragCancel = {
                             dragging = false
-                            offsetX = 0f
                             offsetY = 0f
                         },
                         onDrag = { change, amount ->
                             change.consume()
-                            offsetX += amount.x
                             offsetY += amount.y
-                            // Once the row is dragged past a neighbour's
-                            // height, apply the move and reset the offset
-                            // so the row keeps tracking the finger.
-                            while (offsetY > rowHeightPx && index < itemsCount - 1) {
+                            // Swap live as the row crosses half a neighbour:
+                            // feels like the row is really being carried.
+                            val threshold = if (rowHeightPx > 0f) rowHeightPx / 2 else with(density) { 32.dp.toPx() }
+                            while (offsetY > threshold && index < itemsCount - 1) {
                                 onMove(index, index + 1)
-                                offsetY -= rowHeightPx
+                                offsetY -= threshold * 2
                             }
-                            while (offsetY < -rowHeightPx && index > 0) {
+                            while (offsetY < -threshold && index > 0) {
                                 onMove(index, index - 1)
-                                offsetY += rowHeightPx
+                                offsetY += threshold * 2
                             }
                         },
                     )
@@ -434,6 +473,10 @@ internal fun DragDropRow(
     }
 }
 
+/**
+ * Renders one rule as a single readable line: the matcher first (with the
+ * first few literal values shown), then an arrow and the action target.
+ */
 @Composable
 private fun RuleCard(
     rule: RouteRule,
@@ -470,10 +513,6 @@ private fun RuleCard(
     }
 }
 
-/**
- * Renders one rule as a single readable line: the matcher first (with the
- * first few literal values shown), then an arrow and the action target.
- */
 @Composable
 private fun ruleLine(rule: RouteRule, state: AppState): String {
     if (rule.kind == RouteRule.KindJson) {
@@ -730,3 +769,58 @@ private fun compileForCheck(state: AppState, context: android.content.Context): 
     val config = ConfigCompiler.compile(state, ruleSetDir = workDir)
     (config["route"] as? kotlinx.serialization.json.JsonObject)?.get("rules").toString()
 }.getOrNull()
+
+/**
+ * Builds the derived DNS rule promised by a route rule's syncDnsServer
+ * choice. The rule is JSON-kind (the compiler's own shape, same as the
+ * compiler used to inject) and named `sync-<routeRuleId>`, so it shows up
+ * in the DNS tab as an inspectable, editable entry with its origin visible.
+ * Returns (ruleSetResourcesToAdd, dnsRule); the dnsRule is null when the
+ * route rule carries no name-based matchers (IP-only rules have nothing to
+ * steer) or no DNS server is pinned.
+ */
+internal fun materializeSyncedDnsRule(
+    state: AppState,
+    rule: RouteRule,
+): Pair<List<com.leadaxe.aibox.app.RuleSetResource>, com.leadaxe.aibox.app.DnsRule?> {
+    val server = rule.syncDnsServer.trim()
+    if (server.isBlank()) return emptyList<com.leadaxe.aibox.app.RuleSetResource>() to null
+    if (rule.kind == RouteRule.KindJson) {
+        // A JSON route rule's matchers are opaque; derive from its payload's
+        // name-based fields via the summary (best effort) — skip when the
+        // payload carries none.
+        val summary = RouteJson.describe(rule.json)
+        if (!summary.valid) return emptyList<com.leadaxe.aibox.app.RuleSetResource>() to null
+    }
+    fun matcherJson(m: RouteRule): JsonObject? {
+        val obj = buildJsonObject {
+            if (m.domain.isNotEmpty()) putJsonArray("domain") { m.domain.forEach { add(JsonPrimitive(it)) } }
+            if (m.domainSuffix.isNotEmpty()) putJsonArray("domain_suffix") { m.domainSuffix.forEach { add(JsonPrimitive(it)) } }
+            if (m.domainKeyword.isNotEmpty()) putJsonArray("domain_keyword") { m.domainKeyword.forEach { add(JsonPrimitive(it)) } }
+            if (m.domainRegex.isNotEmpty()) putJsonArray("domain_regex") { m.domainRegex.forEach { add(JsonPrimitive(it)) } }
+            if (m.ruleSet.isNotEmpty()) putJsonArray("rule_set") { m.ruleSet.forEach { add(JsonPrimitive(it)) } }
+        }
+        return obj.takeIf { it.isNotEmpty() }
+    }
+    val body: JsonObject? = if (rule.isLogical) {
+        val children = rule.rules.mapNotNull(::matcherJson)
+        if (children.isEmpty()) null else buildJsonObject {
+            put("type", "logical")
+            put("mode", rule.logicalMode)
+            putJsonArray("rules") { children.forEach { add(it) } }
+            put("server", server)
+        }
+    } else {
+        matcherJson(rule)?.let { JsonObject(it.toMutableMap().apply { put("server", JsonPrimitive(server)) }) }
+    } ?: return emptyList<com.leadaxe.aibox.app.RuleSetResource>() to null
+
+    val id = "sync-${rule.id}"
+    val dnsRule = com.leadaxe.aibox.app.DnsRule(
+        id = id,
+        name = rule.name.ifBlank { "route:${rule.id.take(6)}" },
+        kind = com.leadaxe.aibox.app.DnsRule.KindJson,
+        json = body.toString(),
+        enabled = rule.enabled,
+    )
+    return emptyList<com.leadaxe.aibox.app.RuleSetResource>() to dnsRule
+}

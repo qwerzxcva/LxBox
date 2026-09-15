@@ -2,6 +2,8 @@ package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
@@ -60,20 +63,50 @@ fun DnsScreen() {
     var editingRule: DnsRule? by remember { mutableStateOf(null) }
     var creatingRule by remember { mutableStateOf(false) }
 
+    // Rule editor as a second-level page (replaces the list while open).
+    // The dialog version clipped long forms and could not scroll properly.
+    if (creatingRule || editingRule != null) {
+        DnsRuleEditorPage(
+            initial = editingRule,
+            state = state,
+            onDismiss = {
+                creatingRule = false
+                editingRule = null
+            },
+            onSave = { updated ->
+                val (adds, tags) = com.leadaxe.aibox.ui.screens.materializeRuleSetTags(state.ruleSets, updated.ruleSet)
+                val finalRule = updated.copy(ruleSet = tags)
+                store.update { st ->
+                    if (creatingRule) {
+                        st.copy(dnsRules = st.dnsRules + finalRule, ruleSets = st.ruleSets + adds)
+                    } else {
+                        st.copy(
+                            dnsRules = st.dnsRules.map { if (it.id == finalRule.id) finalRule else it },
+                            ruleSets = st.ruleSets + adds,
+                        )
+                    }
+                }
+                creatingRule = false
+                editingRule = null
+            },
+        )
+        return
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         contentPadding = PaddingValues(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Title first, then the add action: the page reads as "DNS servers
+        // — add one — the list", not "an action floating above a title".
+        item { SectionHeader(stringResource(R.string.dns_section_servers, state.dnsServers.size)) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { creatingServer = true }) {
-                    Icon(Icons.Outlined.Add, contentDescription = null)
-                    Text(stringResource(R.string.dns_add_server))
-                }
+            FilledTonalButton(onClick = { creatingServer = true }) {
+                Icon(Icons.Outlined.Add, contentDescription = null)
+                Text(stringResource(R.string.dns_add_server))
             }
         }
-        item { SectionHeader(stringResource(R.string.dns_section_servers, state.dnsServers.size)) }
         items(state.dnsServers, key = { it.id }) { srv ->
             DnsServerCard(
                 server = srv,
@@ -92,14 +125,9 @@ fun DnsScreen() {
             )
         }
 
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { creatingRule = true }) {
-                    Icon(Icons.Outlined.Add, contentDescription = null)
-                    Text(stringResource(R.string.dns_add_rule))
-                }
-            }
-        }
+        // Rules live in a second-level page: the editor is a full-screen
+        // form (the dialog version clipped long forms), and the "add rule"
+        // action belongs here with the list it populates.
         item { SectionHeader(stringResource(R.string.dns_section_rules, state.dnsRules.size + 1)) }
         // Fake-IP lives in the rule list: it is a routing decision like any
         // other, and hiding its settings in a separate card above the list
@@ -136,6 +164,12 @@ fun DnsScreen() {
                     }
                 },
             )
+        }
+        item {
+            FilledTonalButton(onClick = { creatingRule = true }) {
+                Icon(Icons.Outlined.Add, contentDescription = null)
+                Text(stringResource(R.string.dns_add_rule))
+            }
         }
 
         item { SectionHeader(stringResource(R.string.dns_options)) }
@@ -196,37 +230,6 @@ fun DnsScreen() {
                     st.copy(dnsServers = st.dnsServers.map { if (it.id == updated.id) updated else it })
                 }
                 editingServer = null
-            },
-        )
-    }
-    if (creatingRule) {
-        DnsRuleEditor(
-            initial = null,
-            state = state,
-            onDismiss = { creatingRule = false },
-            onSave = { rule ->
-                val (adds, tags) = com.leadaxe.aibox.ui.screens.materializeRuleSetTags(state.ruleSets, rule.ruleSet)
-                store.update { st ->
-                    st.copy(dnsRules = st.dnsRules + rule.copy(ruleSet = tags), ruleSets = st.ruleSets + adds)
-                }
-                creatingRule = false
-            },
-        )
-    }
-    editingRule?.let { rule ->
-        DnsRuleEditor(
-            initial = rule,
-            state = state,
-            onDismiss = { editingRule = null },
-            onSave = { updated ->
-                val (adds, tags) = com.leadaxe.aibox.ui.screens.materializeRuleSetTags(state.ruleSets, updated.ruleSet)
-                store.update { st ->
-                    st.copy(
-                        dnsRules = st.dnsRules.map { if (it.id == updated.id) updated.copy(ruleSet = tags) else it },
-                        ruleSets = st.ruleSets + adds,
-                    )
-                }
-                editingRule = null
             },
         )
     }
@@ -676,7 +679,7 @@ private fun DnsRuleCard(
 }
 
 @Composable
-private fun DnsRuleEditor(
+private fun DnsRuleEditorPage(
     initial: DnsRule?,
     state: AppState,
     onDismiss: () -> Unit,
@@ -696,117 +699,133 @@ private fun DnsRuleEditor(
     var invert by remember { mutableStateOf(initial?.invert ?: false) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
 
-    val serverOptions = remember(state.dnsServers) { state.dnsServers.map { it.tag } }
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header bar: back arrow + title + save, the same shape as the
+        // route-rule editor's second-level page.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.common_cancel))
+            }
+            Text(
+                stringResource(if (initial == null) R.string.dns_new_rule else R.string.dns_edit_rule),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = {
+                onSave(
+                    (initial ?: DnsRule(id = UUID.randomUUID().toString())).copy(
+                        name = name,
+                        domain = domain,
+                        domainSuffix = domainSuffix,
+                        domainKeyword = domainKeyword,
+                        ruleSet = ruleSet,
+                        queryType = queryType,
+                        packageName = packageName,
+                        clashMode = clashMode,
+                        responseRcode = responseRcode,
+                        server = server,
+                        clientSubnet = clientSubnet,
+                        invert = invert,
+                        enabled = enabled,
+                    ),
+                )
+            }) { Text(stringResource(R.string.common_save)) }
+        }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(if (initial == null) R.string.dns_new_rule else R.string.dns_edit_rule)) },
-        text = {
-            FormBody {
-                    StringField(
-                        label = stringResource(R.string.dns_name),
-                        value = name,
-                        onValueChange = { name = it },
-                    )
-                    ListField(
-                        label = stringResource(R.string.routes_field_domain_suffix),
-                        values = domainSuffix,
-                        onValuesChange = { domainSuffix = it },
-                        placeholder = "google.com, openai.com",
-                    )
-                    ListField(
-                        label = stringResource(R.string.routes_field_domain),
-                        values = domain,
-                        onValuesChange = { domain = it },
-                    )
-                    ListField(
-                        label = stringResource(R.string.routes_field_domain_keyword),
-                        values = domainKeyword,
-                        onValuesChange = { domainKeyword = it },
-                    )
-                    ListField(
-                        label = stringResource(R.string.routes_field_rule_set),
-                        values = ruleSet,
-                        onValuesChange = { ruleSet = it },
-                    )
-                    ListField(
-                        label = stringResource(R.string.dns_query_type),
-                        values = queryType,
-                        onValuesChange = { queryType = it },
-                        placeholder = "A, AAAA, HTTPS, SVCB…",
-                    )
-                    ListField(
-                        label = stringResource(R.string.dns_response_rcode),
-                        values = responseRcode,
-                        onValuesChange = { responseRcode = it },
-                        placeholder = "NOERROR, NXDOMAIN, SERVFAIL",
-                        supporting = stringResource(R.string.dns_response_rcode_hint),
-                    )
-                    ListField(
-                        label = stringResource(R.string.routes_field_package),
-                        values = packageName,
-                        onValuesChange = { packageName = it },
-                    )
-                    MultiChoiceChips(
-                        label = stringResource(R.string.routes_logical_mode),
-                        options = com.leadaxe.aibox.app.ClashModes,
-                        selected = clashMode,
-                        onToggle = { m ->
-                            clashMode = if (m in clashMode) clashMode - m else clashMode + m
-                        },
-                    )
-                    SingleChoiceChips(
-                        label = stringResource(R.string.dns_target_server),
-                        options = listOf("") + serverOptions,
-                        selected = server,
-                        onSelect = { server = it },
-                        display = {
-                            if (it.isEmpty()) stringResource(R.string.dns_target_system)
-                            else state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
-                        },
-                    )
-                    SwitchRow(
-                        label = stringResource(R.string.routes_invert),
-                        checked = invert,
-                        onCheckedChange = { invert = it },
-                    )
-                    StringField(
-                        label = stringResource(R.string.routes_client_subnet),
-                        value = clientSubnet,
-                        onValueChange = { clientSubnet = it },
-                        placeholder = "1.2.3.0/24",
-                        supporting = stringResource(R.string.hint_client_subnet),
-                    )
-                    SwitchRow(
-                        label = stringResource(R.string.routes_enabled),
-                        checked = enabled,
-                        onCheckedChange = { enabled = it },
-                    )
-                }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(
-                        (initial ?: DnsRule(id = UUID.randomUUID().toString())).copy(
-                            name = name,
-                            domain = domain,
-                            domainSuffix = domainSuffix,
-                            domainKeyword = domainKeyword,
-                            ruleSet = ruleSet,
-                            queryType = queryType,
-                            packageName = packageName,
-                            clashMode = clashMode,
-                            responseRcode = responseRcode,
-                            server = server,
-                            clientSubnet = clientSubnet,
-                            invert = invert,
-                            enabled = enabled,
-                        ),
-                    )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            StringField(
+                label = stringResource(R.string.dns_name),
+                value = name,
+                onValueChange = { name = it },
+            )
+            ListField(
+                label = stringResource(R.string.routes_field_domain_suffix),
+                values = domainSuffix,
+                onValuesChange = { domainSuffix = it },
+                placeholder = "google.com, openai.com",
+            )
+            ListField(
+                label = stringResource(R.string.routes_field_domain),
+                values = domain,
+                onValuesChange = { domain = it },
+            )
+            ListField(
+                label = stringResource(R.string.routes_field_domain_keyword),
+                values = domainKeyword,
+                onValuesChange = { domainKeyword = it },
+            )
+            ListField(
+                label = stringResource(R.string.routes_field_rule_set),
+                values = ruleSet,
+                onValuesChange = { ruleSet = it },
+            )
+            ListField(
+                label = stringResource(R.string.dns_query_type),
+                values = queryType,
+                onValuesChange = { queryType = it },
+                placeholder = "A, AAAA, HTTPS, SVCB…",
+            )
+            ListField(
+                label = stringResource(R.string.dns_response_rcode),
+                values = responseRcode,
+                onValuesChange = { responseRcode = it },
+                placeholder = "NOERROR, NXDOMAIN, SERVFAIL",
+                supporting = stringResource(R.string.dns_response_rcode_hint),
+            )
+            ListField(
+                label = stringResource(R.string.routes_field_package),
+                values = packageName,
+                onValuesChange = { packageName = it },
+            )
+            MultiChoiceChips(
+                label = stringResource(R.string.routes_logical_mode),
+                options = com.leadaxe.aibox.app.ClashModes,
+                selected = clashMode,
+                onToggle = { m ->
+                    clashMode = if (m in clashMode) clashMode - m else clashMode + m
                 },
-            ) { Text(stringResource(R.string.common_save)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
+            )
+            SingleChoiceChips(
+                label = stringResource(R.string.dns_target_server),
+                options = listOf("") + state.dnsServers.map { it.tag },
+                selected = server,
+                onSelect = { server = it },
+                display = {
+                    if (it.isEmpty()) stringResource(R.string.dns_target_system)
+                    else state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                },
+            )
+            SwitchRow(
+                label = stringResource(R.string.routes_invert),
+                checked = invert,
+                onCheckedChange = { invert = it },
+            )
+            StringField(
+                label = stringResource(R.string.routes_client_subnet),
+                value = clientSubnet,
+                onValueChange = { clientSubnet = it },
+                placeholder = "1.2.3.0/24",
+                supporting = stringResource(R.string.hint_client_subnet),
+            )
+            SwitchRow(
+                label = stringResource(R.string.routes_enabled),
+                checked = enabled,
+                onCheckedChange = { enabled = it },
+            )
+        }
+    }
 }
+
