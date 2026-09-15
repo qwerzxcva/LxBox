@@ -351,6 +351,14 @@
     <!-- logical rule structure -->
     <string name="routes_rule_sub_rules">Sub-rules (%1$d)</string>
     <string name="routes_add_sub_rule">Add sub-rule</string>
+    <string name="routes_add_sub_rule_named">Add sub-rule %1$d</string>
+    <string name="routes_sub_rule_n">Sub-rule %1$d</string>
+    <string name="routes_sub_rule_empty">No conditions set</string>
+    <string name="routes_expand_collapse">Collapse / expand</string>
+    <string name="routes_show_advanced">Show advanced fields</string>
+    <string name="routes_hide_advanced">Hide advanced fields</string>
+    <string name="routes_outbound_shared_hint">Every sub-rule below shares this exit.</string>
+    <string name="routes_sync_dns_desc_shared">The compiler derives a matching DNS rule for the whole group — nothing is copied into the DNS list.</string>
     <string name="routes_edit_sub_rule">Edit sub-rule</string>
 
     <!-- field hints -->

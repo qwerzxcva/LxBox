@@ -349,6 +349,14 @@
     <!-- 逻辑规则 -->
     <string name="routes_rule_sub_rules">子规则（%1$d）</string>
     <string name="routes_add_sub_rule">添加子规则</string>
+    <string name="routes_add_sub_rule_named">添加子规则 %1$d</string>
+    <string name="routes_sub_rule_n">子规则 %1$d</string>
+    <string name="routes_sub_rule_empty">未设置条件</string>
+    <string name="routes_expand_collapse">折叠 / 展开</string>
+    <string name="routes_show_advanced">显示高级字段</string>
+    <string name="routes_hide_advanced">隐藏高级字段</string>
+    <string name="routes_outbound_shared_hint">下方所有子规则共用此出口。</string>
+    <string name="routes_sync_dns_desc_shared">编译器为整组条件生成对应的 DNS 规则 — 不会往 DNS 列表里复制条目。</string>
     <string name="routes_edit_sub_rule">编辑子规则</string>
 
     <!-- 字段说明 -->
