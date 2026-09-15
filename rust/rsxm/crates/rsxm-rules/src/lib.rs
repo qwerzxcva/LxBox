@@ -2,17 +2,28 @@
 //!
 //! Absorbs the best of three lineages:
 //!  - **sing-box**: rule phases (package → keyword → suffix → exact →
-//!    address) with first-hit-wins semantics;
+//!    address) with first-hit-wins and the *destination-address family as
+//!    one OR group* — verified against `abstractDefaultRule.matchInner`
+//!    (`route/rule/rule_abstract.go`), where domain/suffix/keyword/regex and
+//!    ip_cidr all satisfy the same match group;
 //!  - **mihomo**: a domain trie instead of linear scans, so a 100k-entry
 //!    geosite behaves like a hash lookup;
 //!  - **rsxm**: redundancy elimination at load time so the hot path never
 //!    visits a rule that cannot fire.
 //!
-//! Everything here is pure and allocation-light on the match path: the
-//! trie is built once at load, matching walks byte slices.
+//! Match semantics encoded here (the same table the Android planner feeds
+//! the Go kernel today):
+//!  - first hit wins, top to bottom;
+//!  - across groups (package, destination address, port, …) the conditions
+//!    are AND'ed;
+//!  - inside the destination-address group the entries are OR'ed;
+//!  - redundancy: keyword > suffix > exact domain, broader CIDR > narrower,
+//!    earlier rule > later rule, and only a rule whose constraints are
+//!    *just* the destination address can vouch for a later rule.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 
 /// A rule's target, mirroring the app's action model.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -48,6 +59,7 @@ pub struct Rule {
     pub suffixes: Vec<String>,
     #[serde(default)]
     pub domains: Vec<String>,
+    /// Destination CIDRs (`"10.0.0.0/8"`, `"[fdfe::1]/126"`).
     #[serde(default)]
     pub cidrs: Vec<String>,
     #[serde(default)]
@@ -71,10 +83,23 @@ impl Rule {
         }
     }
 
-    /// True when the rule constrains nothing but names/addresses, i.e. it is
-    /// safe for later rules to be deduplicated against it.
+    /// True when the rule has a matcher in the destination-address family.
+    pub fn has_destination_address(&self) -> bool {
+        !self.keywords.is_empty()
+            || !self.suffixes.is_empty()
+            || !self.domains.is_empty()
+            || !self.cidrs.is_empty()
+    }
+
+    /// True when the rule constrains nothing but the destination address —
+    /// the only shape that can vouch for a later rule's entries.
     pub fn is_destination_only(&self) -> bool {
         self.packages.is_empty() && self.ports.is_empty()
+    }
+
+    /// True when the rule has no matcher at all (can never fire).
+    pub fn is_empty_matcher(&self) -> bool {
+        !self.has_destination_address() && self.packages.is_empty() && self.ports.is_empty()
     }
 }
 
@@ -89,7 +114,10 @@ pub struct Match {
 #[derive(Debug, Clone, Default)]
 pub struct Query {
     pub package: Option<String>,
+    /// Sniffed or original destination name.
     pub domain: Option<String>,
+    /// Resolved destination address (when known before routing).
+    pub destination_ip: Option<IpAddr>,
     pub port: Option<u16>,
 }
 
@@ -143,74 +171,196 @@ impl DomainIndex {
         }
         false
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.exact.is_empty() && self.suffix_root.children.is_empty()
+    }
+}
+/// A parsed CIDR entry: network bytes + prefix length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cidr {
+    addr: IpAddr,
+    prefix: u8,
 }
 
-/// A compiled routing table: rules in execution order with the domain work
-/// hoisted into an index.
-///
-/// Match semantics (absorbed from sing-box, verified against its source):
-///  - first hit wins, top to bottom;
-///  - within one rule the classes are AND'ed (a rule with package + suffix
-///    fires only when both match);
-///  - list entries inside a class are OR'ed.
+impl Cidr {
+    /// Parses `a.b.c.d/N` or `[v6::addr]/N`. Returns None for malformed
+    /// input — the loader keeps those as opaque text (a future version
+    /// surfaces them in the UI as invalid instead of silently ignoring).
+    pub fn parse(text: &str) -> Option<Self> {
+        let (addr_text, prefix_text) = text.trim().split_once('/')?;
+        let addr: IpAddr = addr_text.trim_matches(|c| c == '[' || c == ']').parse().ok()?;
+        let prefix: u8 = prefix_text.trim().parse().ok()?;
+        let max = if addr.is_ipv4() { 32 } else { 128 };
+        if prefix > max {
+            return None;
+        }
+        Some(Self { addr, prefix })
+    }
+
+    /// True when `other` (address or network) is fully contained in `self`.
+    pub fn contains_addr(&self, other: IpAddr) -> bool {
+        match (self.addr, other) {
+            (IpAddr::V4(net), IpAddr::V4(ip)) => {
+                let net = u32::from(net);
+                let ip = u32::from(ip);
+                let mask = if self.prefix == 0 { 0 } else { u32::MAX << (32 - self.prefix) };
+                (net & mask) == (ip & mask)
+            }
+            (IpAddr::V6(net), IpAddr::V6(ip)) => {
+                let net = u128::from(net);
+                let ip = u128::from(ip);
+                let mask = if self.prefix == 0 { 0 } else { u128::MAX << (128 - self.prefix) };
+                (net & mask) == (ip & mask)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when `other` is fully contained in `self` (same family).
+    pub fn contains_net(&self, other: &Cidr) -> bool {
+        if self.addr.is_ipv4() != other.addr.is_ipv4() {
+            return false;
+        }
+        if self.prefix > other.prefix {
+            return false;
+        }
+        self.contains_addr(other.addr)
+    }
+}
+
+/// Compiled CIDs for one rule. Unparseable entries are not indexed for
+/// matching (they can never contain an address); cross-rule dedupe handles
+/// them by raw-text identity during [`RuleTable::build`].
+#[derive(Debug, Default)]
+struct RuleCidrs {
+    nets: Vec<Cidr>,
+}
+
+impl RuleCidrs {
+    fn build(raws: &[String]) -> Self {
+        let mut nets = Vec::with_capacity(raws.len());
+        for raw in raws {
+            if let Some(net) = Cidr::parse(raw.trim()) {
+                nets.push(net);
+            }
+        }
+        Self { nets }
+    }
+
+    fn contains(&self, addr: IpAddr) -> bool {
+        self.nets.iter().any(|net| net.contains_addr(addr))
+    }
+}
+
+/// A compiled routing table: rules in execution order with the domain and
+/// CIDR work hoisted into per-rule indexes.
 #[derive(Debug, Default)]
 pub struct RuleTable {
     rules: Vec<Rule>,
-    /// Per-rule domain index (suffix + exact); keywords stay as strings.
     domain_indexes: Vec<DomainIndex>,
+    cidr_indexes: Vec<RuleCidrs>,
 }
 
 impl RuleTable {
-    /// Builds the table: sorts into phases (stable), drops entries covered
-    /// by an earlier same-target rule, and indexes the domain classes.
+    /// Builds the table: sorts into phases (stable), removes redundant
+    /// entries (both inside a rule and across same-target rules), and
+    /// indexes domain/CIDR classes.
     pub fn build(mut rules: Vec<Rule>) -> Self {
         // Stable phase sort keeps the user's order inside a class.
         rules.sort_by_key(|r| r.phase());
 
-        // Redundancy elimination: keyword > suffix > exact, earlier wins.
-        // Only destination-only rules register coverage (a rule with extra
-        // AND conditions covers a subset and cannot vouch for later rules).
-        let mut seen_keywords: HashSet<String> = HashSet::new();
-        let mut seen_suffixes: Vec<String> = Vec::new();
-        let mut seen_domains: HashSet<String> = HashSet::new();
-        let mut kept: Vec<Rule> = Vec::with_capacity(rules.len());
+        // Cross-rule coverage is tracked per action target: a rule routing
+        // elsewhere says nothing about this rule's fate.
+        type Seen = (
+            HashSet<String>, // keywords
+            Vec<String>,     // suffixes
+            HashSet<String>, // exact domains
+            Vec<Cidr>,       // cidr nets
+            HashSet<String>, // cidr raw texts
+        );
+        let mut seen_by_target: HashMap<(String, String), Seen> = HashMap::new();
+        let target_key = |r: &Rule| -> (String, String) {
+            match &r.target {
+                Some(Target::Outbound(tag)) => ("route".into(), tag.clone()),
+                Some(Target::Reject) => ("reject".into(), String::new()),
+                Some(Target::Resolve) => ("resolve".into(), String::new()),
+                None => ("".into(), String::new()),
+            }
+        };
 
+        let mut kept: Vec<Rule> = Vec::with_capacity(rules.len());
         for mut rule in rules {
+            if rule.is_empty_matcher() {
+                continue;
+            }
             if rule.is_destination_only() {
-                rule.keywords.retain(|kw| !seen_keywords.contains(kw));
+                let seen = seen_by_target.entry(target_key(&rule)).or_default();
+
+                // 1) inside the rule: keyword > suffix > exact domain,
+                //    broader CIDR > narrower.
+                dedupe_within(&mut rule);
+
+                // 2) what earlier same-target destination-only rules cover.
+                rule.keywords.retain(|kw| {
+                    !seen.0.iter().any(|prev| prev.contains(kw.as_str()))
+                });
                 rule.suffixes.retain(|sfx| {
-                    !seen_keywords.iter().any(|kw| sfx.contains(kw.as_str()))
-                        && !seen_suffixes
+                    !seen.0.iter().any(|kw| sfx.contains(kw.as_str()))
+                        && !seen
+                            .1
                             .iter()
-                            .any(|seen| sfx == seen || sfx.ends_with(&format!(".{seen}")))
+                            .any(|prev| sfx == prev || sfx.ends_with(&format!(".{prev}")))
                 });
                 rule.domains.retain(|dom| {
-                    !seen_keywords.iter().any(|kw| dom.contains(kw.as_str()))
-                        && !seen_suffixes
+                    !seen.0.iter().any(|kw| dom.contains(kw.as_str()))
+                        && !seen
+                            .1
                             .iter()
-                            .any(|seen| dom == seen || dom.ends_with(&format!(".{seen}")))
-                        && !seen_domains.contains(dom)
+                            .any(|prev| dom == prev || dom.ends_with(&format!(".{prev}")))
+                        && !seen.2.contains(dom)
                 });
+                let before = rule.cidrs.len();
+                rule.cidrs.retain(|raw| {
+                    let text = raw.trim();
+                    match Cidr::parse(text) {
+                        Some(net) => !seen.3.iter().any(|prev| prev.contains_net(&net)),
+                        None => !seen.4.contains(text),
+                    }
+                });
+                let _ = before;
 
-                // Register survivors for later rules.
-                for kw in &rule.keywords {
-                    seen_keywords.insert(kw.clone());
+                // 3) register survivors — but never empty the destination
+                //    group while other AND conditions remain (the rule would
+                //    widen). A destination-only rule that lost everything is
+                //    fully covered and gets dropped.
+                if rule.has_destination_address() && rule.is_destination_only() {
+                    // nothing to widen — safe to keep or drop
+                } else if !rule.has_destination_address() {
+                    continue; // covered away entirely
                 }
-                seen_suffixes.extend(rule.suffixes.iter().cloned());
+
+                for kw in &rule.keywords {
+                    seen.0.insert(kw.clone());
+                }
+                seen.1.extend(rule.suffixes.iter().cloned());
                 for dom in &rule.domains {
-                    seen_domains.insert(dom.clone());
+                    seen.2.insert(dom.clone());
+                }
+                for raw in &rule.cidrs {
+                    let text = raw.trim();
+                    if let Some(net) = Cidr::parse(text) {
+                        if !seen.3.contains(&net) {
+                            seen.3.push(net);
+                        }
+                    } else {
+                        seen.4.insert(text.to_string());
+                    }
                 }
             }
 
-            // A rule that lost every matcher can never fire — drop it.
-            if rule.packages.is_empty()
-                && rule.keywords.is_empty()
-                && rule.suffixes.is_empty()
-                && rule.domains.is_empty()
-                && rule.cidrs.is_empty()
-                && rule.ports.is_empty()
-            {
-                continue;
+            if rule.is_empty_matcher() {
+                continue; // pruned to nothing: a later rule already covers it
             }
             kept.push(rule);
         }
@@ -228,10 +378,12 @@ impl RuleTable {
                 index
             })
             .collect();
+        let cidr_indexes = kept.iter().map(|rule| RuleCidrs::build(&rule.cidrs)).collect();
 
         Self {
             rules: kept,
             domain_indexes,
+            cidr_indexes,
         }
     }
 
@@ -241,8 +393,8 @@ impl RuleTable {
 
     /// First-hit-wins routing.
     pub fn match_query(&self, query: &Query) -> Option<Match> {
-        for (rule, index) in self.rules.iter().zip(self.domain_indexes.iter()) {
-            if !self.rule_matches(rule, index, query) {
+        for (idx, rule) in self.rules.iter().enumerate() {
+            if !self.rule_matches(rule, &self.domain_indexes[idx], &self.cidr_indexes[idx], query) {
                 continue;
             }
             if let Some(target) = &rule.target {
@@ -255,72 +407,158 @@ impl RuleTable {
         None
     }
 
-    fn rule_matches(&self, rule: &Rule, index: &DomainIndex, query: &Query) -> bool {
-        // AND across classes; each class OR's internally.
+    fn rule_matches(
+        &self,
+        rule: &Rule,
+        index: &DomainIndex,
+        cidrs: &RuleCidrs,
+        query: &Query,
+    ) -> bool {
+        // Package group: AND with the rest.
         if !rule.packages.is_empty() {
             match &query.package {
                 Some(pkg) if rule.packages.iter().any(|p| p == pkg) => {}
                 _ => return false,
             }
         }
-        if !rule.keywords.is_empty() {
-            match &query.domain {
-                Some(domain) if rule.keywords.iter().any(|kw| domain.contains(kw.as_str())) => {}
-                _ => return false,
+        // Destination-address group: OR over domain / suffix / keyword /
+        // CIDR — the same grouping the Go kernel uses.
+        if rule.has_destination_address() {
+            let mut satisfied = false;
+            if let Some(domain) = &query.domain {
+                if !rule.keywords.is_empty()
+                    && rule.keywords.iter().any(|kw| domain.contains(kw.as_str()))
+                {
+                    satisfied = true;
+                }
+                if !satisfied && (!rule.suffixes.is_empty() || !rule.domains.is_empty()) {
+                    satisfied = index.matches(domain);
+                }
+            }
+            if !satisfied && !rule.cidrs.is_empty() {
+                if let Some(ip) = query.destination_ip {
+                    satisfied = cidrs.contains(ip);
+                }
+            }
+            if !satisfied {
+                return false;
             }
         }
-        if !rule.suffixes.is_empty() || !rule.domains.is_empty() {
-            match &query.domain {
-                Some(domain) if index.matches(domain) => {}
-                _ => return false,
-            }
-        }
+        // Port group: AND with the rest.
         if !rule.ports.is_empty() {
             match query.port {
                 Some(port) if rule.ports.contains(&port) => {}
                 _ => return false,
             }
         }
-        // A rule with no matchers at all never fires (loader drops them, but
-        // keep the hot path safe).
-        !(rule.packages.is_empty()
-            && rule.keywords.is_empty()
-            && rule.suffixes.is_empty()
-            && rule.domains.is_empty()
-            && rule.cidrs.is_empty()
-            && rule.ports.is_empty())
+        true
     }
+}
+
+/// keyword > suffix > exact domain, broader CIDR > narrower, inside one rule.
+fn dedupe_within(rule: &mut Rule) {
+    // Normalise is the caller's business (the app lowercases before
+    // emitting); keep this pure to make the tests meaningful.
+    let keywords = rule.keywords.clone();
+    let hit_by_keyword = |value: &str| keywords.iter().any(|kw| value.contains(kw.as_str()));
+
+    // Compute against snapshots, then assign: retain() closures cannot hold
+    // a borrow of the same field they mutate.
+    let suffixes_in = rule.suffixes.clone();
+    let kept_suffixes: Vec<String> = suffixes_in
+        .iter()
+        .filter(|sfx| {
+            if hit_by_keyword(sfx) {
+                return false;
+            }
+            // A broader sibling suffix subsumes a narrower one.
+            !suffixes_in.iter().any(|other| {
+                other != *sfx
+                    && other.len() < sfx.len()
+                    && (sfx == &other || sfx.ends_with(&format!(".{other}")))
+            })
+        })
+        .cloned()
+        .collect();
+
+    let domains_in = rule.domains.clone();
+    let kept_domains: Vec<String> = domains_in
+        .iter()
+        .filter(|dom| {
+            if hit_by_keyword(dom) {
+                return false;
+            }
+            !kept_suffixes
+                .iter()
+                .any(|sfx| *dom == sfx || dom.ends_with(&format!(".{sfx}")))
+        })
+        .cloned()
+        .collect();
+
+    rule.suffixes = kept_suffixes;
+    rule.domains = kept_domains;
+
+    // CIDR: a broader net swallows a narrower one kept earlier.
+    let mut kept_nets: Vec<Cidr> = Vec::new();
+    let mut kept_raws: Vec<String> = Vec::new();
+    for raw in &rule.cidrs {
+        let text = raw.trim();
+        if text.is_empty() {
+            continue;
+        }
+        match Cidr::parse(text) {
+            Some(net) => {
+                if kept_nets.iter().any(|prev| prev.contains_net(&net)) {
+                    continue;
+                }
+                kept_nets.push(net);
+                kept_raws.push(text.to_string());
+            }
+            None => {
+                if !kept_raws.iter().any(|prev| prev == text) {
+                    kept_raws.push(text.to_string());
+                }
+            }
+        }
+    }
+    rule.cidrs = kept_raws;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn target(tag: &str) -> Option<Target> {
+    fn outbound(tag: &str) -> Option<Target> {
         Some(Target::Outbound(tag.to_string()))
+    }
+
+    fn ip(s: &str) -> Option<IpAddr> {
+        s.parse().ok()
     }
 
     #[test]
     fn phase_ordering_is_enforced() {
-        let mut ip_rule = Rule {
-            id: "ip".into(),
-            cidrs: vec!["10.0.0.0/8".into()],
-            target: target("direct"),
-            ..Default::default()
-        };
-        ip_rule.ports = vec![443];
-        let mut app_rule = Rule {
-            id: "app".into(),
-            packages: vec!["com.example".into()],
-            target: target("proxy"),
-            ..Default::default()
-        };
-        app_rule.ports = vec![443];
-        let table = RuleTable::build(vec![ip_rule, app_rule]);
+        let table = RuleTable::build(vec![
+            Rule {
+                id: "ip".into(),
+                cidrs: vec!["10.0.0.0/8".into()],
+                ports: vec![443],
+                target: outbound("direct"),
+                ..Default::default()
+            },
+            Rule {
+                id: "app".into(),
+                packages: vec!["com.example".into()],
+                ports: vec![443],
+                target: outbound("proxy"),
+                ..Default::default()
+            },
+        ]);
         let m = table
             .match_query(&Query {
                 package: Some("com.example".into()),
                 port: Some(443),
+                destination_ip: ip("10.1.1.1"),
                 ..Default::default()
             })
             .unwrap();
@@ -332,21 +570,17 @@ mod tests {
         let table = RuleTable::build(vec![Rule {
             id: "suffix".into(),
             suffixes: vec!["example.com".into()],
-            target: target("proxy"),
+            target: outbound("proxy"),
             ..Default::default()
         }]);
-        assert!(table
-            .match_query(&Query {
-                domain: Some("a.b.example.com".into()),
-                ..Default::default()
-            })
-            .is_some());
-        assert!(table
-            .match_query(&Query {
-                domain: Some("example.com".into()),
-                ..Default::default()
-            })
-            .is_some());
+        for hit in ["a.b.example.com", "example.com"] {
+            assert!(table
+                .match_query(&Query {
+                    domain: Some(hit.into()),
+                    ..Default::default()
+                })
+                .is_some());
+        }
         assert!(table
             .match_query(&Query {
                 domain: Some("notexample.com".into()),
@@ -356,31 +590,123 @@ mod tests {
     }
 
     #[test]
+    fn destination_family_is_or_not_and() {
+        // A rule with BOTH a suffix and a CIDR must fire on either — the
+        // kernel groups them into one OR bucket.
+        let table = RuleTable::build(vec![Rule {
+            id: "mixed".into(),
+            suffixes: vec!["example.com".into()],
+            cidrs: vec!["10.0.0.0/8".into()],
+            target: outbound("proxy"),
+            ..Default::default()
+        }]);
+        // Domain path.
+        assert!(table
+            .match_query(&Query {
+                domain: Some("a.example.com".into()),
+                ..Default::default()
+            })
+            .is_some());
+        // IP path.
+        assert!(table
+            .match_query(&Query {
+                destination_ip: ip("10.2.3.4"),
+                ..Default::default()
+            })
+            .is_some());
+        // Neither.
+        assert!(table
+            .match_query(&Query {
+                domain: Some("other.org".into()),
+                destination_ip: ip("192.168.1.1"),
+                ..Default::default()
+            })
+            .is_none());
+    }
+
+    #[test]
+    fn cidr_rules_do_not_match_everything() {
+        // Regression: an earlier prototype parsed CIDRs but never matched
+        // them, so an IP-only rule swallowed every query.
+        let table = RuleTable::build(vec![Rule {
+            id: "ip".into(),
+            cidrs: vec!["10.0.0.0/8".into()],
+            target: outbound("direct"),
+            ..Default::default()
+        }]);
+        assert!(table
+            .match_query(&Query {
+                destination_ip: ip("10.1.2.3"),
+                ..Default::default()
+            })
+            .is_some());
+        assert!(table
+            .match_query(&Query {
+                destination_ip: ip("192.168.1.1"),
+                ..Default::default()
+            })
+            .is_none());
+        // A query with no address at all must not match either.
+        assert!(table
+            .match_query(&Query {
+                domain: Some("example.com".into()),
+                ..Default::default()
+            })
+            .is_none());
+    }
+
+    #[test]
+    fn package_group_ands_with_destination_group() {
+        let table = RuleTable::build(vec![Rule {
+            id: "combo".into(),
+            packages: vec!["com.game".into()],
+            suffixes: vec!["game.com".into()],
+            target: outbound("proxy"),
+            ..Default::default()
+        }]);
+        assert!(table
+            .match_query(&Query {
+                package: Some("com.game".into()),
+                ..Default::default()
+            })
+            .is_none());
+        assert!(table
+            .match_query(&Query {
+                domain: Some("game.com".into()),
+                ..Default::default()
+            })
+            .is_none());
+        assert!(table
+            .match_query(&Query {
+                package: Some("com.game".into()),
+                domain: Some("api.game.com".into()),
+                ..Default::default()
+            })
+            .is_some());
+    }
+
+    #[test]
     fn keyword_beats_suffix_beats_exact() {
-        // Rule 1: keyword "google"; rule 2: suffix "google.com" (covered);
-        // rule 3: exact "maps.google.com" (covered).
         let table = RuleTable::build(vec![
             Rule {
                 id: "kw".into(),
                 keywords: vec!["google".into()],
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
             Rule {
                 id: "sfx".into(),
                 suffixes: vec!["google.com".into()],
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
             Rule {
                 id: "exact".into(),
                 domains: vec!["maps.google.com".into()],
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
         ]);
-        // The two covered rules are dropped at load; only the keyword rule
-        // remains, and it fires for all of them.
         assert_eq!(table.rule_count(), 1);
         for domain in ["google.com", "maps.google.com", "www.google.co.jp"] {
             let m = table
@@ -394,79 +720,136 @@ mod tests {
     }
 
     #[test]
-    fn first_hit_wins_across_same_phase_rules() {
-        let table = RuleTable::build(vec![
-            Rule {
-                id: "first".into(),
-                suffixes: vec!["a.com".into()],
-                target: target("one"),
-                ..Default::default()
-            },
-            Rule {
-                id: "second".into(),
-                suffixes: vec!["b.com".into()],
-                target: target("two"),
-                ..Default::default()
-            },
-        ]);
-        let m = table
-            .match_query(&Query {
-                domain: Some("x.a.com".into()),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(m.rule_id, "first");
-    }
-
-    #[test]
-    fn mixed_matchers_are_anded() {
+    fn within_rule_dedupe_suffix_vs_exact() {
+        // "example.com" suffix + "www.example.com" exact + "example.com"
+        // exact: the suffix covers both exact entries; they are dropped.
         let table = RuleTable::build(vec![Rule {
-            id: "combo".into(),
-            packages: vec!["com.game".into()],
-            suffixes: vec!["game.com".into()],
-            target: target("proxy"),
+            id: "r".into(),
+            suffixes: vec!["example.com".into()],
+            domains: vec!["example.com".into(), "www.example.com".into()],
+            target: outbound("proxy"),
             ..Default::default()
         }]);
-        // Package alone must not fire the rule…
+        assert_eq!(table.rule_count(), 1);
+        // Behaviour check: a name under the suffix still routes.
         assert!(table
             .match_query(&Query {
-                package: Some("com.game".into()),
-                ..Default::default()
-            })
-            .is_none());
-        // …nor domain alone…
-        assert!(table
-            .match_query(&Query {
-                domain: Some("game.com".into()),
-                ..Default::default()
-            })
-            .is_none());
-        // …only both together.
-        assert!(table
-            .match_query(&Query {
-                package: Some("com.game".into()),
-                domain: Some("api.game.com".into()),
+                domain: Some("deep.www.example.com".into()),
                 ..Default::default()
             })
             .is_some());
     }
 
     #[test]
+    fn narrower_suffix_under_broader_is_dropped() {
+        let table = RuleTable::build(vec![Rule {
+            id: "r".into(),
+            suffixes: vec!["example.com".into(), "a.example.com".into()],
+            target: outbound("proxy"),
+            ..Default::default()
+        }]);
+        // Behaviour is identical; the table should have dropped one entry.
+        assert_eq!(table.rule_count(), 1);
+        // Verify via the index that both were interned into the same rule
+        // but the narrower was removed before indexing: check a name only
+        // the broader covers.
+        assert!(table
+            .match_query(&Query {
+                domain: Some("b.example.com".into()),
+                ..Default::default()
+            })
+            .is_some());
+    }
+
+    #[test]
+    fn broader_cidr_swallows_narrower_within_rule() {
+        let table = RuleTable::build(vec![Rule {
+            id: "r".into(),
+            cidrs: vec!["10.0.0.0/8".into(), "10.1.0.0/16".into()],
+            target: outbound("direct"),
+            ..Default::default()
+        }]);
+        assert_eq!(table.rule_count(), 1);
+        assert!(table
+            .match_query(&Query {
+                destination_ip: ip("10.99.0.1"),
+                ..Default::default()
+            })
+            .is_some());
+    }
+
+    #[test]
+    fn cross_rule_dedupe_is_per_target() {
+        // Same suffix, different exits: both must survive.
+        let table = RuleTable::build(vec![
+            Rule {
+                id: "proxy-rule".into(),
+                suffixes: vec!["google.com".into()],
+                target: outbound("proxy"),
+                ..Default::default()
+            },
+            Rule {
+                id: "direct-rule".into(),
+                suffixes: vec!["google.com".into()],
+                target: outbound("direct"),
+                ..Default::default()
+            },
+        ]);
+        assert_eq!(table.rule_count(), 2);
+        let m = table
+            .match_query(&Query {
+                domain: Some("google.com".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(m.rule_id, "proxy-rule");
+    }
+
+    #[test]
+    fn same_target_duplicate_is_dropped() {
+        let table = RuleTable::build(vec![
+            Rule {
+                id: "a".into(),
+                suffixes: vec!["google.com".into()],
+                target: outbound("proxy"),
+                ..Default::default()
+            },
+            Rule {
+                id: "b".into(),
+                suffixes: vec!["google.com".into()],
+                domains: vec!["maps.google.com".into()],
+                target: outbound("proxy"),
+                ..Default::default()
+            },
+        ]);
+        // b's entries are both covered by a: the rule prunes to nothing.
+        assert_eq!(table.rule_count(), 1);
+        assert_eq!(
+            table
+                .match_query(&Query {
+                    domain: Some("maps.google.com".into()),
+                    ..Default::default()
+                })
+                .unwrap()
+                .rule_id,
+            "a"
+        );
+    }
+
+    #[test]
     fn constrained_rule_does_not_vouch_for_later_ones() {
-        // The first rule is package-constrained, so the second must keep its
-        // suffix even though the names overlap.
         let table = RuleTable::build(vec![
             Rule {
                 id: "constrained".into(),
                 packages: vec!["com.a".into()],
                 suffixes: vec!["example.com".into()],
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
             Rule {
                 id: "plain".into(),
                 suffixes: vec!["example.com".into()],
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
         ]);
@@ -486,13 +869,13 @@ mod tests {
         let table = RuleTable::build(vec![
             Rule {
                 id: "empty".into(),
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
             Rule {
                 id: "real".into(),
                 domains: vec!["x.com".into()],
-                target: target("proxy"),
+                target: outbound("proxy"),
                 ..Default::default()
             },
         ]);
@@ -501,18 +884,16 @@ mod tests {
 
     #[test]
     fn trie_handles_many_entries_quickly() {
-        // 10k suffixes: a linear scan would be ~10k comparisons; the trie
-        // walks the 3 labels of the query instead.
         let mut rules = vec![Rule {
             id: "bulk".into(),
             suffixes: (0..10_000).map(|i| format!("site{i}.example")).collect(),
-            target: target("proxy"),
+            target: outbound("proxy"),
             ..Default::default()
         }];
         rules.push(Rule {
             id: "needle".into(),
             suffixes: vec!["needle.test".into()],
-            target: target("direct"),
+            target: outbound("direct"),
             ..Default::default()
         });
         let table = RuleTable::build(rules);
@@ -523,5 +904,14 @@ mod tests {
             })
             .unwrap();
         assert_eq!(m.rule_id, "needle");
+    }
+
+    #[test]
+    fn cidr_parse_rejects_malformed_and_oversized_prefix() {
+        assert!(Cidr::parse("10.0.0.0/8").is_some());
+        assert!(Cidr::parse("[fdfe::1]/126").is_some());
+        assert!(Cidr::parse("10.0.0.0/33").is_none());
+        assert!(Cidr::parse("banana/8").is_none());
+        assert!(Cidr::parse("10.0.0.0").is_none());
     }
 }

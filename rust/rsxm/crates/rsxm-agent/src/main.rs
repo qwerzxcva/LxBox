@@ -20,6 +20,7 @@ fn main() {
     let mut rules_path: Option<String> = None;
     let mut route_domain: Option<String> = None;
     let mut route_package: Option<String> = None;
+    let mut route_ip: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -35,6 +36,10 @@ fn main() {
             "--package" => {
                 i += 1;
                 route_package = args.get(i).cloned();
+            }
+            "--ip" => {
+                i += 1;
+                route_ip = args.get(i).cloned();
             }
             other => {
                 eprintln!("unknown argument: {other}");
@@ -74,10 +79,12 @@ fn main() {
         }
     }
 
-    if let Some(domain) = route_domain {
+    let probe = route_domain.clone().or_else(|| route_ip.clone());
+    if let Some(domain) = probe {
         let query = Query {
-            domain: Some(domain.clone()),
+            domain: route_domain.clone(),
             package: route_package,
+            destination_ip: route_ip.and_then(|s| s.parse().ok()),
             ..Default::default()
         };
         match scheduler.route(&query) {
