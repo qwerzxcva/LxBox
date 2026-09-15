@@ -165,7 +165,9 @@ jobs:
           echo "==> clone reF1nd/sing-box @ $REF_TAG"
           git clone --depth 1 -b "$REF_TAG" https://github.com/reF1nd/sing-box.git /tmp/refsrc
           cd /tmp/refsrc
-          git tag "$REF_TAG"
+          # The shallow clone already carries the tag from the remote; a plain
+          # 'git tag' would fail with 128 ('already exists') and kill the step.
+          git tag -f "$REF_TAG" 2>/dev/null || true
 
           echo "==> stub Go-1.25-incompatible linkname files"
           # pidfd_android.go linknames os.checkPidfdOnce, removed in newer Go.
