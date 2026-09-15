@@ -247,6 +247,7 @@ fun SubscriptionsScreen() {
                     state.subscriptions.forEach { sub ->
                         SubscriptionRow(
                             sub = sub,
+                            state = state,
                             onEdit = { editingSubscription = sub },
                             onDelete = {
                                 store.update { st ->
@@ -357,14 +358,34 @@ fun SubscriptionsScreen() {
                             store.update { st ->
                                 st.copy(outbounds = st.outbounds + r.outbounds)
                             }
-                            val msg = if (r.outbounds.isEmpty()) {
-                                context.getString(R.string.subs_no_nodes_hint)
-                            } else {
-                                context.getString(R.string.subs_nodes_added, sub.name.ifBlank { sub.url }, r.outbounds.size)
+                            val msg = when {
+                                r.outbounds.isNotEmpty() ->
+                                    context.getString(R.string.subs_nodes_added, sub.name.ifBlank { sub.url }, r.outbounds.size)
+                                // Fetched fine but nothing usable came out:
+                                // name the first parse error so the user knows
+                                // whether the panel served another format or
+                                // an expired link.
+                                r.errors.isNotEmpty() ->
+                                    context.getString(
+                                        R.string.subs_no_nodes_reason,
+                                        r.errors.first().reason,
+                                    )
+                                else -> context.getString(R.string.subs_no_nodes_hint)
                             }
                             snackbar.showSnackbar(msg)
                         }
-                        .onFailure { snackbar.showSnackbar(context.getString(R.string.subs_fetch_failed, sub.name.ifBlank { sub.url }, it.message ?: "fetch failed")) }
+                        .onFailure {
+                            // Fetch-level failure (network, HTTP, HTML page):
+                            // keep the message the fetcher produced — it
+                            // already names the cause.
+                            snackbar.showSnackbar(
+                                context.getString(
+                                    R.string.subs_fetch_failed,
+                                    sub.name.ifBlank { sub.url },
+                                    it.message ?: "fetch failed",
+                                ),
+                            )
+                        }
                 }
                 addDialog = false
             },
@@ -448,6 +469,39 @@ fun SubscriptionsScreen() {
                     st.copy(subscriptions = st.subscriptions.map { if (it.id == updated.id) updated else it })
                 }
                 editingSubscription = null
+                // The link or the update mode changed — refetch so the node
+                // list matches what the user just configured, instead of
+                // silently keeping nodes from the old URL. Replaces this
+                // subscription's nodes only.
+                scope.launch {
+                    runCatching { fetcher.fetch(updated, dnsServers = state.dnsServers) }
+                        .onSuccess { r ->
+                            store.update { st ->
+                                st.copy(
+                                    outbounds = st.outbounds.filterNot { it.subscriptionId == updated.id } + r.outbounds,
+                                    subscriptions = st.subscriptions.map {
+                                        if (it.id == updated.id) it.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) else it
+                                    },
+                                )
+                            }
+                            snackbar.showSnackbar(
+                                context.getString(
+                                    R.string.subs_nodes_added,
+                                    updated.name.ifBlank { updated.url },
+                                    r.outbounds.size,
+                                ),
+                            )
+                        }
+                        .onFailure {
+                            snackbar.showSnackbar(
+                                context.getString(
+                                    R.string.subs_fetch_failed,
+                                    updated.name.ifBlank { updated.url },
+                                    it.message ?: "fetch failed",
+                                ),
+                            )
+                        }
+                }
             },
         )
     }
@@ -456,6 +510,7 @@ fun SubscriptionsScreen() {
 @Composable
 private fun SubscriptionRow(
     sub: Subscription,
+    state: com.leadaxe.aibox.app.AppState,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
     onEdit: () -> Unit,
@@ -465,6 +520,26 @@ private fun SubscriptionRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(sub.name.ifBlank { sub.url }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(sub.url, style = MaterialTheme.typography.bodySmall)
+                // Node count + last update: the first thing to look at when
+                // a refresh "does nothing" — it tells apart "the fetch
+                // failed" from "the panel returned nothing new".
+                val nodes = state.outbounds.count { it.subscriptionId == sub.id }
+                val updated = if (sub.lastUpdatedEpochMillis > 0) {
+                    stringResource(
+                        R.string.subs_last_updated,
+                        android.text.format.DateFormat.format(
+                            "yyyy-MM-dd HH:mm",
+                            sub.lastUpdatedEpochMillis,
+                        ).toString(),
+                    )
+                } else {
+                    stringResource(R.string.subs_never_updated)
+                }
+                Text(
+                    stringResource(R.string.subs_nodes_count, nodes) + " · " + updated,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
@@ -491,6 +566,7 @@ private fun EditSubscriptionDialog(
     onSave: (Subscription) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial.name) }
+    var url by remember { mutableStateOf(initial.url) }
     var fetchVia by remember { mutableStateOf(initial.fetchVia) }
     var resolver by remember { mutableStateOf(initial.dnsServer) }
     var enableEch by remember { mutableStateOf(initial.enableEch) }
@@ -511,6 +587,22 @@ private fun EditSubscriptionDialog(
                     value = name,
                     onValueChange = { name = it },
                 )
+                // The URL is editable: panels rotate the subscription token
+                // without changing anything else, and re-adding the whole
+                // subscription just to paste a new link loses the nodes the
+                // user already has selected.
+                StringField(
+                    label = stringResource(R.string.subs_url),
+                    value = url,
+                    onValueChange = { url = it },
+                    placeholder = "https://panel.example/sub",
+                    supporting = stringResource(R.string.subs_url_edit_hint),
+                )
+                Text(
+                    stringResource(R.string.subs_update_section),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 SingleChoiceChips(
                     label = stringResource(R.string.subs_fetch_via),
                     options = com.leadaxe.aibox.app.FetchViaOptions,
@@ -523,6 +615,11 @@ private fun EditSubscriptionDialog(
                             else -> stringResource(R.string.subs_fetch_via_auto)
                         }
                     },
+                )
+                Text(
+                    stringResource(R.string.subs_fetch_via_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SingleChoiceChips(
                     label = stringResource(R.string.subs_resolver),
@@ -560,10 +657,12 @@ private fun EditSubscriptionDialog(
         },
         confirmButton = {
             Button(
+                enabled = url.isNotBlank(),
                 onClick = {
                     onSave(
                         initial.copy(
-                            name = name.ifBlank { initial.url },
+                            name = name.ifBlank { url },
+                            url = url.trim(),
                             fetchVia = fetchVia,
                             dnsServer = resolver,
                             enableEch = enableEch,

@@ -269,33 +269,36 @@ object ShareLinkParser {
     /**
      * Parses a subscription body.
      *
-     * Two shapes are common in the wild:
+     * The shapes seen in the wild:
      *  1. Plain text: one share link per line (plus optional `#` comments).
      *  2. Whole-body base64 (V2RayN, most commercial panels): a single
-     *     opaque blob that decodes to shape 1.
-     *
-     * The old implementation only handled the per-line variant, so shape-2
-     * subscriptions produced zero nodes. We now detect a whole-body base64
-     * blob, decode it, and recurse into the line parser.
+     *     opaque blob that decodes to shape 1 (or to a Clash YAML body).
+     *  3. Clash-style YAML (`proxies:` block).
+     *  4. A JSON document: a sing-box configuration (anything carrying an
+     *     `outbounds` array), a bare array of outbound objects, or one
+     *     outbound object. Pretty-printed JSON spans many lines and would
+     *     otherwise be fed to the line parser one token at a time.
      */
     fun parseMany(text: String): List<Result> {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return emptyList()
 
-        // Shape 3: a Clash-style YAML configuration. Checked before the
-        // base64 branch because a YAML body is neither a link list nor a
-        // base64 blob, and its `proxies:` key is the reliable tell.
+        // Shape 4: a JSON document (checked first — it is unambiguous).
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            parseJsonDocument(trimmed)?.let { return it }
+        }
+
+        // Shape 3: a Clash-style YAML configuration, whose `proxies:` key is
+        // the reliable tell.
         if (yamlProxiesKey.containsMatchIn(trimmed)) {
             val parsed = parseClashYaml(trimmed)
             if (parsed.isNotEmpty()) return parsed
         }
 
-        // Shape 2: the entire body is one base64 blob. Require a `://` in
-        // the decoded result so random base64-looking noise is not treated
-        // as a subscription.
+        // Shape 2: the entire body is one base64 blob.
         if (!trimmed.contains('\n')) {
             val decoded = runCatching { decodeBase64(trimmed) }.getOrNull()
-            if (decoded != null && decoded.contains("://")) {
+            if (decoded != null && looksLikeSubscription(decoded)) {
                 return parseMany(decoded)
             }
         } else {
@@ -305,7 +308,7 @@ object ShareLinkParser {
             val stripped = trimmed.filterNot { it.isWhitespace() }
             if (stripped.length > 32) {
                 val decoded = runCatching { decodeBase64(stripped) }.getOrNull()
-                if (decoded != null && decoded.contains("://")) {
+                if (decoded != null && looksLikeSubscription(decoded)) {
                     return parseMany(decoded)
                 }
             }
@@ -317,6 +320,72 @@ object ShareLinkParser {
             .map(::parse)
             .toList()
     }
+
+    /**
+     * True when [text] is worth recursing into after a base64 decode. The
+     * old check only accepted `://`, which silently dropped base64-wrapped
+     * Clash YAML and sing-box JSON bodies — both contain no share links.
+     */
+    private fun looksLikeSubscription(text: String): Boolean =
+        text.contains("://") ||
+            yamlProxiesKey.containsMatchIn(text) ||
+            (text.trimStart().startsWith("{") && text.contains("\"outbounds\""))
+
+    /** Outbound types that are config plumbing, never importable nodes. */
+    private val plumbingTypes =
+        setOf("direct", "block", "dns", "selector", "urltest", "loadbalance")
+
+    /**
+     * Parses a whole-body JSON document into nodes. Recognises a sing-box
+     * configuration (an object with `outbounds`), a bare array of outbound
+     * objects, an array of share-link strings, and a single outbound
+     * object. Returns null when none of those shapes match, so the caller
+     * falls through to the line parser.
+     */
+    private fun parseJsonDocument(text: String): List<Result>? {
+        val element = runCatching { json.parseToJsonElement(text) }.getOrNull() ?: return null
+        val outbounds: List<JsonObject> = when (element) {
+            is JsonObject -> {
+                val array = element["outbounds"] as? JsonArray
+                when {
+                    array != null -> array.filterIsInstance<JsonObject>()
+                    element["type"] != null && element["server"] != null -> listOf(element)
+                    else -> return null
+                }
+            }
+            is JsonArray -> {
+                val links = element.mapNotNull {
+                    (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content
+                }
+                if (links.size == element.size && links.any { it.contains("://") }) {
+                    return links.flatMap(::parseMany)
+                }
+                element.filterIsInstance<JsonObject>()
+            }
+            else -> return null
+        }
+
+        val results = ArrayList<Result>(outbounds.size)
+        for (outbound in outbounds) {
+            val type = (outbound["type"] as? JsonPrimitive)?.content?.lowercase().orEmpty()
+            when {
+                type in plumbingTypes -> Unit // not a node
+                type == "vless" || type == "shadowsocks" ->
+                    results += Result.Ok(type, outbound.toString(), outboundName(outbound))
+                type.isNotEmpty() ->
+                    results += Result.Err("unsupported proxy type: $type", outbound.toString())
+            }
+        }
+        return results
+    }
+
+    /** Node display name: its tag, else server:port. */
+    private fun outboundName(node: JsonObject): String =
+        (node["tag"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+            ?: defaultName(
+                (node["server"] as? JsonPrimitive)?.content ?: "node",
+                (node["server_port"] as? JsonPrimitive)?.content?.toIntOrNull() ?: 0,
+            )
 
     /**
      * Decodes [s] as base64, accepting the URL-safe alphabet and missing

@@ -106,6 +106,68 @@ class SubscriptionParsingTest {
         assertTrue(ok.config.contains("\"fingerprint\":\"chrome\""))
     }
 
+    @Test
+    fun `base64 wrapped clash yaml is decoded`() {
+        // Panels wrap Clash YAML in base64 too; the old guard required `://`
+        // in the decoded text and dropped these bodies silently.
+        val encoded = java.util.Base64.getEncoder().encodeToString(clashYaml.toByteArray())
+        val parsed = ShareLinkParser.parseMany(encoded)
+        assertEquals(2, parsed.size)
+        assertTrue(parsed.all { it is ShareLinkParser.Result.Ok })
+    }
+
+    // --------------------------------------------------------- sing-box json
+
+    @Test
+    fun `sing-box config json yields only real nodes`() {
+        val body = """
+            {
+              "outbounds": [
+                {"type": "selector", "tag": "proxy", "outbounds": ["node-1"]},
+                {"type": "direct", "tag": "direct"},
+                {"type": "vless", "tag": "node-1", "server": "a.example", "server_port": 443,
+                 "uuid": "11111111-2222-3333-4444-555555555555"},
+                {"type": "shadowsocks", "tag": "node-2", "server": "b.example", "server_port": 8388,
+                 "method": "aes-256-gcm", "password": "pw"}
+              ]
+            }
+        """.trimIndent()
+        val parsed = ShareLinkParser.parseMany(body)
+        assertEquals(2, parsed.size)
+        val names = parsed.map { (it as ShareLinkParser.Result.Ok).name }
+        assertEquals(listOf("node-1", "node-2"), names)
+    }
+
+    @Test
+    fun `json array of outbound objects is accepted`() {
+        val body = """
+            [
+              {"type": "vless", "server": "a.example", "server_port": 443,
+               "uuid": "11111111-2222-3333-4444-555555555555"}
+            ]
+        """.trimIndent()
+        val parsed = ShareLinkParser.parseMany(body)
+        assertEquals(1, parsed.size)
+        assertTrue(parsed.first() is ShareLinkParser.Result.Ok)
+    }
+
+    @Test
+    fun `json array of share links is expanded`() {
+        val body = """["vless://u@h:443?security=tls#A", "ss://YWVzLTEyOC1nY206cHc@h2:443#B"]"""
+        val parsed = ShareLinkParser.parseMany(body)
+        assertEquals(2, parsed.size)
+    }
+
+    @Test
+    fun `plain json without nodes still parses as a line list`() {
+        // A single outbound object (no wrapper) used to fall through and
+        // produce one "unsupported scheme" error per line.
+        val body = """{"type": "vless", "tag": "x", "server": "a.example", "server_port": 443, "uuid": "u"}"""
+        val parsed = ShareLinkParser.parseMany(body)
+        assertEquals(1, parsed.size)
+        assertTrue(parsed.first() is ShareLinkParser.Result.Ok)
+    }
+
     // --------------------------------------------------------- route-rule json
 
     @Test

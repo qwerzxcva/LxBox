@@ -46,6 +46,11 @@
     <string name="settings_mux_disabled_short">未启用 — 点击配置</string>
     <string name="subs_name">名称</string>
     <string name="subs_url">订阅地址</string>
+    <string name="subs_url_edit_hint">机场更换链接时在这里改；保存后会自动重新获取节点。</string>
+    <string name="subs_update_section">更新方式</string>
+    <string name="subs_fetch_via_desc">直连：用当前网络直接访问；代理：经已启动的隧道访问（面板被墙时用）；自动：先直连，失败后走隧道。</string>
+    <string name="subs_last_updated">更新于 %1$s</string>
+    <string name="subs_never_updated">尚未更新</string>
     <string name="subs_fetch_via">获取节点方式</string>
     <string name="subs_fetch_via_auto">自动（先直连后代理）</string>
     <string name="subs_fetch_via_direct">直连</string>
@@ -62,6 +67,7 @@
     <string name="subs_group_name">文件夹名称</string>
     <string name="subs_duplicates_dropped">已去重 %1$d 个节点</string>
     <string name="subs_no_nodes_hint">未导入任何节点。请检查订阅地址，或改用「代理」方式获取。</string>
+    <string name="subs_no_nodes_reason">未导入任何节点（%1$s）。请检查订阅地址或更新方式。</string>
     <string name="subs_add_action">添加</string>
     <string name="subs_cancel">取消</string>
     <string name="subs_refresh">刷新</string>

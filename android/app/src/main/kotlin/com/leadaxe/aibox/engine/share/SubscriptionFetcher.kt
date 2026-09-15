@@ -318,6 +318,7 @@ class SubscriptionFetcher(private val context: Context) {
         proxy: Proxy?,
         pinnedAddress: InetAddress?,
         extraHeaders: Map<String, String> = emptyMap(),
+        depth: Int = 0,
     ): String {
         val realHost = url.host
         val connectUrl = if (pinnedAddress != null && url.protocol == "https") {
@@ -333,7 +334,13 @@ class SubscriptionFetcher(private val context: Context) {
         conn.connectTimeout = 15_000
         conn.readTimeout = 30_000
         conn.requestMethod = "GET"
+        // Panels redirect (http→https, vanity host→edge node) and answer
+        // with gzip; following manually keeps SNI and Host correct across
+        // the hop, which the built-in follower does not guarantee once a
+        // pinned address is in play.
+        conn.instanceFollowRedirects = false
         conn.setRequestProperty("User-Agent", "sing-box/1.14.0")
+        conn.setRequestProperty("Accept-Encoding", "gzip")
         if (pinnedAddress != null) {
             conn.setRequestProperty("Host", realHost)
         }
@@ -343,8 +350,39 @@ class SubscriptionFetcher(private val context: Context) {
         }
         try {
             val code = conn.responseCode
+            if (code in 300..399) {
+                val location = conn.getHeaderField("Location")
+                    ?: error("HTTP $code without Location")
+                if (depth >= MAX_REDIRECTS) error("too many redirects")
+                val next = runCatching { URL(url, location) }.getOrElse {
+                    error("bad redirect target: $location")
+                }
+                // A redirect to another host must not keep the pinned
+                // address or the old Host header.
+                val sameHost = next.host == realHost
+                return openStream(
+                    next,
+                    proxy = proxy,
+                    pinnedAddress = if (sameHost) pinnedAddress else null,
+                    extraHeaders = extraHeaders,
+                    depth = depth + 1,
+                )
+            }
             if (code !in 200..299) error("HTTP $code")
-            return conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            val stream = if (conn.contentEncoding?.contains("gzip", ignoreCase = true) == true) {
+                java.util.zip.GZIPInputStream(conn.inputStream)
+            } else {
+                conn.inputStream
+            }
+            val text = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            // A panel behind a captive portal or a parked domain answers
+            // 200 with an HTML page; saying so beats "0 nodes".
+            val head = text.trimStart().take(64).lowercase()
+            if (head.startsWith("<!doctype html") || head.startsWith("<html")) {
+                error("the server returned an HTML page, not a subscription (check the URL)")
+            }
+            if (text.isBlank()) error("empty response")
+            return text
         } finally {
             conn.disconnect()
         }
@@ -411,5 +449,8 @@ class SubscriptionFetcher(private val context: Context) {
 
         /** How long to wait for the loopback probe before giving up. */
         const val PROBE_TIMEOUT_MS = 400
+
+        /** Redirect hops accepted before giving up (panel → edge → sign). */
+        const val MAX_REDIRECTS = 5
     }
 }
