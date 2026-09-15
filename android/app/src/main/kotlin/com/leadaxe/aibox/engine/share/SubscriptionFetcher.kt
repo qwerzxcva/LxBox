@@ -9,6 +9,13 @@ import com.leadaxe.aibox.app.OutboundProfile
 import com.leadaxe.aibox.app.RuleSetResource
 import com.leadaxe.aibox.app.Subscription
 import com.leadaxe.aibox.app.userAgentHeader
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetAddress
@@ -27,11 +34,8 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 
 /**
  * Downloads subscription content and converts it into [OutboundProfile]s
@@ -65,6 +69,32 @@ class SubscriptionFetcher(private val context: Context) {
         val duplicates: Int = 0,
     )
 
+    /**
+     * Rewrites a parsed vless node to speak ECH when the subscription asks
+     * for it. `tls.enabled` nodes get an `ech` block; an empty config lets
+     * the core fetch the ECH config list from the node's DNS HTTPS record
+     * (cached by TTL), so "automatic" is the default path.
+     */
+    private fun applyEch(subscription: Subscription, res: ShareLinkParser.Result.Ok): String {
+        if (!subscription.enableEch || res.type != "vless") return res.config
+        return runCatching {
+            val json = Json.parseToJsonElement(res.config).jsonObject
+            val tls = json["tls"]?.jsonObject ?: return@runCatching res.config
+            if (tls["enabled"]?.jsonPrimitive?.booleanOrNull != true) return@runCatching res.config
+            val ech = buildJsonObject {
+                put("enabled", true)
+                if (subscription.echConfig.isNotBlank()) {
+                    put("config", subscription.echConfig.trim())
+                }
+                if (subscription.echQueryServerName.isNotBlank()) {
+                    put("query_server_name", subscription.echQueryServerName.trim())
+                }
+            }
+            JsonObject(json.toMutableMap().apply { put("tls", JsonObject(tls.toMutableMap().apply { put("ech", ech) })) })
+                .toString()
+        }.getOrDefault(res.config)
+    }
+
     suspend fun fetch(
         subscription: Subscription,
         existing: List<OutboundProfile> = emptyList(),
@@ -78,7 +108,7 @@ class SubscriptionFetcher(private val context: Context) {
                     id = UUID.randomUUID().toString(),
                     name = res.name,
                     type = res.type,
-                    config = res.config,
+                    config = applyEch(subscription, res),
                     subscriptionId = subscription.id,
                 )
                 is ShareLinkParser.Result.Err -> null

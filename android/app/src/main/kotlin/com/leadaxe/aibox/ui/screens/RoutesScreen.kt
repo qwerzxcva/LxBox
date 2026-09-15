@@ -54,7 +54,6 @@ fun RoutesScreen() {
     var editing: RouteRule? by remember { mutableStateOf(null) }
     var creating by remember { mutableStateOf(false) }
     var editingRuleSet: com.leadaxe.aibox.app.RuleSetResource? by remember { mutableStateOf(null) }
-    var creatingRuleSet by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -102,12 +101,8 @@ fun RoutesScreen() {
         }
 
         item {
-            FilledTonalButton(onClick = { creatingRuleSet = true }) {
-                Icon(Icons.Outlined.Add, contentDescription = null)
-                Text(stringResource(R.string.rulesets_add))
-            }
+            SectionHeader(stringResource(R.string.routes_section_rulesets, state.ruleSets.size))
         }
-        item { SectionHeader(stringResource(R.string.routes_section_rulesets, state.ruleSets.size)) }
         items(state.ruleSets, key = { it.id }) { rs ->
             val cached = remember(rs.id, rs.lastUpdatedEpochMillis) {
                 java.io.File(context.filesDir, "box/ruleset/${rs.id}.${rs.extension}").isFile
@@ -153,7 +148,10 @@ fun RoutesScreen() {
             state = state,
             onDismiss = { creating = false },
             onSave = { rule ->
-                store.update { st -> st.copy(routeRules = st.routeRules + rule) }
+                val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, rule)
+                store.update { st ->
+                    st.copy(routeRules = st.routeRules + normalized, ruleSets = st.ruleSets + adds)
+                }
                 creating = false
             },
         )
@@ -164,24 +162,18 @@ fun RoutesScreen() {
             state = state,
             onDismiss = { editing = null },
             onSave = { updated ->
+                val (adds, normalized) = materializeRuleSetReferences(state.ruleSets, updated)
                 store.update { st ->
-                    st.copy(routeRules = st.routeRules.map { if (it.id == updated.id) updated else it })
+                    st.copy(
+                        routeRules = st.routeRules.map { if (it.id == normalized.id) normalized else it },
+                        ruleSets = st.ruleSets + adds,
+                    )
                 }
                 editing = null
             },
         )
     }
 
-    if (creatingRuleSet) {
-        RuleSetEditor(
-            initial = null,
-            onDismiss = { creatingRuleSet = false },
-            onSave = { rs ->
-                store.update { st -> st.copy(ruleSets = st.ruleSets + rs) }
-                creatingRuleSet = false
-            },
-        )
-    }
     editingRuleSet?.let { rs ->
         RuleSetEditor(
             initial = rs,
@@ -195,6 +187,66 @@ fun RoutesScreen() {
         )
     }
 }
+
+/**
+ * Turns https URLs in a rule_set list into managed rule-set resources (tag
+ * derived from the last URL path segment). Existing tags pass through
+ * untouched; unknown plain tags are kept as-is so a resource can be created
+ * later from the list. Returns the resources to add and the rewritten tags.
+ */
+internal fun materializeRuleSetTags(
+    existing: List<com.leadaxe.aibox.app.RuleSetResource>,
+    entries: List<String>,
+): Pair<List<com.leadaxe.aibox.app.RuleSetResource>, List<String>> {
+    if (entries.isEmpty()) return Pair(emptyList(), entries)
+    val knownTags = existing.map { it.tag }.toSet()
+    val adds = mutableListOf<com.leadaxe.aibox.app.RuleSetResource>()
+    fun addResource(tag: String, url: String, format: String): String {
+        val resource = com.leadaxe.aibox.app.RuleSetResource(
+            id = java.util.UUID.randomUUID().toString(),
+            tag = tag,
+            format = format,
+            url = url,
+        )
+        adds += resource
+        return tag
+    }
+    val tags = entries.map { entry ->
+        val trimmed = entry.trim()
+        if (trimmed.startsWith("https://")) {
+            val last = trimmed.trimEnd('/').substringAfterLast('/')
+            val derivedTag = last.substringAfterLast("-").removeSuffix(".srs").removeSuffix(".json")
+                .ifBlank { last.substringBefore('.') }
+            val format = if (trimmed.endsWith(".json")) "source" else "binary"
+            val taken = { t: String -> t in knownTags || adds.any { it.tag == t } }
+            when {
+                derivedTag.isBlank() -> {
+                    var unique = "ruleset-${existing.size + adds.size}"
+                    while (taken(unique)) unique += "-x"
+                    addResource(unique, trimmed, format)
+                }
+                taken(derivedTag) -> {
+                    var unique = "${derivedTag}-${existing.size + adds.size}"
+                    while (taken(unique)) unique += "-x"
+                    addResource(unique, trimmed, format)
+                }
+                else -> addResource(derivedTag, trimmed, format)
+            }
+        } else {
+            trimmed
+        }
+    }
+    return Pair(adds, tags)
+}
+
+/** Route-rule flavor of [materializeRuleSetTags]. */
+internal fun materializeRuleSetReferences(
+    existing: List<com.leadaxe.aibox.app.RuleSetResource>,
+    rule: RouteRule,
+): Pair<List<com.leadaxe.aibox.app.RuleSetResource>, RouteRule> =
+    materializeRuleSetTags(existing, rule.ruleSet).let { (adds, tags) ->
+        Pair(adds, rule.copy(ruleSet = tags))
+    }
 
 /**
  * Renders a list with per-row move-up/move-down affordances. Order matters in
@@ -360,7 +412,7 @@ private fun RuleEditor(
     var sourceIpIsPrivate by remember { mutableStateOf(initial?.sourceIpIsPrivate ?: false) }
     var ipIsPrivate by remember { mutableStateOf(initial?.ipIsPrivate ?: false) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
-    var structureType by remember { mutableStateOf(initial?.type ?: RouteRule.RuleTypeDefault) }
+    var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
     var logicalMode by remember { mutableStateOf(initial?.logicalMode ?: RouteRule.LogicalAnd) }
     var subRules by remember { mutableStateOf(initial?.rules ?: emptyList()) }
     var editingSubRule by remember { mutableStateOf(false) }
@@ -386,30 +438,10 @@ private fun RuleEditor(
                     },
                 )
                 if (kind == RouteRule.KindInline) {
-                    // ----- structure: default vs logical -----
-                    // This is where AND / OR lives: a logical rule carries
-                    // sub-rules and earns the combination mode; a default
-                    // rule matches its own fields directly. The sub-rule
-                    // list only appears in logical mode, which keeps the
-                    // common case (one matcher) to one screen full of
-                    // fields instead of a tree editor.
-                    SingleChoiceChips(
-                        label = stringResource(R.string.routes_rule_structure),
-                        options = listOf(RouteRule.RuleTypeDefault, RouteRule.RuleTypeLogical),
-                        selected = structureType,
-                        onSelect = { structureType = it },
-                        display = {
-                            if (it == RouteRule.RuleTypeLogical)
-                                stringResource(R.string.routes_type_logical)
-                            else stringResource(R.string.routes_type_default)
-                        },
-                    )
-                    Text(
-                        stringResource(R.string.routes_structure_help),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (structureType == RouteRule.RuleTypeLogical) {
+                    // ----- structure: implicit ----- 
+                    // A rule is logical iff it carries sub-rules; no separate
+                    // mode chip is needed. AND / OR only matters then.
+                    if (subRules.isNotEmpty()) {
                         SingleChoiceChips(
                             label = stringResource(R.string.routes_logical_mode),
                             options = listOf(RouteRule.LogicalAnd, RouteRule.LogicalOr),
@@ -421,45 +453,45 @@ private fun RuleEditor(
                                 else stringResource(R.string.routes_logical_and)
                             },
                         )
-                        Text(
-                            stringResource(R.string.routes_rule_sub_rules, subRules.size),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        subRules.forEachIndexed { index, sub ->
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Row(
-                                    modifier = Modifier.padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                    }
+                    Text(
+                        stringResource(R.string.routes_rule_sub_rules, subRules.size),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    subRules.forEachIndexed { index, sub ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        sub.name.ifBlank { sub.id.take(8) },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    Text(
+                                        subRuleSummary(sub),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        subRules = subRules.toMutableList().also { it.removeAt(index) }
+                                    },
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            sub.name.ifBlank { sub.id.take(8) },
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                        Text(
-                                            subRuleSummary(sub),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = {
-                                            subRules = subRules.toMutableList().also { it.removeAt(index) }
-                                        },
-                                    ) {
-                                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
-                                    }
+                                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
                                 }
                             }
                         }
-                        FilledTonalButton(onClick = { editingSubRule = true }) {
-                            Icon(Icons.Outlined.Add, contentDescription = null)
-                            Text(stringResource(R.string.routes_add_sub_rule))
-                        }
+                    }
+                    FilledTonalButton(onClick = { editingSubRule = true }) {
+                        Icon(Icons.Outlined.Add, contentDescription = null)
+                        Text(stringResource(R.string.routes_add_sub_rule))
                     }
                 }
-                if (kind == RouteRule.KindInline && structureType == RouteRule.RuleTypeDefault) {
+                if (kind == RouteRule.KindInline && subRules.isEmpty()) {
                     ListField(
                         label = stringResource(R.string.routes_field_domain),
                         values = domain,
@@ -553,6 +585,9 @@ private fun RuleEditor(
                         label = stringResource(R.string.routes_json_body),
                         value = jsonBody,
                         onValueChange = { jsonBody = it },
+                        minLines = 6,
+                        maxLines = 14,
+                        supporting = stringResource(R.string.routes_json_multiline_hint),
                     )
                 }
                 SingleChoiceChips(
@@ -575,6 +610,15 @@ private fun RuleEditor(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (action == RouteRule.RuleActionResolve) {
+                    StringField(
+                        label = stringResource(R.string.routes_client_subnet),
+                        value = clientSubnet,
+                        onValueChange = { clientSubnet = it },
+                        placeholder = "1.2.3.0/24",
+                        supporting = stringResource(R.string.hint_client_subnet),
+                    )
+                }
                 if (action == RouteRule.RuleActionRoute) {
                     val outboundOptions = remember(state.outbounds, state.outboundGroups) {
                         listOf(ProxySelectorTag, DirectOutboundTag) +
@@ -618,7 +662,7 @@ private fun RuleEditor(
                         (initial ?: RouteRule(id = UUID.randomUUID().toString())).copy(
                             name = name,
                             kind = kind,
-                            type = structureType,
+                            type = if (subRules.isEmpty()) RouteRule.RuleTypeDefault else RouteRule.RuleTypeLogical,
                             logicalMode = logicalMode,
                             rules = subRules,
                             action = action,
@@ -640,6 +684,7 @@ private fun RuleEditor(
                             sourceIpIsPrivate = sourceIpIsPrivate,
                             ipIsPrivate = ipIsPrivate,
                             json = jsonBody,
+                            clientSubnet = clientSubnet,
                         ),
                     )
                 },

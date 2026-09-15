@@ -109,8 +109,6 @@
     <string name="routes_kind_inline">Inline</string>
     <string name="routes_kind_json">JSON</string>
     <string name="routes_rule_type">Type</string>
-    <string name="routes_type_default">Default</string>
-    <string name="routes_type_logical">Logical</string>
     <string name="routes_logical_mode">Combine</string>
     <string name="routes_logical_and">AND</string>
     <string name="routes_logical_or">OR</string>
@@ -238,6 +236,16 @@
     <string name="settings_tun_stack_desc">system: fastest, kernel-owned TCP; gvisor: most compatible; mixed: system TCP + gvisor UDP (default)</string>
     <string name="settings_udp_over_tcp">UDP over TCP (VLESS)</string>
     <string name="settings_udp_over_tcp_desc">Carry UDP inside the VLESS TCP stream (packet-addr). Helps when the server or network blocks real UDP; needs server support (Xray/sing-box).</string>
+    <string name="routes_client_subnet">EDNS client subnet (ECS)</string>
+    <string name="hint_client_subnet">Sent to upstream DNS resolvers for this rule, e.g. 1.2.3.0/24 — geo-aware answers without leaking your real subnet.</string>
+    <string name="routes_json_multiline_hint">One raw sing-box rule object per line, or a single object; pretty-printed works too.</string>
+    <string name="subs_ech">Encrypted Client Hello (ECH)</string>
+    <string name="subs_ech_desc">Wrap the TLS ClientHello of vless+TLS nodes from this subscription. Empty config = the core fetches the ECH config automatically from DNS.</string>
+    <string name="subs_ech_query_name">ECH query name (optional)</string>
+    <string name="subs_ech_query_name_hint">Defaults to each node TLS server name</string>
+    <string name="subs_ech_config">ECH config list (optional, base64)</string>
+    <string name="subs_ech_config_hint">Leave empty to auto-fetch from the node DNS HTTPS record</string>
+    <string name="subs_edit">Edit subscription</string>
     <string name="settings_tun_addresses">TUN addresses</string>
     <string name="settings_tun_ipv4">TUN IPv4 address</string>
     <string name="settings_tun_ipv6">TUN IPv6 address</string>
@@ -297,11 +305,9 @@
     <string name="common_move">Move</string>
 
     <!-- logical rule structure -->
-    <string name="routes_rule_structure">Structure</string>
     <string name="routes_rule_sub_rules">Sub-rules (%1$d)</string>
     <string name="routes_add_sub_rule">Add sub-rule</string>
     <string name="routes_edit_sub_rule">Edit sub-rule</string>
-    <string name="routes_structure_help">Default matches its own fields. Logical combines sub-rules with AND / OR — every sub-rule is a plain matcher, and the two mode chips at the top pick how they combine.</string>
 
     <!-- field hints -->
     <string name="hint_domain_suffix">Matches the domain and every subdomain: "google.com" also covers "mail.google.com".</string>
@@ -316,7 +322,7 @@
     <string name="hint_network">Which transport to match: tcp, udp, or both.</string>
     <string name="hint_protocol">Protocol detected by the sniffer — http, tls, quic and friends. Needs the sniffer enabled.</string>
     <string name="hint_package_name">Android package name, e.g. "com.android.chrome".</string>
-    <string name="hint_rule_set">A downloaded rule set from the list above — this is how geosite-style lists plug in.</string>
+    <string name="hint_rule_set">Rule-set tag or an https .srs/.json URL — URLs are imported automatically.</string>
     <string name="hint_outbound">Where matching traffic goes: a node, a group, the main selector, or direct.</string>
     <string name="hint_invert">Flip the match: everything that does NOT match the fields above.</string>
     <string name="hint_action">Route sends the connection to the outbound; Reject drops it; Resolve only resolves the domain and lets later rules decide.</string>

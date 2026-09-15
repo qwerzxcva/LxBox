@@ -193,7 +193,10 @@ fun DnsScreen() {
             state = state,
             onDismiss = { creatingRule = false },
             onSave = { rule ->
-                store.update { st -> st.copy(dnsRules = st.dnsRules + rule) }
+                val (adds, tags) = com.leadaxe.aibox.ui.screens.materializeRuleSetTags(state.ruleSets, rule.ruleSet)
+                store.update { st ->
+                    st.copy(dnsRules = st.dnsRules + rule.copy(ruleSet = tags), ruleSets = st.ruleSets + adds)
+                }
                 creatingRule = false
             },
         )
@@ -204,8 +207,12 @@ fun DnsScreen() {
             state = state,
             onDismiss = { editingRule = null },
             onSave = { updated ->
+                val (adds, tags) = com.leadaxe.aibox.ui.screens.materializeRuleSetTags(state.ruleSets, updated.ruleSet)
                 store.update { st ->
-                    st.copy(dnsRules = st.dnsRules.map { if (it.id == updated.id) updated else it })
+                    st.copy(
+                        dnsRules = st.dnsRules.map { if (it.id == updated.id) updated.copy(ruleSet = tags) else it },
+                        ruleSets = st.ruleSets + adds,
+                    )
                 }
                 editingRule = null
             },
@@ -618,6 +625,7 @@ private fun DnsRuleEditor(
     var packageName by remember { mutableStateOf(initial?.packageName ?: emptyList()) }
     var clashMode by remember { mutableStateOf(initial?.clashMode ?: emptyList()) }
     var server by remember { mutableStateOf(initial?.server.orEmpty()) }
+    var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
     var invert by remember { mutableStateOf(initial?.invert ?: false) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
 
@@ -688,6 +696,13 @@ private fun DnsRuleEditor(
                         checked = invert,
                         onCheckedChange = { invert = it },
                     )
+                    StringField(
+                        label = stringResource(R.string.routes_client_subnet),
+                        value = clientSubnet,
+                        onValueChange = { clientSubnet = it },
+                        placeholder = "1.2.3.0/24",
+                        supporting = stringResource(R.string.hint_client_subnet),
+                    )
                     SwitchRow(
                         label = stringResource(R.string.routes_enabled),
                         checked = enabled,
@@ -709,6 +724,7 @@ private fun DnsRuleEditor(
                             packageName = packageName,
                             clashMode = clashMode,
                             server = server,
+                            clientSubnet = clientSubnet,
                             invert = invert,
                             enabled = enabled,
                         ),

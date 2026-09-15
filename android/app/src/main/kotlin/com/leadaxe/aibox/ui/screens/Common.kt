@@ -69,16 +69,19 @@ fun ListField(
     supporting: String = "",
     modifier: Modifier = Modifier,
 ) {
-    val text = values.joinToString(", ")
+    // One entry per line: values with commas (regex, CIDR lists) survive,
+    // and a long list is readable without horizontal scrolling.
+    val text = values.joinToString("\n")
     Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = text,
             onValueChange = { raw ->
-                onValuesChange(raw.split(',').map { it.trim() }.filter { it.isNotEmpty() })
+                onValuesChange(raw.split('\n').map { it.trim() }.filter { it.isNotEmpty() })
             },
             label = { Text(label) },
             placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
-            singleLine = true,
+            minLines = 3,
+            maxLines = 8,
             modifier = Modifier.fillMaxWidth(),
         )
         if (supporting.isNotEmpty()) {
@@ -101,6 +104,8 @@ fun StringField(
     placeholder: String = "",
     supporting: String = "",
     modifier: Modifier = Modifier,
+    minLines: Int = 1,
+    maxLines: Int = 1,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         OutlinedTextField(
@@ -108,7 +113,8 @@ fun StringField(
             onValueChange = onValueChange,
             label = { Text(label) },
             placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
-            singleLine = true,
+            minLines = minLines,
+            maxLines = maxLines,
             modifier = Modifier.fillMaxWidth(),
         )
         if (supporting.isNotEmpty()) {

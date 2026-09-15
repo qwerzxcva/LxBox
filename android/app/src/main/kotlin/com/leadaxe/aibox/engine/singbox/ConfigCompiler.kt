@@ -228,10 +228,14 @@ object ConfigCompiler {
             DnsRuleActionRouteOptions -> {
                 builder.put("action", "route-options")
                 if (rule.server.isNotBlank()) builder.put("server", rule.server)
+                if (rule.clientSubnet.isNotBlank()) builder.put("client_subnet", rule.clientSubnet)
             }
             else -> {
                 // Plain route: sing-box infers the action from `server`.
+                // The route action embeds the route-options struct, so
+                // client_subnet is legal without switching actions.
                 if (rule.server.isNotBlank()) builder.put("server", rule.server)
+                if (rule.clientSubnet.isNotBlank()) builder.put("client_subnet", rule.clientSubnet)
             }
         }
     }
@@ -584,7 +588,10 @@ object ConfigCompiler {
     private fun JsonObjectBuilder.putRuleAction(rule: RouteRule) {
         when (rule.action) {
             RouteRule.RuleActionReject -> put("action", "reject")
-            RouteRule.RuleActionResolve -> put("action", "resolve")
+            RouteRule.RuleActionResolve -> {
+                put("action", "resolve")
+                if (rule.clientSubnet.isNotBlank()) put("client_subnet", rule.clientSubnet)
+            }
             else -> {
                 put("action", "route")
                 put("outbound", rule.outbound.ifBlank { ProxySelectorTag })

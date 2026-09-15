@@ -107,8 +107,6 @@
     <string name="routes_kind_inline">界面编辑</string>
     <string name="routes_kind_json">JSON</string>
     <string name="routes_rule_type">规则结构</string>
-    <string name="routes_type_default">普通匹配</string>
-    <string name="routes_type_logical">逻辑组合</string>
     <string name="routes_logical_mode">组合方式</string>
     <string name="routes_logical_and">与（AND）</string>
     <string name="routes_logical_or">或（OR）</string>
@@ -236,6 +234,16 @@
     <string name="settings_tun_stack_desc">system：最快，内核态 TCP；gvisor：兼容性最好；mixed：system TCP + gvisor UDP（默认）</string>
     <string name="settings_udp_over_tcp">UDP 转 TCP（VLESS）</string>
     <string name="settings_udp_over_tcp_desc">把 UDP 装进 VLESS TCP 流传输（packet-addr）。服务器或网络封 UDP 时可用；需服务端支持（Xray/sing-box）。</string>
+    <string name="routes_client_subnet">EDNS 客户端子网（ECS）</string>
+    <string name="hint_client_subnet">该规则的 DNS 查询将携带此子网，如 1.2.3.0/24 — 获得就近解析结果且不暴露真实子网。</string>
+    <string name="routes_json_multiline_hint">每行一条原始 sing-box 规则对象，或单个对象；支持换行缩进。</string>
+    <string name="subs_ech">加密客户端 Hello（ECH）</string>
+    <string name="subs_ech_desc">让此订阅的 vless+TLS 节点启用 ECH。配置留空时内核自动从 DNS HTTPS 记录获取 ECH 配置。</string>
+    <string name="subs_ech_query_name">ECH 查询名（可选）</string>
+    <string name="subs_ech_query_name_hint">默认使用节点的 TLS 服务器名</string>
+    <string name="subs_ech_config">ECH 配置（可选，base64）</string>
+    <string name="subs_ech_config_hint">留空 = 从节点的 DNS HTTPS 记录自动获取</string>
+    <string name="subs_edit">编辑订阅</string>
     <string name="settings_tun_addresses">TUN 地址</string>
     <string name="settings_tun_ipv4">TUN IPv4 地址</string>
     <string name="settings_tun_ipv6">TUN IPv6 地址</string>
@@ -295,11 +303,9 @@
     <string name="common_move">移动</string>
 
     <!-- 逻辑规则 -->
-    <string name="routes_rule_structure">规则结构</string>
     <string name="routes_rule_sub_rules">子规则（%1$d）</string>
     <string name="routes_add_sub_rule">添加子规则</string>
     <string name="routes_edit_sub_rule">编辑子规则</string>
-    <string name="routes_structure_help">「普通匹配」直接匹配下面的字段；「逻辑组合」把子规则按顶部的 与/或 方式合并，子规则自身只做匹配，动作由整组决定。</string>
 
     <!-- 字段说明 -->
     <string name="hint_domain_suffix">匹配该域名及其所有子域名：填 google.com 也会命中 mail.google.com。</string>
@@ -314,7 +320,7 @@
     <string name="hint_network">匹配的传输层：tcp、udp 或两者都选。</string>
     <string name="hint_protocol">由嗅探器识别出的协议 — http、tls、quic 等，需开启嗅探。</string>
     <string name="hint_package_name">Android 包名，例如 com.android.chrome。</string>
-    <string name="hint_rule_set">引用上方「规则集」列表中的一条 — geosite 风格列表就是这样接入的。</string>
+    <string name="hint_rule_set">规则集 tag 或 https 的 .srs/.json 链接 — 填链接会自动导入为规则集。</string>
     <string name="hint_outbound">命中流量的去向：某个节点、出口组、主选择器或直连。</string>
     <string name="hint_invert">反转匹配：命中的全部排除，未命中的才算匹配。</string>
     <string name="hint_action">转发=送到出口；拒绝=丢弃连接；仅解析=只解析域名，交后续规则决定。</string>

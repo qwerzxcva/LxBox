@@ -191,6 +191,16 @@ data class Subscription(
      * device id keeps re-installs working.
      */
     val maskHwid: Boolean = true,
+    /**
+     * Rewrite every tls-enabled vless node from this subscription to speak
+     * ECH (encrypted client hello). Empty [echQueryServerName] lets the
+     * core fetch the ECH config list itself from the node's DNS HTTPS
+     * record; a value pins that lookup to an explicit name.
+     */
+    val enableEch: Boolean = false,
+    val echQueryServerName: String = "",
+    /** Explicit base64 ECH config list; empty = core auto-fetches. */
+    val echConfig: String = "",
 )
 
 /** A folder that groups subscriptions in the UI. Purely presentational. */
@@ -280,6 +290,8 @@ data class RouteRule(
     /** "route" → outbound tag; "reject"; "resolve" (resolve-only advanced). */
     val action: String = RuleActionRoute,
     val outbound: String = ProxySelectorTag,
+    /** EDNS client subnet for the resolve action, e.g. "1.2.3.0/24". Empty = off. */
+    val clientSubnet: String = "",
     // ----- json kind -----
     val json: String = "",
 ) {
@@ -470,6 +482,8 @@ data class DnsRule(
     val network: List<String> = emptyList(),
     val protocol: List<String> = emptyList(),
     val clashMode: List<String> = emptyList(),
+    /** EDNS client subnet applied by this rule's action, e.g. "1.2.3.0/24". Empty = off. */
+    val clientSubnet: String = "",
     val invertApplied: Boolean = false,
     // ----- action -----
     /** Target DNS server tag; empty = "first available". */

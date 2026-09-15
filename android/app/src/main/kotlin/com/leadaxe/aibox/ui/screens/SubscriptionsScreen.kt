@@ -79,6 +79,7 @@ fun SubscriptionsScreen() {
     val remotePings by relay.pings.collectAsState()
     var pingResults by remember { mutableStateOf<Map<String, PingState>>(emptyMap()) }
     var editingGroup: com.leadaxe.aibox.app.OutboundGroup? by remember { mutableStateOf(null) }
+    var editingSubscription: Subscription? by remember { mutableStateOf(null) }
     var creatingGroup by remember { mutableStateOf(false) }
 
     // Remote ping answers (from the :vpn process) fold into the local map.
@@ -190,6 +191,7 @@ fun SubscriptionsScreen() {
             items(state.subscriptions, key = { it.id }) { sub ->
                 SubscriptionRow(
                     sub = sub,
+                    onEdit = { editingSubscription = sub },
                     onDelete = {
                         store.update { st ->
                             st.copy(
@@ -393,6 +395,19 @@ fun SubscriptionsScreen() {
             },
         )
     }
+    editingSubscription?.let { sub ->
+        EditSubscriptionDialog(
+            state = state,
+            initial = sub,
+            onDismiss = { editingSubscription = null },
+            onSave = { updated ->
+                store.update { st ->
+                    st.copy(subscriptions = st.subscriptions.map { if (it.id == updated.id) updated else it })
+                }
+                editingSubscription = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -400,12 +415,16 @@ private fun SubscriptionRow(
     sub: Subscription,
     onDelete: () -> Unit,
     onRefresh: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(sub.name.ifBlank { sub.url }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(sub.url, style = MaterialTheme.typography.bodySmall)
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
             }
             IconButton(onClick = onRefresh) {
                 Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.subs_refresh))
@@ -415,6 +434,105 @@ private fun SubscriptionRow(
             }
         }
     }
+}
+
+/**
+ * Edits a subscription's fetch behaviour. Nodes are re-materialised on the
+ * next refresh, so toggling ECH here takes effect after 刷新.
+ */
+@Composable
+private fun EditSubscriptionDialog(
+    state: com.leadaxe.aibox.app.AppState,
+    initial: Subscription,
+    onDismiss: () -> Unit,
+    onSave: (Subscription) -> Unit,
+) {
+    var name by remember { mutableStateOf(initial.name) }
+    var fetchVia by remember { mutableStateOf(initial.fetchVia) }
+    var resolver by remember { mutableStateOf(initial.dnsServer) }
+    var enableEch by remember { mutableStateOf(initial.enableEch) }
+    var echQueryServerName by remember { mutableStateOf(initial.echQueryServerName) }
+    var echConfig by remember { mutableStateOf(initial.echConfig) }
+
+    val resolverOptions = remember(state.dnsServers) {
+        state.dnsServers.filter { it.type == "https" || it.type == "h3" }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.subs_edit)) },
+        text = {
+            FormBody {
+                StringField(
+                    label = stringResource(R.string.subs_name),
+                    value = name,
+                    onValueChange = { name = it },
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_fetch_via),
+                    options = com.leadaxe.aibox.app.FetchViaOptions,
+                    selected = fetchVia,
+                    onSelect = { fetchVia = it },
+                    display = {
+                        when (it) {
+                            com.leadaxe.aibox.app.FetchViaDirect -> stringResource(R.string.subs_fetch_via_direct)
+                            com.leadaxe.aibox.app.FetchViaProxy -> stringResource(R.string.subs_fetch_via_proxy)
+                            else -> stringResource(R.string.subs_fetch_via_auto)
+                        }
+                    },
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.subs_resolver),
+                    options = listOf("") + resolverOptions.map { it.tag },
+                    selected = resolver,
+                    onSelect = { resolver = it },
+                    display = { tag ->
+                        if (tag.isEmpty()) stringResource(R.string.subs_resolver_system)
+                        else resolverOptions.firstOrNull { s -> s.tag == tag }?.name?.ifBlank { tag } ?: tag
+                    },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.subs_ech),
+                    supporting = stringResource(R.string.subs_ech_desc),
+                    checked = enableEch,
+                    onCheckedChange = { enableEch = it },
+                )
+                if (enableEch) {
+                    StringField(
+                        label = stringResource(R.string.subs_ech_query_name),
+                        value = echQueryServerName,
+                        onValueChange = { echQueryServerName = it },
+                        placeholder = stringResource(R.string.subs_ech_query_name_hint),
+                    )
+                    StringField(
+                        label = stringResource(R.string.subs_ech_config),
+                        value = echConfig,
+                        onValueChange = { echConfig = it },
+                        minLines = 3,
+                        maxLines = 6,
+                        supporting = stringResource(R.string.subs_ech_config_hint),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        initial.copy(
+                            name = name.ifBlank { initial.url },
+                            fetchVia = fetchVia,
+                            dnsServer = resolver,
+                            enableEch = enableEch,
+                            echQueryServerName = echQueryServerName,
+                            echConfig = echConfig,
+                        ),
+                    )
+                },
+            ) { Text(stringResource(R.string.common_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
 }
 
 @Composable
@@ -509,6 +627,9 @@ private fun AddSubscriptionDialog(
     var userAgent by remember { mutableStateOf(com.leadaxe.aibox.app.UserAgentSingBox) }
     var tlsFingerprint by remember { mutableStateOf(com.leadaxe.aibox.app.FingerprintChrome) }
     var maskHwid by remember { mutableStateOf(true) }
+    var enableEch by remember { mutableStateOf(false) }
+    var echQueryServerName by remember { mutableStateOf("") }
+    var echConfig by remember { mutableStateOf("") }
     // Pre-filed when the user opened the dialog from a folder card.
     var groupId by remember(presetGroupId) { mutableStateOf(presetGroupId) }
 
@@ -613,6 +734,28 @@ private fun AddSubscriptionDialog(
                     checked = maskHwid,
                     onCheckedChange = { maskHwid = it },
                 )
+                SwitchRow(
+                    label = stringResource(R.string.subs_ech),
+                    supporting = stringResource(R.string.subs_ech_desc),
+                    checked = enableEch,
+                    onCheckedChange = { enableEch = it },
+                )
+                if (enableEch) {
+                    StringField(
+                        label = stringResource(R.string.subs_ech_query_name),
+                        value = echQueryServerName,
+                        onValueChange = { echQueryServerName = it },
+                        placeholder = stringResource(R.string.subs_ech_query_name_hint),
+                    )
+                    StringField(
+                        label = stringResource(R.string.subs_ech_config),
+                        value = echConfig,
+                        onValueChange = { echConfig = it },
+                        minLines = 3,
+                        maxLines = 6,
+                        supporting = stringResource(R.string.subs_ech_config_hint),
+                    )
+                }
                 if (state.subscriptionGroups.isNotEmpty()) {
                     SingleChoiceChips(
                         label = stringResource(R.string.subs_group),
@@ -642,6 +785,9 @@ private fun AddSubscriptionDialog(
                             userAgent = userAgent,
                             tlsFingerprint = tlsFingerprint,
                             maskHwid = maskHwid,
+                            enableEch = enableEch,
+                            echQueryServerName = echQueryServerName,
+                            echConfig = echConfig,
                         ),
                     )
                 },
