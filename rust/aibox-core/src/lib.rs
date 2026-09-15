@@ -3,10 +3,17 @@
 //! Phase 1 moves the connection-snapshot pipeline (serialise + delta
 //! fingerprint) here: the VPN process runs it every push interval, so it is
 //! the cheapest measurable win to validate the FFI bridge end to end.
+//!
+//! Phase 2 brings the RSXM route-check engine over the same bridge: the
+//! app compiles its rule table (RoutePlanner + ConfigCompiler), sends the
+//! compiled JSON here, and gets an explained routing decision back — the
+//! micro-kernel's first user-visible capability.
 
 use serde::Serialize;
 
 mod jni;
+
+pub use rsxm_rules::{CheckOutcome, CheckQuery, RouteChecker};
 
 /// One connection in the live view; mirrors BoxEngine.ConnectionInfo.
 #[derive(Serialize, Clone, serde::Deserialize)]
@@ -43,7 +50,7 @@ impl ConnectionInfo {
     /// Stable per-connection fingerprint (same fields the Kotlin side uses
     /// to decide whether a re-broadcast is worth the IPC).
     fn fingerprint(&self) -> u64 {
-        fn mix(mut h: u64, mut v: u64) -> u64 {
+        fn mix(mut h: u64, v: u64) -> u64 {
             // FNV-1a style fold over the fields that change over a
             // connection's lifetime.
             for b in v.to_le_bytes() {

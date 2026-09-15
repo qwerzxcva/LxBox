@@ -273,6 +273,23 @@
     <string name="preset_vowifi_desc">Keep Wi-Fi Calling off the tunnel: the carrier IMS gateway (epdg) and its IKEv2 ports stay direct, so calls do not pick up extra latency.</string>
     <string name="preset_fcm">Google push (FCM)</string>
     <string name="preset_fcm_desc">Send only FCM push traffic (ports 5228-5230 and Google push hosts) outside the tunnel, so notifications arrive promptly with the screen off.</string>
+
+    <!-- route check (rsxm micro-kernel) -->
+    <string name="routecheck_title">Route check</string>
+    <string name="routecheck_subtitle">Type a domain and see which rule fires — evaluated by the Rust micro-kernel</string>
+    <string name="routecheck_domain">Domain</string>
+    <string name="routecheck_port">Port</string>
+    <string name="routecheck_package">App package (optional)</string>
+    <string name="routecheck_package_hint">Simulates a connection from that app</string>
+    <string name="routecheck_ruleset_sim">Simulate rule-set match</string>
+    <string name="routecheck_ruleset_none">none</string>
+    <string name="routecheck_run">Check</string>
+    <string name="routecheck_action_reject">Rejected — connection will be blocked</string>
+    <string name="routecheck_action_hijack">DNS hijack — query goes to the built-in resolver</string>
+    <string name="routecheck_action_route">Routes to: %1$s</string>
+    <string name="routecheck_err_compile">Could not compile the current rule table — check the rule editor for errors.</string>
+    <string name="routecheck_err_native">The Rust engine is unavailable on this install.</string>
+    <string name="routecheck_note">The check replays the compiled rule table, including built-in entries (private IPs, DNS hijack, unknown-traffic exit) — the same table the kernel loads when you connect.</string>
     <string name="settings_battery_desc">Recommended on ColorOS/realme UI and other vendors that aggressively kill VPN apps. Doze deep-suspend is handled automatically either way: the tunnel is paused in Doze and resumes on wake.</string>
     <string name="settings_tls_fragment">TLS fragmentation (DPI hardening)</string>
     <string name="settings_tls_fragment_none">Off</string>

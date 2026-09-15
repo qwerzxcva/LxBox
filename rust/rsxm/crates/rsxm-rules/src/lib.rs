@@ -25,6 +25,30 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
+pub mod check;
+pub use check::{CheckOutcome, CheckQuery, CompiledRule, RouteChecker};
+
+/// The kernel's `badoption.Listable[string]`: a bare string or an array of
+/// strings, both legal in route-rule JSON.
+pub(crate) fn listable<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::Null => Vec::new(),
+        serde_json::Value::String(text) => vec![text],
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .filter_map(|item| match item {
+                serde_json::Value::String(text) => Some(text),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    })
+}
+
 /// A rule's target, mirroring the app's action model.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Target {

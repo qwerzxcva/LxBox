@@ -33,5 +33,19 @@ object AiboxCore {
         runCatching { nativeSnapshotFingerprint(snapshotJson) }.getOrNull()
     }
 
+    /**
+     * RSXM route-check: replays the compiled sing-box rule table against
+     * one query and returns the explained decision as JSON
+     * (`rule_index` / `action` / `outbound` / `reason`), or null when the
+     * native engine is unavailable. Errors come back as `{"error": ...}`.
+     */
+    fun routeCheck(rulesJson: String, queryJson: String): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeRouteCheck(rulesJson, queryJson) }.getOrNull()
+    }
+
     private external fun nativeSnapshotFingerprint(snapshotJson: String): String
+
+    private external fun nativeRouteCheck(rulesJson: String, queryJson: String): String
 }

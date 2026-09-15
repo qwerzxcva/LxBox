@@ -271,6 +271,23 @@
     <string name="preset_vowifi_desc">Wi-Fi 通话不走隧道：运营商 IMS 网关（epdg）与 IKEv2 端口直连，避免通话增加延迟。</string>
     <string name="preset_fcm">Google 推送（FCM）</string>
     <string name="preset_fcm_desc">只把 FCM 推送流量（5228-5230 端口与 Google 推送主机）放在隧道外，熄屏时通知也能及时送达。</string>
+
+    <!-- route check (rsxm micro-kernel) -->
+    <string name="routecheck_title">分流检测</string>
+    <string name="routecheck_subtitle">输入域名查看命中哪条规则 — 由 Rust 微内核评估</string>
+    <string name="routecheck_domain">域名</string>
+    <string name="routecheck_port">端口</string>
+    <string name="routecheck_package">应用包名（可选）</string>
+    <string name="routecheck_package_hint">模拟来自该应用的连接</string>
+    <string name="routecheck_ruleset_sim">模拟规则集命中</string>
+    <string name="routecheck_ruleset_none">无</string>
+    <string name="routecheck_run">检测</string>
+    <string name="routecheck_action_reject">拒绝 — 连接将被阻断</string>
+    <string name="routecheck_action_hijack">DNS 劫持 — 查询交给内置解析器</string>
+    <string name="routecheck_action_route">转发到：%1$s</string>
+    <string name="routecheck_err_compile">无法编译当前规则表 — 请检查规则编辑器中的错误。</string>
+    <string name="routecheck_err_native">Rust 引擎在本安装中不可用。</string>
+    <string name="routecheck_note">检测重放编译后的规则表（含内置条目：内网 IP、DNS 劫持、未知流量出口），与连接时内核加载的完全一致。</string>
     <string name="settings_battery_desc">在 ColorOS/realme UI 等激进清理 VPN 应用的厂商系统上推荐开启。Doze 深暂停已自动处理：进入 Doze 时隧道暂停，唤醒时自动恢复。</string>
     <string name="settings_tls_fragment">TLS 分片（抗 DPI）</string>
     <string name="settings_tls_fragment_none">关闭</string>

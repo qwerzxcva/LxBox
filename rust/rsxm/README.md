@@ -68,11 +68,24 @@ has proven out.
 
 ```
 rust/rsxm/
-  crates/rsxm-rules   rule engine: phases + dedupe + domain trie (8 tests)
+  crates/rsxm-rules   rule engine: phases + dedupe + domain trie (15 tests)
+                      + check module: replay a compiled sing-box rule table
+                      and explain the routing decision (12 tests)
   crates/rsxm-core    scheduler + Module contract + routing table (5 tests)
+  crates/rsxm-dns     DNS micro-kernel: fake-IP pool, optimistic cache,
+                      raced upstreams (9 tests)
   crates/rsxm-tun     packet-engine module skeleton + config rendering (2 tests)
-  crates/rsxm-agent   CLI: boot the scheduler, dry-run a route
+  crates/rsxm-agent   CLI: boot the scheduler, dry-run a route, replay a
+                      compiled table (--check)
 ```
+
+The route-check engine is wired into the app through `aibox-core`'s JNI
+surface (`AiboxCore.routeCheck`): the Routes screen's 防分流检测 section
+compiles the current state with the same `ConfigCompiler.compile` the VPN
+process uses, sends the rule table plus the query over, and renders the
+explained decision — the micro-kernel's first user-visible capability, and
+the foundation for stage-1 verification (replay route decisions against
+the Go kernel on identical inputs).
 
 Verified in this branch:
 

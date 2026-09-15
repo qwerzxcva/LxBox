@@ -24,6 +24,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,6 +51,8 @@ import com.leadaxe.aibox.app.RouteRule
 import com.leadaxe.aibox.app.isPresetInstalled
 import com.leadaxe.aibox.app.materializePreset
 import com.leadaxe.aibox.app.withoutPreset
+import com.leadaxe.aibox.engine.rust.AiboxCore
+import com.leadaxe.aibox.engine.singbox.ConfigCompiler
 import com.leadaxe.aibox.engine.singbox.RouteJson
 import java.util.UUID
 
@@ -181,6 +184,13 @@ fun RoutesScreen() {
                     )
                 }
             }
+        }
+
+        // Route check: type a domain / IP and see which rule fires. The
+        // compiled table is replayed by the Rust micro-kernel (rsxm), so
+        // the answer matches what the kernel will actually do.
+        item {
+            RouteCheckSection(state = state)
         }
 
         // Built-in presets: each is a one-tap rule bundle that materialises
@@ -543,3 +553,180 @@ internal fun outboundDisplayLabel(tag: String, state: AppState): String {
         }
     }
 }
+
+/**
+ * The 防分流检测 section: type a domain (or IP) with optional port and
+ * package, and the Rust micro-kernel (rsxm route-check engine) replays the
+ * *compiled* rule table — the exact JSON the kernel would load — and names
+ * the rule that fires, its action and outbound.
+ *
+ * The engine lives in `libaibox_core.so` next to the snapshot fingerprint;
+ * when the native library is missing the section says so instead of
+ * pretending to check.
+ */
+@Composable
+private fun RouteCheckSection(state: AppState) {
+    val context = LocalContext.current
+    val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
+    var expanded by remember { mutableStateOf(false) }
+    var domain by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("") }
+    var packageName by remember { mutableStateOf("") }
+    var simulateRuleSet by remember { mutableStateOf("") }
+    var result by remember { mutableStateOf<CheckResult?>(null) }
+
+    CollapsibleSection(
+        title = stringResource(R.string.routecheck_title),
+        expanded = expanded,
+        onToggle = { expanded = !expanded },
+        subtitle = stringResource(R.string.routecheck_subtitle),
+    ) {
+        StringField(
+            label = stringResource(R.string.routecheck_domain),
+            value = domain,
+            onValueChange = { domain = it },
+            placeholder = "www.example.com",
+        )
+        StringField(
+            label = stringResource(R.string.routecheck_port),
+            value = port,
+            onValueChange = { port = it.filter { c -> c.isDigit() } },
+            placeholder = "443",
+        )
+        StringField(
+            label = stringResource(R.string.routecheck_package),
+            value = packageName,
+            onValueChange = { packageName = it },
+            placeholder = "com.android.chrome",
+            supporting = stringResource(R.string.routecheck_package_hint),
+        )
+        if (state.ruleSets.isNotEmpty()) {
+            SingleChoiceChips(
+                label = stringResource(R.string.routecheck_ruleset_sim),
+                options = listOf("") + state.ruleSets.map { it.tag },
+                selected = simulateRuleSet,
+                onSelect = { simulateRuleSet = it },
+                display = { tag ->
+                    if (tag.isEmpty()) stringResource(R.string.routecheck_ruleset_none)
+                    else tag
+                },
+            )
+        }
+        Button(
+            onClick = {
+                val compiled = compileForCheck(state, context)
+                val query = buildString {
+                    append("{")
+                    if (domain.isNotBlank()) append("\"domain\":${kotlinx.serialization.json.JsonPrimitive(domain.trim())}")
+                    if (port.isNotBlank()) {
+                        if (length > 1) append(",")
+                        append("\"port\":${port.toIntOrNull() ?: 0}")
+                    }
+                    if (packageName.isNotBlank()) {
+                        if (length > 1) append(",")
+                        append("\"package\":${kotlinx.serialization.json.JsonPrimitive(packageName.trim())}")
+                    }
+                    if (simulateRuleSet.isNotBlank()) {
+                        if (length > 1) append(",")
+                        append("\"matched_rule_sets\":[${kotlinx.serialization.json.JsonPrimitive(simulateRuleSet)}]")
+                    }
+                    append("}")
+                }
+                result = when {
+                    compiled == null -> CheckResult(error = context.getString(R.string.routecheck_err_compile))
+                    else -> {
+                        val raw = AiboxCore.routeCheck(compiled, query)
+                        when {
+                            raw == null -> CheckResult(error = context.getString(R.string.routecheck_err_native))
+                            else -> parseCheckResult(raw)
+                        }
+                    }
+                }
+            },
+            enabled = domain.isNotBlank() || packageName.isNotBlank(),
+        ) {
+            Text(stringResource(R.string.routecheck_run))
+        }
+        result?.let { r ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.CardDefaults.elevatedCardColors(),
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    when {
+                        r.error != null -> Text(
+                            r.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        else -> {
+                            Text(
+                                formatAction(r.action, r.outbound, state),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (r.action == "reject") MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                r.reason,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Text(
+            stringResource(R.string.routecheck_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** One route-check outcome as rendered by the section. */
+private data class CheckResult(
+    val action: String = "",
+    val outbound: String? = null,
+    val reason: String = "",
+    val error: String? = null,
+)
+
+private fun parseCheckResult(raw: String): CheckResult {
+    val element = runCatching {
+        kotlinx.serialization.json.Json.parseToJsonElement(raw).let { it as? kotlinx.serialization.json.JsonObject }
+    }.getOrNull() ?: return CheckResult(error = "engine returned garbage")
+    (element["error"] as? kotlinx.serialization.json.JsonPrimitive)?.let {
+        return CheckResult(error = "engine: ${it.content}")
+    }
+    fun str(key: String): String = (element[key] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+    return CheckResult(
+        action = str("action"),
+        outbound = (element["outbound"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+        reason = str("reason"),
+    )
+}
+
+@Composable
+private fun formatAction(action: String, outbound: String?, state: AppState): String = when (action) {
+    "reject" -> stringResource(R.string.routecheck_action_reject)
+    "hijack-dns" -> stringResource(R.string.routecheck_action_hijack)
+    else -> {
+        val target = outbound?.let { tag ->
+            outboundDisplayLabel(tag, state)
+        } ?: stringResource(R.string.routes_unknown_traffic_proxy)
+        stringResource(R.string.routecheck_action_route, target)
+    }
+}
+
+/**
+ * Compiles the current state into the rule-table JSON the checker replays.
+ * Pure computation — no box, no tun, no service needed; the same function
+ * the VPN process feeds the kernel at connect time.
+ */
+private fun compileForCheck(state: AppState, context: android.content.Context): String? = runCatching {
+    val workDir = java.io.File(context.filesDir, "box").apply { mkdirs() }
+    val config = ConfigCompiler.compile(state, ruleSetDir = workDir)
+    (config["route"] as? kotlinx.serialization.json.JsonObject)?.get("rules").toString()
+}.getOrNull()

@@ -11,3 +11,4 @@ name = "aibox_core"
 jni = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rsxm-rules = { path = "../rsxm/crates/rsxm-rules" }

@@ -1,6 +1,18 @@
 [workspace]
 resolver = "2"
-members = ["aibox-core"]
+members = [
+    "aibox-core",
+    "rsxm/crates/rsxm-core",
+    "rsxm/crates/rsxm-rules",
+    "rsxm/crates/rsxm-dns",
+    "rsxm/crates/rsxm-tun",
+    "rsxm/crates/rsxm-agent",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "GPL-3.0"
 
 [profile.release]
 opt-level = "z"     # size-optimized for Android .so

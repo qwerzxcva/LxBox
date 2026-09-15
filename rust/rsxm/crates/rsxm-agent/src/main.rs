@@ -10,6 +10,9 @@
 //!   rsxm-agent --rules rules.json          boot and print module health
 //!   rsxm-agent --rules rules.json --route example.com [--package com.app]
 //!                                          dry-run one routing decision
+//!   rsxm-agent --check --rules compiled.json --route example.com [--port 443]
+//!                                          replay the *compiled* sing-box
+//!                                          rule table (route-check engine)
 
 use rsxm_core::{Health, Query, Rule, Scheduler};
 use rsxm_tun::{TunConfig, TunModule};
@@ -21,6 +24,9 @@ fn main() {
     let mut route_domain: Option<String> = None;
     let mut route_package: Option<String> = None;
     let mut route_ip: Option<String> = None;
+    let mut route_port: Option<u16> = None;
+    let mut route_network: Option<String> = None;
+    let mut check_mode = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -41,12 +47,57 @@ fn main() {
                 i += 1;
                 route_ip = args.get(i).cloned();
             }
+            "--port" => {
+                i += 1;
+                route_port = args.get(i).and_then(|s| s.parse().ok());
+            }
+            "--network" => {
+                i += 1;
+                route_network = args.get(i).cloned();
+            }
+            "--check" => {
+                check_mode = true;
+            }
             other => {
                 eprintln!("unknown argument: {other}");
                 std::process::exit(2);
             }
         }
         i += 1;
+    }
+
+    // Route-check mode replays a compiled sing-box table; it does not need
+    // the module lifecycle at all.
+    if check_mode {
+        let path = rules_path.unwrap_or_else(|| {
+            eprintln!("--check needs --rules <compiled.json>");
+            std::process::exit(2);
+        });
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|err| {
+            eprintln!("cannot read rules file: {err}");
+            std::process::exit(1);
+        });
+        let checker = match rsxm_rules::RouteChecker::from_json_array(&text) {
+            Ok(c) => c,
+            Err(err) => {
+                eprintln!("rules parse error: {err}");
+                std::process::exit(1);
+            }
+        };
+        let q = rsxm_rules::CheckQuery {
+            domain: route_domain,
+            destination_ip: route_ip.and_then(|s| s.parse().ok()),
+            port: route_port,
+            package: route_package,
+            network: route_network,
+            ..Default::default()
+        };
+        let outcome = checker.check(&q);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&outcome).unwrap_or_else(|_| "{}".into())
+        );
+        return;
     }
 
     let mut scheduler = Scheduler::new();
