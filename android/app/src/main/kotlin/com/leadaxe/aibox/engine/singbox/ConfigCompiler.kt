@@ -602,7 +602,13 @@ object ConfigCompiler {
             put("action", "route")
             put("outbound", DirectOutboundTag)
         })
-        state.routeRules.filter { it.enabled }.forEach { rule ->
+        // User rules go through the planner: package rules first, then
+        // name-based, then address-based — with redundant entries (keyword /
+        // suffix / exact-domain / CIDR, earlier rule > later rule) already
+        // removed. The core sees a table that is sorted and deduped, so its
+        // first-hit-wins scan is both cheaper and matches the documented
+        // routing flow (app → name → address).
+        RulePlanner.prepare(state.routeRules).forEach { rule ->
             when (rule.kind) {
                 RouteRule.KindJson -> addAll(compileJsonRule(rule))
                 else -> compileInlineRule(rule)?.let(::add)

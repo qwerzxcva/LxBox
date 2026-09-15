@@ -138,4 +138,5 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(files("libs/libbox.aar"))
     implementation(libs.zxing.android.embedded)
+    testImplementation(libs.junit)
 }
