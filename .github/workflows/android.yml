@@ -64,6 +64,24 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Set up Rust
+        # The aibox-core native helper (connection-snapshot fingerprinting)
+        # builds for aarch64-linux-android with the pinned NDK linker.
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Test and build aibox-core (Rust)
+        working-directory: rust
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: /usr/local/lib/android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+        run: |
+          set -euo pipefail
+          cargo test --locked
+          cargo build --release --locked --target aarch64-linux-android
+          install -D target/aarch64-linux-android/release/libaibox_core.so \
+            ../android/app/src/main/jniLibs/arm64-v8a/libaibox_core.so
+
       - name: Cache Gradle
         # Speeds up successive runs by ~30s on warm caches. Keyed on the lock
         # files so a libs.versions.toml bump invalidates the cache cleanly.

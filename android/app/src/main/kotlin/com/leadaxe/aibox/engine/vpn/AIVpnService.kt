@@ -300,14 +300,18 @@ class AIVpnService : VpnService() {
         // so skip pushes while nothing changed.
         scope.launch {
             engine.connections.collect { list ->
-                val fingerprint = list.joinToString(",") { c ->
-                    "${c.id}:${c.uplinkTotal}:${c.downlinkTotal}:${c.closedAt}"
-                }
+                val json = VpnIpc.connectionsToJson(list)
+                // Rust path first (fast native fingerprint); the plain JSON
+                // comparison is the fallback when the .so is unavailable.
+                val rust = com.leadaxe.aibox.engine.rust.AiboxCore.snapshotFingerprint(json)
+                val fingerprint = rust?.substringBefore(',').orEmpty()
+                    .ifBlank { list.joinToString(",") { c -> "${c.id}:${c.uplinkTotal}:${c.downlinkTotal}:${c.closedAt}" } }
                 if (fingerprint == lastConnectionsFingerprint) return@collect
                 lastConnectionsFingerprint = fingerprint
+                val payload = rust?.substringAfter(',') ?: json
                 val intent = Intent(VpnIpc.ACTION_CONNECTIONS)
                     .setPackage(packageName)
-                    .putExtra(VpnIpc.EXTRA_CONNECTIONS_JSON, VpnIpc.connectionsToJson(list))
+                    .putExtra(VpnIpc.EXTRA_CONNECTIONS_JSON, payload)
                 sendBroadcast(intent)
             }
         }
