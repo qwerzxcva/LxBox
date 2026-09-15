@@ -190,7 +190,7 @@ jobs:
             -javapkg=io.nekohasekai \
             -libname=box \
             -ldflags "-X github.com/sagernet/sing-box/constant.Version=$REF_TAG -s -w" \
-            -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,tfogo_checklinkname0" \
+            -tags "with_gvisor,with_quic,with_utls,with_clash_api,tfogo_checklinkname0" \
             ./experimental/libbox
 
           mkdir -p "$GITHUB_WORKSPACE/android/app/libs"
