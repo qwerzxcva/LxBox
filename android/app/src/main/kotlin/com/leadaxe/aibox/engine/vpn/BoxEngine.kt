@@ -149,17 +149,36 @@ class BoxEngine internal constructor(
     fun isRunning(): Boolean = server != null
 
     /**
-     * Forward the device's screen + lock state to the kernel.
-     *
-     * NOTE: sing-box-lx (the core we ship) dropped the upstream
-     * recordScreenState / recordLockState hooks from CommandServer; idle
-     * suspension is now driven by the LX energy model (route.lx_idle_*),
-     * which does not need client-side screen signals. Kept as a no-op so
-     * the service can keep calling it on screen events without branching.
+     * Forward the device's screen + lock state to the kernel (power-report
+     * model + idle suspension triggers). Both hooks exist on the libbox
+     * CommandServer of the reF1nd core we ship.
      */
     fun recordPowerState(screenOn: Boolean, deviceLocked: Boolean) {
-        // intentionally empty — see kdoc above.
+        val s = server ?: return
+        runCatching { s.recordScreenState(screenOn) }
+        runCatching { s.recordLockState(deviceLocked) }
     }
+
+    /**
+     * Deep suspend (Doze / screen off): closes idle connections and lets the
+     * kernel's pause manager stop its timers. `wake` resumes and
+     * `wakeNow(force)` additionally resets the network state — used after
+     * transitions where cached routes/sockets are known to be stale.
+     */
+    fun suspend() {
+        val s = server ?: return
+        runCatching { s.pause() }
+    }
+
+    fun resume(forceNetworkReset: Boolean = false) {
+        val s = server ?: return
+        runCatching {
+            if (forceNetworkReset) s.wakeNow() else s.wake()
+        }
+    }
+
+    /** Quick network-change recovery: drop every active connection. */
+    fun closeAllForRecovery(): Result<Unit> = closeAllConnections()
 
     fun start(state: AppState): Job = launchCommand { runStart(state) }
 

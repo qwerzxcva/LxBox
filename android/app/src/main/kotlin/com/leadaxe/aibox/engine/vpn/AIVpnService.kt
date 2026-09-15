@@ -47,8 +47,25 @@ class AIVpnService : VpnService() {
                     engine.recordPowerState(screenOn = true, deviceLocked = false)
                 android.content.Intent.ACTION_SCREEN_OFF ->
                     engine.recordPowerState(screenOn = false, deviceLocked = true)
-                android.content.Intent.ACTION_USER_PRESENT ->
+                android.content.Intent.ACTION_USER_PRESENT -> {
                     engine.recordPowerState(screenOn = true, deviceLocked = false)
+                    // Wake recovery: Doze/screen-off leaves stale sockets; a
+                    // wake without network reset re-arms the kernel timers
+                    // and lets the next push re-evaluate.
+                    engine.resume()
+                }
+                android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
+                    // Deep suspend, FlClash/Bettbox style: only once the OS
+                    // itself entered Doze (not on every screen-off) do we
+                    // pause the tunnel and close idle connections.
+                    val pm = getSystemService(android.os.PowerManager::class.java)
+                    val dozing = pm?.isDeviceIdleMode == true
+                    if (dozing) {
+                        engine.suspend()
+                    } else {
+                        engine.resume(forceNetworkReset = true)
+                    }
+                }
                 VpnIpc.ACTION_REQUEST_SYNC ->
                     // A fresh UI process asked for the current state; reply on
                     // the same channel the periodic updates use.
@@ -77,6 +94,11 @@ class AIVpnService : VpnService() {
                     engine.connectionsPaused =
                         intent?.getBooleanExtra(VpnIpc.EXTRA_CONNECTIONS_PAUSED, false) ?: false
                 }
+                VpnIpc.ACTION_NETWORK_RECOVERED -> {
+                    // Close every live connection so nothing survives the
+                    // interface change half-dead (quickResponse pattern).
+                    engine.closeAllForRecovery()
+                }
             }
         }
     }
@@ -98,11 +120,13 @@ class AIVpnService : VpnService() {
             addAction(android.content.Intent.ACTION_SCREEN_ON)
             addAction(android.content.Intent.ACTION_SCREEN_OFF)
             addAction(android.content.Intent.ACTION_USER_PRESENT)
+            addAction(android.os.PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
             // UI-process requests (crossing the :vpn process boundary).
             addAction(VpnIpc.ACTION_REQUEST_SYNC)
             addAction(VpnIpc.ACTION_PING)
             addAction(VpnIpc.ACTION_CLOSE_CONNECTION)
             addAction(VpnIpc.ACTION_CONNECTIONS_PAUSED)
+            addAction(VpnIpc.ACTION_NETWORK_RECOVERED)
         }
         // RECEIVER_NOT_EXPORTED is mandatory on Android 13+ for runtime
         // registered receivers, otherwise the system throws on register.

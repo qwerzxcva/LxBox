@@ -201,6 +201,18 @@
     <!-- settings -->
     <string name="settings_section_appearance">外观</string>
     <string name="settings_section_tunnel">隧道</string>
+    <string name="settings_section_power">电池与后台</string>
+    <string name="settings_battery_ok">AIBox 已免除电池优化 — 系统不会在后台冻结隧道。</string>
+    <string name="settings_battery_prompt">AIBox 受电池优化限制：系统可能在后冻结隧道。</string>
+    <string name="settings_battery_action">免除电池优化</string>
+    <string name="settings_battery_desc">在 ColorOS/realme UI 等激进清理 VPN 应用的厂商系统上推荐开启。Doze 深暂停已自动处理：进入 Doze 时隧道暂停，唤醒时自动恢复。</string>
+    <string name="settings_tls_fragment">TLS 分片（抗 DPI）</string>
+    <string name="settings_tls_fragment_none">关闭</string>
+    <string name="settings_tls_fragment_record">记录分割（快）</string>
+    <string name="settings_tls_fragment_packet">包分割（强）</string>
+    <string name="settings_tls_fragment_desc">把 TLS ClientHello 切分，让中间盒无法正则匹配 SNI。记录分割开销小优先使用；包分割更强但更慢——仅在被墙网络开启。</string>
+    <string name="settings_ntp">时钟同步（NTP）</string>
+    <string name="settings_ntp_desc">Reality 与 shadowsocks-2022 都会拒绝超出 ±30 秒时钟窗口的握手；内核每 30 分钟经 SNTP 同步一次，避免「节点突然失效」。</string>
     <string name="settings_section_sniffer">嗅探</string>
     <string name="settings_section_logging">日志</string>
     <string name="settings_section_language">语言</string>

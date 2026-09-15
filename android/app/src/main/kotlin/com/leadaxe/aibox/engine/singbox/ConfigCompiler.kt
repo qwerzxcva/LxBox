@@ -18,6 +18,7 @@ import com.leadaxe.aibox.app.defaultUrlTestInterval
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -85,6 +86,19 @@ object ConfigCompiler {
             }
         }
         put("dns", compileDns(state, ruleSetDir))
+        if (state.enableNtp) {
+            // Reality session tickets and SS2022's ±30 s replay window both
+            // derive from wall-clock time; a drifted device clock shows up
+            // as "node suddenly stopped working". The core syncs via SNTP
+            // itself when enabled.
+            putJsonObject("ntp") {
+                put("enabled", true)
+                put("server", state.ntpServer.ifBlank { "time.apple.com" })
+                put("server_port", 123)
+                put("interval", "30m")
+                put("detour", DirectOutboundTag)
+            }
+        }
         putJsonArray("inbounds") {
             add(compileTunInbound(state))
             // Subscription fetches ride the same DNS/routing rules as normal
@@ -454,6 +468,10 @@ object ConfigCompiler {
                 if (state.udpOverTcp && profile.type == "vless" && "packet_encoding" !in parsed) {
                     put("packet_encoding", JsonPrimitive("packetaddr"))
                 }
+                // DPI hardening: split the TLS ClientHello so SNI regexes
+                // and reassembly-based detectors lose their anchor. Applied
+                // only to nodes that actually speak TLS.
+                applyTlsFragment(state, parsed)
             }))
         }
         // User-configured groups, after their constituent nodes.
@@ -531,6 +549,26 @@ object ConfigCompiler {
                 }
             }
         }
+
+    /**
+     * Injects TLS fragmentation into a node's `tls` block when the global
+     * DPI-hardening mode is on. `record` maps to `record_fragment` (extra
+     * TLS records, cheap); `packet` maps to `fragment` (splits across TCP
+     * segments). Nodes that set their own fragment flags win.
+     */
+    private fun MutableMap<String, JsonElement>.applyTlsFragment(state: AppState, node: JsonObject) {
+        if (state.tlsFragmentMode == "none") return
+        val tls = node["tls"]?.jsonObject ?: return
+        val updated = tls.toMutableMap()
+        when (state.tlsFragmentMode) {
+            "record" -> if ("record_fragment" !in tls) updated["record_fragment"] = JsonPrimitive(true)
+            "packet" -> if ("fragment" !in tls) updated["fragment"] = JsonPrimitive(true)
+        }
+        if (state.tlsFragmentFallbackDelay.isNotBlank() && "fragment_fallback_delay" !in tls) {
+            updated["fragment_fallback_delay"] = JsonPrimitive(state.tlsFragmentFallbackDelay)
+        }
+        put("tls", JsonObject(updated))
+    }
 
     // ----------------------------------------------------------------- route
 

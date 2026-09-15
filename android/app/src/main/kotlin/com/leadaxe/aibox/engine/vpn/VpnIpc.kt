@@ -27,6 +27,7 @@ object VpnIpc {
     const val ACTION_CONNECTIONS = "com.leadaxe.aibox.vpn.CONNECTIONS"
     const val ACTION_CLOSE_CONNECTION = "com.leadaxe.aibox.vpn.CLOSE_CONNECTION"
     const val ACTION_CONNECTIONS_PAUSED = "com.leadaxe.aibox.vpn.CONNECTIONS_PAUSED"
+    const val ACTION_NETWORK_RECOVERED = "com.leadaxe.aibox.vpn.NETWORK_RECOVERED"
 
     const val EXTRA_STATE = "state"
     const val EXTRA_ERROR = "error"

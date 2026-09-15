@@ -82,6 +82,15 @@ class NetworkMonitor(
         lastReloadTrigger = now
         reloadJob = scope.launch {
             kotlinx.coroutines.delay(DEBOUNCE_MS)
+            // quickResponse (Bettbox/FlClash): a network transition leaves
+            // half-dead sockets that each take a timeout to die — close
+            // everything first so the next request dials fresh.
+            runCatching {
+                appCtx.sendBroadcast(
+                    android.content.Intent(VpnIpc.ACTION_NETWORK_RECOVERED)
+                        .setPackage(appCtx.packageName),
+                )
+            }
             val state = store.current
             // Ask the service to push a fresh config through the running
             // tunnel. We can't go through BoxController here because the

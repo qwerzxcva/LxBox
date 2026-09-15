@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -129,6 +130,30 @@ fun SettingsScreen() {
                     checked = state.hevTunMode,
                     onCheckedChange = { v -> store.update { it.copy(hevTunMode = v) } },
                 )
+                SingleChoiceChips(
+                    label = stringResource(R.string.settings_tls_fragment),
+                    options = listOf("none", "record", "packet"),
+                    selected = state.tlsFragmentMode,
+                    onSelect = { v -> store.update { it.copy(tlsFragmentMode = v) } },
+                    display = {
+                        when (it) {
+                            "record" -> stringResource(R.string.settings_tls_fragment_record)
+                            "packet" -> stringResource(R.string.settings_tls_fragment_packet)
+                            else -> stringResource(R.string.settings_tls_fragment_none)
+                        }
+                    },
+                )
+                Text(
+                    stringResource(R.string.settings_tls_fragment_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SwitchRow(
+                    label = stringResource(R.string.settings_ntp),
+                    supporting = stringResource(R.string.settings_ntp_desc),
+                    checked = state.enableNtp,
+                    onCheckedChange = { v -> store.update { it.copy(enableNtp = v) } },
+                )
                 SwitchRow(
                     label = stringResource(R.string.settings_local_socks5),
                     supporting = stringResource(R.string.settings_local_socks5_desc),
@@ -236,6 +261,42 @@ fun SettingsScreen() {
                     supporting = stringResource(R.string.settings_cache_file_desc),
                     checked = state.enableCacheFile,
                     onCheckedChange = { v -> store.update { it.copy(enableCacheFile = v) } },
+                )
+            }
+        }
+
+        item {
+            SettingsSection(stringResource(R.string.settings_section_power)) {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val pm = ctx.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+                val ignoring = pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true
+                Text(
+                    text = stringResource(
+                        if (ignoring) R.string.settings_battery_ok
+                        else R.string.settings_battery_prompt,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (!ignoring) {
+                    FilledTonalButton(
+                        onClick = {
+                            runCatching {
+                                ctx.startActivity(
+                                    android.content.Intent(
+                                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                        android.net.Uri.parse("package:${ctx.packageName}"),
+                                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
+                        },
+                    ) {
+                        Text(stringResource(R.string.settings_battery_action))
+                    }
+                }
+                Text(
+                    stringResource(R.string.settings_battery_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

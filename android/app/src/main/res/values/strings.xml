@@ -203,6 +203,18 @@
     <!-- settings -->
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_tunnel">Tunnel</string>
+    <string name="settings_section_power">Battery &amp; background</string>
+    <string name="settings_battery_ok">Battery optimization is disabled for AIBox — the system won\'t freeze the tunnel in the background.</string>
+    <string name="settings_battery_prompt">AIBox is subject to battery optimization: the system may freeze the tunnel in the background.</string>
+    <string name="settings_battery_action">Exempt from battery optimization</string>
+    <string name="settings_battery_desc">Recommended on ColorOS/realme UI and other vendors that aggressively kill VPN apps. Doze deep-suspend is handled automatically either way: the tunnel is paused in Doze and resumes on wake.</string>
+    <string name="settings_tls_fragment">TLS fragmentation (DPI hardening)</string>
+    <string name="settings_tls_fragment_none">Off</string>
+    <string name="settings_tls_fragment_record">Record split (fast)</string>
+    <string name="settings_tls_fragment_packet">Packet split (strong)</string>
+    <string name="settings_tls_fragment_desc">Splits the TLS ClientHello so middleboxes cannot regex-match the SNI. Record split is cheap and preferred; packet split is stronger but slower — enable only on censored networks.</string>
+    <string name="settings_ntp">Clock sync (NTP)</string>
+    <string name="settings_ntp_desc">Reality and shadowsocks-2022 reject handshakes outside a ±30 s clock window; the core syncs via SNTP every 30 minutes to prevent \'node suddenly broke\'.</string>
     <string name="settings_section_sniffer">Sniffer</string>
     <string name="settings_section_logging">Logging</string>
     <string name="settings_section_language">Language</string>

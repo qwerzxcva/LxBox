@@ -176,15 +176,22 @@ object ShareLinkParser {
 
     private fun kotlinx.serialization.json.JsonObjectBuilder.tls(query: Map<String, String>, isTls: Boolean) {
         if (!isTls) return
+        val reality = query["security"] == "reality"
         put("tls", buildJsonObject {
             put("enabled", true)
             query["sni"]?.let { put("server_name", it) }
             query["alpn"]?.let { put("alpn", buildJsonArray { it.split(",").forEach(::add) }) }
-            if (query["security"] == "reality" || query["fp"] != null) {
+            query["fp"]?.let {
                 put("utls", buildJsonObject {
                     put("enabled", true)
-                    put("fingerprint", query["fp"] ?: "chrome")
+                    put("fingerprint", it)
                 })
+            }
+            // reality is a distinct security mode: it needs a public key,
+            // and plain TLS links that merely carry a fingerprint must not
+            // be turned into reality blocks (the core rejects reality
+            // without public_key, so the node would fail to load).
+            if (reality) {
                 put("reality", buildJsonObject {
                     put("enabled", true)
                     query["pbk"]?.let { put("public_key", it) }

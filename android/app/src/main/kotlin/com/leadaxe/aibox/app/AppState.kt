@@ -116,6 +116,21 @@ data class AppState(
     val appendLogToFile: Boolean = true,
     /** Persist rule-set / fake-IP caches to disk (experimental.cache_file). */
     val enableCacheFile: Boolean = true,
+    /**
+     * DPI hardening for TLS outbounds (VLESS+Reality/TLS). `none` = off;
+     * `record` splits the ClientHello into TLS records (cheap, preferred);
+     * `packet` splits it across TCP segments (stronger against SNI
+     * regexes, slower — for censored networks only).
+     */
+    val tlsFragmentMode: String = "none",
+    val tlsFragmentFallbackDelay: String = "",
+    /**
+     * SNTP sync inside the core. Reality and SS2022 both reject handshakes
+     * outside a narrow clock window; a drifting device clock otherwise
+     * reads as "the node broke".
+     */
+    val enableNtp: Boolean = true,
+    val ntpServer: String = "time.apple.com",
 
     // ---------------------------------------------------------- per-app
     val perAppProxyEnabled: Boolean = false,
