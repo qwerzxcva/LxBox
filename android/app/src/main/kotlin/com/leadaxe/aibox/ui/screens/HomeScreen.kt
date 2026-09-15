@@ -40,9 +40,9 @@ import com.leadaxe.aibox.app.ClashModeRule
 import com.leadaxe.aibox.app.ClashModes
 import com.leadaxe.aibox.app.MainActivity
 import com.leadaxe.aibox.engine.vpn.BoxController
-import com.leadaxe.aibox.engine.vpn.BoxEngine
 import com.leadaxe.aibox.engine.vpn.BoxRuntimeSnapshot
 import com.leadaxe.aibox.engine.vpn.BoxState
+import com.leadaxe.aibox.engine.vpn.VpnRelay
 
 @Composable
 fun HomeScreen(
@@ -51,10 +51,11 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
+    val relay = remember { (context.applicationContext as AIBoxApp).vpnRelay }
     val appState by store.state.collectAsState()
-    val engine = BoxEngine.shared()
-    val boxState = engine?.state?.collectAsState()?.value ?: BoxState.Idle
-    val runtime = engine?.runtime?.collectAsState()?.value ?: BoxRuntimeSnapshot()
+    // The engine lives in the :vpn process; the UI sees it through the relay.
+    val boxState = relay.state.collectAsState().value ?: BoxState.Idle
+    val runtime = relay.runtime.collectAsState().value
     val activity = context as? MainActivity
 
     Column(
@@ -98,7 +99,7 @@ fun HomeScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        StatusCard(state = boxState, runtime = runtime)
+        StatusCard(state = boxState, runtime = runtime ?: BoxRuntimeSnapshot())
 
         ClashModeRow(
             current = appState.clashMode,

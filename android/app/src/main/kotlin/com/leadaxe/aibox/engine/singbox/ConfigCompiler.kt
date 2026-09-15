@@ -140,13 +140,12 @@ object ConfigCompiler {
                 put("detour", DirectOutboundTag)
             }
             "group" -> {
-                // sing-box-lx extension: several resolvers behind one tag.
-                // Members are referenced by tag; order is not meaningful.
+                // reF1nd kernel DNS group: fans every query out to all
+                // members in parallel and answers with the fastest response
+                // (`fastest response from <tag>`). There is no mode/TTL
+                // config — the old sing-box-lx group semantics are gone.
                 put("type", "group")
                 putJsonArray("servers") { server.groupServers.forEach(::add) }
-                put("mode", server.groupMode.ifBlank { "stable" })
-                if (server.groupErrorTtl.isNotBlank()) put("error_ttl", server.groupErrorTtl)
-                if (server.groupWinTtl.isNotBlank()) put("win_ttl", server.groupWinTtl)
             }
             else -> {
                 put("type", server.type)
@@ -310,6 +309,18 @@ object ConfigCompiler {
 
     // ------------------------------------------------------------------ tun
 
+    /**
+     * TUN inbound. Only fields the user actually uses are emitted — the
+     * kernel allocates state for every option it sees, so a lean inbound is
+     * the cheapest power saving there is. Notables:
+     *
+     *  - `strict_route` is deliberately omitted: `false` is the default and
+     *    a false value costs a policy-routing setup on some kernels.
+     *  - `endpoint_independent_nat` is off by default; it pins extra state
+     *    per flow and only matters for game consoles behind the tunnel.
+     *  - `stack: mixed` is only set when the user has not picked gvisor —
+     *    `mixed` costs an extra stack instance alongside system.
+     */
     private fun compileTunInbound(state: AppState): JsonObject = buildJsonObject {
         put("type", "tun")
         put("tag", TunInboundTag)
@@ -321,9 +332,7 @@ object ConfigCompiler {
             }
         }
         put("auto_route", true)
-        put("strict_route", false)
         put("stack", "mixed")
-        put("endpoint_independent_nat", true)
         // Power-saving: bypass the tun entirely for traffic that's already
         // on the LAN or destined for the local device. Without this every
         // LAN packet (Chromecast discovery, AirPlay, SMB, mDNS, printer

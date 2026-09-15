@@ -8,6 +8,8 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.ParcelFileDescriptor
 
+import io.nekohasekai.libbox.AutoRedirectHandler
+import io.nekohasekai.libbox.AutoRedirectSession
 import io.nekohasekai.libbox.BridgeOptions
 import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.ConnectionOwner
@@ -76,6 +78,7 @@ class AIPlatform(private val context: Context) : PlatformInterface {
     override fun openTun(options: TunOptions): Int = openTunFromEngine()
 
     override fun useProcFS(): Boolean = false
+    override fun usePlatformAutoRedirect(): Boolean = false
     override fun usePlatformBridge(): Boolean = false
     override fun usePlatformShell(): Boolean = false
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = false
@@ -140,6 +143,9 @@ class AIPlatform(private val context: Context) : PlatformInterface {
 
     override fun createBridge(options: BridgeOptions): BridgeSession =
         throw UnsupportedOperationException("no bridges on Android")
+
+    override fun createAutoRedirect(config: ByteArray, handler: AutoRedirectHandler): AutoRedirectSession =
+        throw UnsupportedOperationException("no auto-redirect on Android")
 
     override fun findConnectionOwner(
         ipVersion: Int, sourceAddress: String, sourcePort: Int, destinationAddress: String, destinationPort: Int,

@@ -50,6 +50,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val app = application as AIBoxApp
         controller = BoxController(this, app.appStateStore)
+        // Start cross-process state syncing before the first frame so the
+        // Home dial reflects a tunnel that was already running.
+        app.vpnRelay.startListening()
         setContent {
             val state by app.appStateStore.state.collectAsState()
             LocalizedApp(language = state.language) {

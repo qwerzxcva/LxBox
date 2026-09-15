@@ -42,9 +42,8 @@ object ShareLinkParser {
     fun parse(line: String): Result {
         val trimmed = line.trim()
         if (trimmed.isEmpty()) return Result.Err("empty", line)
-        // A single line may itself be a base64-wrapped link (vmess:// is the
-        // classic case; some panels wrap vless/trojan the same way). Decode
-        // first and fall through to the URL parser.
+        // A single line may itself be a base64-wrapped link; decode first
+        // and fall through to the URL parser.
         val candidate = runCatching { decodeBase64(trimmed) }
             .getOrNull()
             ?.takeIf { it.contains("://") }
@@ -52,11 +51,7 @@ object ShareLinkParser {
         return try {
             when {
                 candidate.startsWith("vless://") -> parseVless(candidate)
-                candidate.startsWith("vmess://") -> parseVmess(candidate)
-                candidate.startsWith("trojan://") -> parseTrojan(candidate)
                 candidate.startsWith("ss://") -> parseSs(candidate)
-                candidate.startsWith("hysteria2://") || candidate.startsWith("hy2://") -> parseHysteria2(candidate)
-                candidate.startsWith("tuic://") -> parseTuic(candidate)
                 candidate.startsWith("{") || candidate.startsWith("[") -> parseJsonOutbound(candidate)
                 else -> Result.Err("unsupported scheme", line)
             }
@@ -217,82 +212,6 @@ object ShareLinkParser {
         return Result.Ok("vless", config, nameFromUrl(uri, url))
     }
 
-    private fun parseVmess(url: String): Result {
-        val body = url.removePrefix("vmess://")
-        val decoded = runCatching { String(Base64.getDecoder().decode(body), StandardCharsets.UTF_8) }
-            .getOrElse { return Result.Err("vmess base64 decode failed", url) }
-        val obj = runCatching { json.parseToJsonElement(decoded) }.getOrNull() as? JsonObject
-            ?: return Result.Err("vmess body is not a JSON object", url)
-        val host = obj.string("add") ?: return Result.Err("vmess missing add", url)
-        val port = obj.int("port") ?: return Result.Err("vmess missing port", url)
-        val uuid = obj.string("id") ?: return Result.Err("vmess missing id", url)
-        val alterId = obj.int("aid") ?: 0
-        val security = obj.string("scy") ?: "auto"
-        val network = obj.string("net") ?: "tcp"
-        val isTls = obj.string("tls") == "tls"
-
-        val config = buildConfigJson {
-            put("server", host)
-            put("server_port", port)
-            put("uuid", uuid)
-            put("alter_id", alterId)
-            put("security", security)
-            if (network == "ws") {
-                put("transport", buildJsonObject {
-                    put("type", "ws")
-                    put("path", obj.string("path") ?: "/")
-                    obj.string("host")?.let { put("headers", buildJsonObject { put("Host", it) }) }
-                })
-            } else if (network == "grpc") {
-                put("transport", buildJsonObject {
-                    put("type", "grpc")
-                    obj.string("path")?.let { put("service_name", it) }
-                })
-            }
-            if (isTls) {
-                put("tls", buildJsonObject {
-                    put("enabled", true)
-                    obj.string("sni")?.let { put("server_name", it) }
-                    obj.string("alpn")?.let { put("alpn", buildJsonArray { it.split(",").forEach(::add) }) }
-                })
-            }
-        }
-        val name = obj.string("ps")?.takeIf { it.isNotBlank() } ?: defaultName(host, port)
-        return Result.Ok("vmess", config, name)
-    }
-
-    private fun parseTrojan(url: String): Result {
-        val uri = URI(url)
-        val (host, port) = hostPort(uri)
-        val q = uri.queryParams()
-        val isTls = q["security"] != "none"
-        val config = buildConfigJson {
-            put("server", host)
-            put("server_port", port)
-            put("password", uri.userInfo.substringBefore(':'))
-            if (q["type"] == "ws") {
-                put("transport", buildJsonObject {
-                    put("type", "ws")
-                    put("path", q["path"] ?: "/")
-                    q["host"]?.let { put("headers", buildJsonObject { put("Host", it) }) }
-                })
-            } else if (q["type"] == "grpc") {
-                put("transport", buildJsonObject {
-                    put("type", "grpc")
-                    q["serviceName"]?.let { put("service_name", it) }
-                })
-            }
-            if (isTls) {
-                put("tls", buildJsonObject {
-                    put("enabled", true)
-                    q["sni"]?.let { put("server_name", it) }
-                    q["alpn"]?.let { put("alpn", buildJsonArray { it.split(",").forEach(::add) }) }
-                })
-            }
-        }
-        return Result.Ok("trojan", config, nameFromUrl(uri, url))
-    }
-
     private fun parseSs(url: String): Result {
         val uri = URI(url)
         val userInfo = uri.rawUserInfo
@@ -312,53 +231,6 @@ object ShareLinkParser {
             if (!plugin.isNullOrEmpty()) put("plugin", plugin)
         }
         return Result.Ok("shadowsocks", config, nameFromUrl(uri, url))
-    }
-
-    private fun parseHysteria2(url: String): Result {
-        val uri = URI(url)
-        val (host, port) = hostPort(uri)
-        val q = uri.queryParams()
-        val password = uri.userInfo?.substringBefore(':')
-            ?: return Result.Err("hysteria2 missing password", url)
-        val config = buildConfigJson {
-            put("server", host)
-            put("server_port", port)
-            put("password", password)
-            q["obfs"]?.let { obfs ->
-                put("obfs", buildJsonObject {
-                    put("type", obfs)
-                    q["obfs-password"]?.let { p -> put("password", p) }
-                })
-            }
-            put("tls", buildJsonObject {
-                put("enabled", true)
-                q["sni"]?.let { put("server_name", it) }
-                q["alpn"]?.let { put("alpn", buildJsonArray { it.split(",").forEach(::add) }) }
-            })
-        }
-        return Result.Ok("hysteria2", config, nameFromUrl(uri, url))
-    }
-
-    private fun parseTuic(url: String): Result {
-        val uri = URI(url)
-        val (host, port) = hostPort(uri)
-        val q = uri.queryParams()
-        val userPass = uri.userInfo ?: return Result.Err("tuic missing userinfo", url)
-        val uuid = userPass.substringBefore(':')
-        val password = userPass.substringAfter(':')
-        val config = buildConfigJson {
-            put("server", host)
-            put("server_port", port)
-            put("uuid", uuid)
-            put("password", password)
-            put("congestion_control", q["congestion_control"] ?: "cubic")
-            q["alpn"]?.let { put("alpn", buildJsonArray { it.split(",").forEach(::add) }) }
-            put("tls", buildJsonObject {
-                put("enabled", true)
-                q["sni"]?.let { put("server_name", it) }
-            })
-        }
-        return Result.Ok("tuic", config, nameFromUrl(uri, url))
     }
 
     private fun parseJsonOutbound(raw: String): Result {

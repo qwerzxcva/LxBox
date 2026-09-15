@@ -18,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground VPN service. Owns the live tun fd and the [BoxEngine] that talks
@@ -46,6 +47,26 @@ class AIVpnService : VpnService() {
                     engine.recordPowerState(screenOn = false, deviceLocked = true)
                 android.content.Intent.ACTION_USER_PRESENT ->
                     engine.recordPowerState(screenOn = true, deviceLocked = false)
+                VpnIpc.ACTION_REQUEST_SYNC ->
+                    // A fresh UI process asked for the current state; reply on
+                    // the same channel the periodic updates use.
+                    broadcastState(engine.state.value)
+                VpnIpc.ACTION_PING -> {
+                    val nodeId = intent?.getStringExtra(VpnIpc.EXTRA_PING_NODE_ID) ?: return
+                    val nodeTag = intent.getStringExtra(VpnIpc.EXTRA_PING_NODE_TAG) ?: return
+                    val url = intent.getStringExtra(VpnIpc.EXTRA_PING_URL) ?: return
+                    val reply = Intent(VpnIpc.ACTION_PING_RESULT).setPackage(packageName)
+                        .putExtra(VpnIpc.EXTRA_PING_NODE_ID, nodeId)
+                    scope.launch {
+                        val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            engine.pingOutbound(nodeTag, url)
+                        }
+                        if (result.isFailure) {
+                            reply.putExtra(VpnIpc.EXTRA_PING_ERROR, result.exceptionOrNull()?.message ?: "failed")
+                        }
+                        sendBroadcast(reply)
+                    }
+                }
             }
         }
     }
@@ -67,6 +88,9 @@ class AIVpnService : VpnService() {
             addAction(android.content.Intent.ACTION_SCREEN_ON)
             addAction(android.content.Intent.ACTION_SCREEN_OFF)
             addAction(android.content.Intent.ACTION_USER_PRESENT)
+            // UI-process requests (crossing the :vpn process boundary).
+            addAction(VpnIpc.ACTION_REQUEST_SYNC)
+            addAction(VpnIpc.ACTION_PING)
         }
         // RECEIVER_NOT_EXPORTED is mandatory on Android 13+ for runtime
         // registered receivers, otherwise the system throws on register.
@@ -229,6 +253,7 @@ class AIVpnService : VpnService() {
         stateJob?.cancel()
         stateJob = scope.launch {
             engine.state.collect { st ->
+                broadcastState(st)
                 when (st) {
                     is BoxState.Connected -> updateNotificationConnected()
                     is BoxState.Error -> {
@@ -240,6 +265,33 @@ class AIVpnService : VpnService() {
                 }
             }
         }
+        // Runtime counters ride a second, lighter broadcast so the UI can
+        // update its traffic readout without the process-locals the engine
+        // keeps in memory.
+        scope.launch {
+            engine.runtime.collect { rt ->
+                val intent = Intent(VpnIpc.ACTION_RUNTIME)
+                    .setPackage(packageName)
+                    .putExtra(VpnIpc.EXTRA_UPLINK, rt.uplinkBytes)
+                    .putExtra(VpnIpc.EXTRA_DOWNLINK, rt.downlinkBytes)
+                    .putExtra(VpnIpc.EXTRA_UPLINK_TOTAL, rt.uplinkTotalBytes)
+                    .putExtra(VpnIpc.EXTRA_DOWNLINK_TOTAL, rt.downlinkTotalBytes)
+                    .putExtra(VpnIpc.EXTRA_GOROUTINES, rt.goroutines)
+                    .putExtra(VpnIpc.EXTRA_MEMORY, rt.memoryBytes)
+                    .putExtra(VpnIpc.EXTRA_CONNECTIONS_IN, rt.connectionsIn)
+                    .putExtra(VpnIpc.EXTRA_CONNECTIONS_OUT, rt.connectionsOut)
+                sendBroadcast(intent)
+            }
+        }
+    }
+
+    private fun broadcastState(st: BoxState) {
+        val intent = Intent(VpnIpc.ACTION_STATE)
+            .setPackage(packageName)
+            .putExtra(VpnIpc.EXTRA_STATE, VpnIpc.stateName(st))
+        if (st is BoxState.Error) intent.putExtra(VpnIpc.EXTRA_ERROR, st.message)
+        if (st is BoxState.Connected) intent.putExtra(VpnIpc.EXTRA_SINCE, st.sinceEpochMillis)
+        sendBroadcast(intent)
     }
 
     private fun updateNotificationConnected() {

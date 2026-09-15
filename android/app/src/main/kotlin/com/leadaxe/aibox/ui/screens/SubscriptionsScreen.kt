@@ -56,11 +56,9 @@ import com.leadaxe.aibox.app.OutboundProfile
 import com.leadaxe.aibox.app.Subscription
 import com.leadaxe.aibox.engine.share.ShareLinkParser
 import com.leadaxe.aibox.engine.share.SubscriptionFetcher
-import com.leadaxe.aibox.engine.vpn.BoxEngine
+import com.leadaxe.aibox.engine.vpn.VpnRelay
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun SubscriptionsScreen() {
@@ -76,9 +74,24 @@ fun SubscriptionsScreen() {
     var pasteDialog by remember { mutableStateOf(false) }
     var creatingFolder by remember { mutableStateOf(false) }
     var nodesExpanded by remember { mutableStateOf(false) }
+    val relay = remember { app.vpnRelay }
+    // Latency results come back through the relay from the :vpn process.
+    val remotePings by relay.pings.collectAsState()
     var pingResults by remember { mutableStateOf<Map<String, PingState>>(emptyMap()) }
     var editingGroup: com.leadaxe.aibox.app.OutboundGroup? by remember { mutableStateOf(null) }
     var creatingGroup by remember { mutableStateOf(false) }
+
+    // Remote ping answers (from the :vpn process) fold into the local map.
+    androidx.compose.runtime.LaunchedEffect(remotePings) {
+        val mapped = remotePings.mapValues { (_, r) ->
+            when {
+                r.delayMillis != null -> PingState.Ok(r.delayMillis)
+                r.error != null -> PingState.Failed(r.error)
+                else -> PingState.Triggered
+            }
+        }
+        pingResults = pingResults + mapped
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -212,21 +225,13 @@ fun SubscriptionsScreen() {
                     if (state.outbounds.isNotEmpty()) {
                         if (nodesExpanded) {
                             TextButton(onClick = {
-                                // Sequential probes: the kernel reports each
-                                // result independently, but fanning out one
-                                // at a time keeps the list readable and
-                                // avoids a burst of connections.
+                                // Sequential probes: requests go to the :vpn
+                                // process one at a time, keeping the list
+                                // readable and avoiding a connection burst.
                                 scope.launch {
                                     for (node in state.outbounds) {
-                                        pingResults = pingResults + (node.id to PingState.Running)
-                                        val result = withContext(Dispatchers.IO) {
-                                            BoxEngine.shared()?.pingOutbound(node.tag, state.speedTestUrl)
-                                        }
-                                        pingResults = pingResults + (node.id to when {
-                                            result == null -> PingState.Failed("engine not running")
-                                            result.isSuccess -> PingState.Ok(result.getOrThrow())
-                                            else -> PingState.Failed(result.exceptionOrNull()?.message ?: "failed")
-                                        })
+                                        pingResults = pingResults + (node.id to PingState.Triggered)
+                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
                                     }
                                 }
                             }) { Text(stringResource(R.string.subs_ping_all)) }
@@ -251,15 +256,8 @@ fun SubscriptionsScreen() {
                         onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
                         onPing = {
                             scope.launch {
-                                pingResults = pingResults + (node.id to PingState.Running)
-                                val result = withContext(Dispatchers.IO) {
-                                    BoxEngine.shared()?.pingOutbound(node.tag, state.speedTestUrl)
-                                }
-                                pingResults = pingResults + (node.id to when {
-                                    result == null -> PingState.Failed("engine not running")
-                                    result.isSuccess -> PingState.Ok(result.getOrThrow())
-                                    else -> PingState.Failed(result.exceptionOrNull()?.message ?: "failed")
-                                })
+                                pingResults = pingResults + (node.id to PingState.Triggered)
+                                relay.requestPing(node.id, node.tag, state.speedTestUrl)
                             }
                         },
                     )
@@ -468,6 +466,8 @@ private fun NodeRow(
 /** Outcome of a latency probe against one outbound. */
 private sealed interface PingState {
     data object Running : PingState
+    /** Probe fired asynchronously; fresh delay arrives via group snapshots. */
+    data object Triggered : PingState
     data class Ok(val delayMillis: Int) : PingState
     data class Failed(val reason: String) : PingState
 }
@@ -478,6 +478,7 @@ private fun PingBadge(state: PingState?) {
     if (state == null) return
     val text = when (state) {
         PingState.Running -> stringResource(R.string.subs_ping_running)
+        PingState.Triggered -> stringResource(R.string.subs_ping_running)
         is PingState.Ok -> stringResource(R.string.subs_ping_result, state.delayMillis)
         is PingState.Failed -> stringResource(R.string.subs_ping_failed)
     }

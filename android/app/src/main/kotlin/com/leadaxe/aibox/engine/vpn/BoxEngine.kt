@@ -203,17 +203,14 @@ class BoxEngine internal constructor(
     }
 
     /**
-     * Measures the latency of one outbound through the running kernel.
-     * Blocks for up to [timeoutMillis]; call from a background dispatcher.
+     * Latency probe. The reF1nd kernel exposes `urlTest(tag)` (async) rather
+     * than lx's blocking `urlTestOutbound`; the group's new delay value is
+     * pushed back through [writeGroups], so this call only triggers the
+     * probe. The UI reads fresh numbers from the next group snapshot.
      */
-    fun pingOutbound(tag: String, url: String, timeoutMillis: Int = 3000): Result<Int> {
+    fun pingOutbound(tag: String, url: String, timeoutMillis: Int = 3000): Result<Unit> {
         val c = client ?: return Result.failure(IllegalStateException("engine not running"))
-        return runCatching {
-            val result = c.urlTestOutbound(tag, url, timeoutMillis)
-            val error = result.error
-            if (!error.isNullOrEmpty()) error(error)
-            result.delay
-        }
+        return runCatching { c.urlTest(tag) }
     }
 
     // ----------------- CommandClientHandler callbacks -----------------
@@ -260,13 +257,6 @@ class BoxEngine internal constructor(
     override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) = Unit
 
     override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) = Unit
-
-    /**
-     * Live DNS-query stream (sing-box-lx extension). Not surfaced in the UI
-     * yet — the stream exists so a future "DNS log" tab can show resolved
-     * names without polling. Keep the override to satisfy the interface.
-     */
-    override fun writeDNSQuery(query: io.nekohasekai.libbox.DnsQuery) = Unit
 
     private fun filesDir(): File = context.filesDir
     private fun workDir(): File = File(context.filesDir, "box").apply { mkdirs() }
