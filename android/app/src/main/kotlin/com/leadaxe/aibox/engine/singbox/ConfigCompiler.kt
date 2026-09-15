@@ -272,6 +272,7 @@ object ConfigCompiler {
             putStringList("network", rule.network)
             putStringList("protocol", rule.protocol)
             putStringList("clash_mode", rule.clashMode)
+            putStringList("response_rcode", rule.responseRcode)
         }
         return if (obj.isEmpty()) null else obj
     }

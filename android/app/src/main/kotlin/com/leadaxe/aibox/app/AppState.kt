@@ -292,6 +292,15 @@ data class RouteRule(
     val outbound: String = ProxySelectorTag,
     /** EDNS client subnet for the resolve action, e.g. "1.2.3.0/24". Empty = off. */
     val clientSubnet: String = "",
+    /**
+     * Domain-class rules usually want a matching DNS rule (same matchers,
+     * resolved by the chosen server) so the domain list actually steers
+     * resolution. IP-class matchers (ip_cidr) match on addresses and need
+     * no DNS rule; keeping the flag separate lets the user decide.
+     */
+    val syncDnsRule: Boolean = true,
+    /** DNS server tag used by the synced DNS rule; empty = no sync. */
+    val syncDnsServer: String = "",
     // ----- json kind -----
     val json: String = "",
 ) {
@@ -484,6 +493,8 @@ data class DnsRule(
     val clashMode: List<String> = emptyList(),
     /** EDNS client subnet applied by this rule's action, e.g. "1.2.3.0/24". Empty = off. */
     val clientSubnet: String = "",
+    /** Match DNS responses with these rcodes (NOERROR, NXDOMAIN, SERVFAIL…). */
+    val responseRcode: List<String> = emptyList(),
     val invertApplied: Boolean = false,
     // ----- action -----
     /** Target DNS server tag; empty = "first available". */
@@ -510,6 +521,15 @@ val DnsRuleActions = listOf(DnsRuleActionRoute, DnsRuleActionRouteOptions, DnsRu
 /** Query types surfaced in the DNS rule editor, in the order sing-box lists them. */
 val DnsQueryTypes = listOf(
     "A", "AAAA", "CNAME", "NS", "MX", "TXT", "PTR", "SRV", "SOA", "HTTPS",
+    "SVCB", "RT", "NAPTR", "KX", "CERT", "DNAME", "APL", "DS", "SSHFP",
+    "IPSECKEY", "RRSIG", "NSEC", "DNSKEY", "NSEC3", "NSEC3PARAM", "TLSA",
+    "SMIMEA", "HIP", "CDS", "CDNSKEY", "OPENPGPKEY", "CSYNC", "ZONEMD",
+    "SVCB-HTTPS", "SPF", "CAA", "DLV", "ANY",
+)
+
+/** DNS response rcodes accepted by the core's response_rcode matcher. */
+val DnsResponseRcodes = listOf(
+    "NOERROR", "FORMERR", "SERVFAIL", "NXDOMAIN", "NOTIMP", "REFUSED", "BADVERS",
 )
 
 /**

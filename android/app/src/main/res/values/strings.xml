@@ -246,6 +246,12 @@
     <string name="subs_ech_config">ECH config list (optional, base64)</string>
     <string name="subs_ech_config_hint">Leave empty to auto-fetch from the node DNS HTTPS record</string>
     <string name="subs_edit">Edit subscription</string>
+    <string name="dns_response_rcode">Response rcode</string>
+    <string name="dns_response_rcode_hint">Match DNS responses by return code, e.g. NOERROR, NXDOMAIN, SERVFAIL.</string>
+    <string name="routes_sync_dns">Create matching DNS rule</string>
+    <string name="routes_sync_dns_desc">Adds a DNS rule with the same domain matchers, resolved by the chosen server. IP-only rules cannot use this.</string>
+    <string name="routes_sync_dns_server">DNS server for the synced rule</string>
+    <string name="routes_sync_dns_na">IP-only rule: no DNS rule is created (matches happen on resolved addresses).</string>
     <string name="settings_tun_addresses">TUN addresses</string>
     <string name="settings_tun_ipv4">TUN IPv4 address</string>
     <string name="settings_tun_ipv6">TUN IPv6 address</string>

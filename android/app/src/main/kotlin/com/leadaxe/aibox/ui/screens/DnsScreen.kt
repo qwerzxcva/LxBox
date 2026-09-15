@@ -624,6 +624,7 @@ private fun DnsRuleEditor(
     var queryType by remember { mutableStateOf(initial?.queryType ?: emptyList()) }
     var packageName by remember { mutableStateOf(initial?.packageName ?: emptyList()) }
     var clashMode by remember { mutableStateOf(initial?.clashMode ?: emptyList()) }
+    var responseRcode by remember { mutableStateOf(initial?.responseRcode ?: emptyList()) }
     var server by remember { mutableStateOf(initial?.server.orEmpty()) }
     var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
     var invert by remember { mutableStateOf(initial?.invert ?: false) }
@@ -666,7 +667,14 @@ private fun DnsRuleEditor(
                         label = stringResource(R.string.dns_query_type),
                         values = queryType,
                         onValuesChange = { queryType = it },
-                        placeholder = "A, AAAA",
+                        placeholder = "A, AAAA, HTTPS, SVCB…",
+                    )
+                    ListField(
+                        label = stringResource(R.string.dns_response_rcode),
+                        values = responseRcode,
+                        onValuesChange = { responseRcode = it },
+                        placeholder = "NOERROR, NXDOMAIN, SERVFAIL",
+                        supporting = stringResource(R.string.dns_response_rcode_hint),
                     )
                     ListField(
                         label = stringResource(R.string.routes_field_package),
@@ -723,6 +731,7 @@ private fun DnsRuleEditor(
                             queryType = queryType,
                             packageName = packageName,
                             clashMode = clashMode,
+                            responseRcode = responseRcode,
                             server = server,
                             clientSubnet = clientSubnet,
                             invert = invert,
