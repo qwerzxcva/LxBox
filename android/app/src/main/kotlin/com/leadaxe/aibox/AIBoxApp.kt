@@ -29,7 +29,6 @@ class AIBoxApp : Application() {
     }
 
     private fun ensureNotificationChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(AIVpnService.AIPlatformNotificationChannelId) == null) {
             nm.createNotificationChannel(
