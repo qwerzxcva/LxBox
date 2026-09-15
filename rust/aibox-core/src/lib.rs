@@ -121,3 +121,40 @@ mod tests {
         assert_ne!(fp1, fp3);
     }
 }
+
+#[cfg(test)]
+mod bench_lite {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn thousand_connection_snapshot() {
+        let conns: Vec<ConnectionInfo> = (0..1000)
+            .map(|i| ConnectionInfo {
+                id: format!("conn-{i}"),
+                network: "tcp".into(),
+                inbound: "tun-in".into(),
+                source: format!("172.19.0.1:{}", 40000 + i),
+                destination: "93.184.216.34:443".into(),
+                domain: format!("host{i}.example.com"),
+                protocol: "tls".into(),
+                outbound: "proxy".into(),
+                outbound_type: "selector".into(),
+                chain: vec!["proxy".into(), "node-1".into()],
+                rule: "domain_suffix:example.com".into(),
+                created_at: 1_000_000,
+                closed_at: 0,
+                uplink_total: 123_456,
+                downlink_total: 9_876_543,
+                process_path: String::new(),
+                user_id: 10_123,
+                package_names: vec!["com.example.app".into()],
+            })
+            .collect();
+        let start = Instant::now();
+        let (json, _) = snapshot_json_and_fingerprint(&conns);
+        let elapsed = start.elapsed();
+        println!("1000-conn snapshot: {elapsed:?}, {} bytes", json.len());
+        assert!(elapsed.as_millis() < 100);
+    }
+}
