@@ -31,15 +31,15 @@ android {
         versionName = "3.0.0"
     }
 
-    // The sing-box core .so is ~60 MB per ABI uncompressed; shipping all
-    // four in one APK produced an 83 MB artifact. Splits keep each APK
-    // around 25-30 MB. The CI workflow assembles arm64 by default; the
-    // other ABIs build on demand via `-PtargetAbi=`.
+    // arm64-v8a is the only shipped target: the user's devices are all
+    // ARMv8, and a single-ABI core .so keeps the APK at ~21 MB (an
+    // all-ABI APK was 83 MB). The CI workflow builds the matching
+    // arm64-only libbox AAR from source.
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            include("arm64-v8a")
             isUniversalApk = false
         }
     }

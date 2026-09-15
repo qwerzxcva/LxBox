@@ -9,8 +9,8 @@ and a fully editable rule engine.
 
 Grab the arm64 release APK from
 [GitHub Actions artifacts](https://github.com/qwerzxcva/LxBox/actions/workflows/android.yml)
-(`aibox-android-release`, ~20 MB). armeabi-v7a and x86_64 variants build on
-demand from the same workflow.
+(`aibox-android-release`, ~20 MB). ARMv8 (arm64-v8a) is the only supported
+ABI.
 
 ## Build
 

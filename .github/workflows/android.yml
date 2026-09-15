@@ -156,10 +156,11 @@ jobs:
           cache: false
 
       - name: Build libbox AAR from reF1nd source
-        # The AAR isn't vendored (~86 MB) and isn't committed (see
+        # The AAR isn't vendored and isn't committed (see
         # android/.gitignore). Instead of downloading a prebuilt binary we
         # build it from reF1nd/sing-box @ v1.15.0-alpha.3-reF1nd — the same
-        # source pin as local builds. CI runners are x86_64, so the stock
+        # source pin as local builds, arm64-v8a only (the only shipped
+        # target). CI runners are x86_64, so the stock
         # gomobile + official NDK work without the aarch64-host patch.
         env:
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/29.0.14206865
@@ -186,10 +187,10 @@ jobs:
           go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
           go install github.com/sagernet/gomobile/cmd/gobind@v0.1.13
 
-          echo "==> gomobile bind (all 4 ABIs, SDK 24)"
+          echo "==> gomobile bind (arm64-v8a only, SDK 24)"
           "$(go env GOPATH)/bin/gomobile" bind \
             -o libbox.aar \
-            -target android \
+            -target=android/arm64 \
             -androidapi 24 \
             -javapkg=io.nekohasekai \
             -libname=box \
@@ -208,7 +209,7 @@ jobs:
           set -euo pipefail
           SIZE=$(stat -c%s android/app/libs/libbox.aar)
           echo "libbox.aar size: $SIZE bytes"
-          if [ "$SIZE" -lt 50000000 ]; then
+          if [ "$SIZE" -lt 15000000 ]; then
             echo "::error::libbox.aar is suspiciously small — build likely failed partway."
             exit 1
           fi
@@ -376,7 +377,7 @@ jobs:
             echo "## AIBox ${TAG}"
             echo
             echo "- Native Android client (Kotlin/Compose) on the reF1nd sing-box core"
-            echo "- Signed arm64-v8a APK, ~20 MB; armeabi-v7a / x86_64 build on demand from the same workflow"
+            echo "- Signed arm64-v8a (ARMv8) APK, ~20 MB — the only supported ABI"
             echo "- sha256: \`$SHA\`"
           } > notes.md
           gh release create "$TAG" "dist/$APK" --title "AIBox $TAG" --notes-file notes.md
