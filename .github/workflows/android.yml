@@ -143,10 +143,13 @@ jobs:
 
       - name: Set up Go (for gomobile)
         # The reF1nd source build drives gomobile, which needs a Go toolchain
-        # matching the project's go.mod (go 1.25.5).
+        # matching the project's go.mod (go 1.25.5). Caching is off — the
+        # workspace has no go.sum and setup-go's cache probe fails hard on
+        # that instead of skipping.
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.5'
+          cache: false
 
       - name: Build libbox AAR from reF1nd source
         # The AAR isn't vendored (~86 MB) and isn't committed (see
