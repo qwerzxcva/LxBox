@@ -117,6 +117,17 @@ fun SettingsScreen() {
                     valueRange = 1280f..9000f,
                     steps = 30,
                 )
+                SingleChoiceChips(
+                    label = stringResource(R.string.settings_tun_stack),
+                    options = listOf("system", "gvisor", "mixed"),
+                    selected = state.tunStack,
+                    onSelect = { v -> store.update { it.copy(tunStack = v) } },
+                )
+                Text(
+                    stringResource(R.string.settings_tun_stack_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
                 Text(
                     stringResource(R.string.settings_tun_addresses),
                     style = MaterialTheme.typography.titleMedium,

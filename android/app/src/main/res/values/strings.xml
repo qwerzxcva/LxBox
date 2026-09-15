@@ -234,6 +234,8 @@
     <string name="settings_ipv6">IPv6</string>
     <string name="settings_ipv6_desc">Enable IPv6 routing through the tun interface.</string>
     <string name="settings_mtu">MTU: %1$d</string>
+    <string name="settings_tun_stack">TUN network stack</string>
+    <string name="settings_tun_stack_desc">system: fastest, kernel-owned TCP; gvisor: most compatible; mixed: system TCP + gvisor UDP (default)</string>
     <string name="settings_tun_addresses">TUN addresses</string>
     <string name="settings_tun_ipv4">TUN IPv4 address</string>
     <string name="settings_tun_ipv6">TUN IPv6 address</string>

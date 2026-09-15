@@ -318,8 +318,8 @@ object ConfigCompiler {
      *    a false value costs a policy-routing setup on some kernels.
      *  - `endpoint_independent_nat` is off by default; it pins extra state
      *    per flow and only matters for game consoles behind the tunnel.
-     *  - `stack: mixed` is only set when the user has not picked gvisor —
-     *    `mixed` costs an extra stack instance alongside system.
+     *  - `stack` is user-selected (mixed default); `mixed` runs the system
+     *    stack for TCP and gVisor for UDP in one TUN instance.
      */
     private fun compileTunInbound(state: AppState): JsonObject = buildJsonObject {
         put("type", "tun")
@@ -332,7 +332,7 @@ object ConfigCompiler {
             }
         }
         put("auto_route", true)
-        put("stack", "mixed")
+        put("stack", state.tunStack.ifBlank { "mixed" })
         // Power-saving: bypass the tun entirely for traffic that's already
         // on the LAN or destined for the local device. Without this every
         // LAN packet (Chromecast discovery, AirPlay, SMB, mDNS, printer

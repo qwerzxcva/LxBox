@@ -232,6 +232,8 @@
     <string name="settings_ipv6">IPv6</string>
     <string name="settings_ipv6_desc">通过 tun 接口启用 IPv6 路由。</string>
     <string name="settings_mtu">MTU：%1$d</string>
+    <string name="settings_tun_stack">TUN 网络栈</string>
+    <string name="settings_tun_stack_desc">system：最快，内核态 TCP；gvisor：兼容性最好；mixed：system TCP + gvisor UDP（默认）</string>
     <string name="settings_tun_addresses">TUN 地址</string>
     <string name="settings_tun_ipv4">TUN IPv4 地址</string>
     <string name="settings_tun_ipv6">TUN IPv6 地址</string>

@@ -73,6 +73,8 @@ data class AppState(
     val tunInet6Address: String = "fdfe:dcba:9876::1/126",
     /** DNS server(s) advertised to the OS; empty = "auto" (tun address). */
     val tunDnsAddresses: List<String> = emptyList(),
+    /** TUN network stack: system (fastest), gvisor (most compatible), or mixed. */
+    val tunStack: String = "mixed",
 
     // ------------------------------------------------------------- engine
     val logLevel: String = "warn",
