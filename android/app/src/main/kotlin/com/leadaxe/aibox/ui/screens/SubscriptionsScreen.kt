@@ -118,8 +118,17 @@ fun SubscriptionsScreen() {
                         scope.launch {
                             val r = fetcher.refreshAll(state.subscriptions, state.dnsServers)
                             store.update { current ->
+                                // A subscription that failed to refresh keeps
+                                // its nodes: wiping them would turn one bad
+                                // fetch into a lost node list. Nodes that do
+                                // not come from a subscription (pasted
+                                // share links) are kept as well.
+                                val failed = r.failures.keys
+                                val kept = current.outbounds.filter {
+                                    it.subscriptionId == null || it.subscriptionId in failed
+                                }
                                 current.copy(
-                                    outbounds = r.outbounds,
+                                    outbounds = kept + r.outbounds,
                                     subscriptions = current.subscriptions.map { sub ->
                                         if (sub.id in r.failures) sub else sub.copy(lastUpdatedEpochMillis = System.currentTimeMillis())
                                     },
