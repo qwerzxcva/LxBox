@@ -72,7 +72,17 @@ fun RoutesScreen() {
                 }
             }
         }
-        item { SectionHeader(stringResource(R.string.routes_section_rules, state.routeRules.size)) }
+        item {
+            Column {
+                SectionHeader(stringResource(R.string.routes_section_rules, state.routeRules.size))
+                Text(
+                    stringResource(R.string.routes_exec_order_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
+                )
+            }
+        }
 
         itemsIndexedWithActions(
             items = state.routeRules,

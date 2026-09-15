@@ -97,6 +97,7 @@
 
     <!-- routes -->
     <string name="routes_section_rules">Rules (%1$d)</string>
+    <string name="routes_exec_order_hint">Execution order: app rules first, then domain, then address. Redundant entries are merged at compile time (keyword beats suffix beats exact domain; earlier rules win).</string>
     <string name="routes_add_rule">Add rule</string>
     <string name="routes_edit_rule">Edit rule</string>
     <string name="routes_new_rule">New rule</string>

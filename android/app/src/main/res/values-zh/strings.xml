@@ -95,6 +95,7 @@
 
     <!-- routes -->
     <string name="routes_section_rules">路由规则（%1$d）</string>
+    <string name="routes_exec_order_hint">执行顺序：应用规则 → 域名 → 地址。编译时自动合并冗余条目（关键词＞后缀＞精确域名；靠前的规则优先保留）。</string>
     <string name="routes_add_rule">添加规则</string>
     <string name="routes_edit_rule">编辑规则</string>
     <string name="routes_new_rule">新建规则</string>
