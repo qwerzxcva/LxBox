@@ -141,24 +141,81 @@ jobs:
           echo "==> SDK ready:"
           ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
-      - name: Fetch libbox AAR
-        # The AAR isn't vendored (~110 MB) and isn't committed (see
-        # android/.gitignore). scripts/fetch-libbox.sh pulls from the
-        # upstream Asterisk4Magisk/AndroidLibBoxLite release, with a
-        # mirror fallback for environments where the GitHub release host
-        # is slow.
-        run: bash android/scripts/fetch-libbox.sh
+      - name: Set up Go (for gomobile)
+        # The reF1nd source build drives gomobile, which needs a Go toolchain
+        # matching the project's go.mod (go 1.25.5).
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.5'
+
+      - name: Build libbox AAR from reF1nd source
+        # The AAR isn't vendored (~86 MB) and isn't committed (see
+        # android/.gitignore). Instead of downloading a prebuilt binary we
+        # build it from reF1nd/sing-box @ v1.15.0-alpha.3-reF1nd — the same
+        # source pin as local builds. CI runners are x86_64, so the stock
+        # gomobile + official NDK work without the aarch64-host patch.
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/29.0.14206865
+        run: |
+          set -euo pipefail
+          REF_TAG=v1.15.0-alpha.3-reF1nd
+          echo "==> clone reF1nd/sing-box @ $REF_TAG"
+          git clone --depth 1 -b "$REF_TAG" https://github.com/reF1nd/sing-box.git /tmp/refsrc
+          cd /tmp/refsrc
+          git tag "$REF_TAG"
+
+          echo "==> install sagernet gomobile v0.1.13"
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.13
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.13
+
+          echo "==> stub Go-1.25-incompatible linkname files"
+          # pidfd_android.go linknames os.checkPidfdOnce, removed in newer Go.
+          rm experimental/libbox/pidfd_android.go
+          cat > experimental/libbox/pidfd_android.go <<'EOF'
+          package libbox
+
+          // Stub: the original file linknamed os.checkPidfdOnce, which newer
+          // Go toolchains no longer export. pidfd is not required here.
+          EOF
+          # oomprofile linknames runtime/pprof internals; replace with a stub.
+          rm -rf experimental/libbox/internal/oomprofile
+          mkdir -p experimental/libbox/internal/oomprofile
+          cat > experimental/libbox/internal/oomprofile/oomprofile.go <<'EOF'
+          //go:build darwin || linux || windows
+
+          package oomprofile
+
+          import "errors"
+
+          func WriteFile(_ string, _ string) error {
+              return errors.New("oom profiling disabled in this build")
+          }
+          EOF
+
+          echo "==> gomobile bind (all 4 ABIs, SDK 24)"
+          gomobile bind -v \
+            -o libbox.aar \
+            -target android \
+            -androidapi 24 \
+            -javapkg=io.nekohasekai \
+            -libname=box \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=$REF_TAG -s -w" \
+            -tags "with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,tfogo_checklinkname0" \
+            ./experimental/libbox 2>&1 | tail -4
+
+          mkdir -p "$GITHUB_WORKSPACE/android/app/libs"
+          cp libbox.aar "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
+          echo "==> AAR ready: $(stat -c%s "$GITHUB_WORKSPACE/android/app/libs/libbox.aar") bytes"
 
       - name: Verify libbox AAR
         # Cheap integrity check — fail fast with a useful message rather
-        # than letting Gradle choke on a 1 KB HTML error page from a mirror
-        # outage. Size ≈110 MB ± 5 MB.
+        # than letting Gradle choke on a truncated build artifact.
         run: |
           set -euo pipefail
           SIZE=$(stat -c%s android/app/libs/libbox.aar)
           echo "libbox.aar size: $SIZE bytes"
           if [ "$SIZE" -lt 50000000 ]; then
-            echo "::error::libbox.aar is suspiciously small — likely a downloaded HTML error page, not a real AAR."
+            echo "::error::libbox.aar is suspiciously small — build likely failed partway."
             exit 1
           fi
 
