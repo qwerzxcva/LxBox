@@ -72,7 +72,23 @@ object ConfigCompiler {
      * @param ruleSetDir directory where downloaded rule-set caches live
      *        (`<id>.srs` / `<id>.json`).
      */
-    fun compile(state: AppState, ruleSetDir: File): JsonObject = buildJsonObject {
+    fun compile(state: AppState, ruleSetDir: File): JsonObject {
+        val raw = compileInner(state, ruleSetDir)
+        // Post steps (ported from the reference client's 2.24.0): repair
+        // shapes the kernel rejects at start or mis-serves. Both return the
+        // repaired config; the repair lists feed the compile log.
+        val (fingerprintHealed, fingerprintNotes) = ConfigPostSteps.healUtlsFingerprints(raw)
+        val (timingsHealed, timingNotes) = ConfigPostSteps.sanitizeUrltestTimings(fingerprintHealed)
+        if (fingerprintNotes.isNotEmpty() || timingNotes.isNotEmpty()) {
+            android.util.Log.w(
+                "ConfigPostSteps",
+                "utls repairs: $fingerprintNotes; urltest timing repairs: $timingNotes",
+            )
+        }
+        return timingsHealed
+    }
+
+    private fun compileInner(state: AppState, ruleSetDir: File): JsonObject = buildJsonObject {
         putJsonObject("log") {
             put("level", state.logLevel)
             put("timestamp", true)
