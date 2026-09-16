@@ -473,6 +473,8 @@
     <string name="node_edit_sni_hint">TLS 握手出示的服务器名，通常是伪装域名。</string>
     <string name="node_edit_pq">后量子密钥交换</string>
     <string name="node_edit_pq_hint">在 REALITY 握手中保留 X25519MLKEM768。仅新服务器支持——旧服务器会拒绝导致节点失效。</string>
+    <string name="node_edit_domain_strategy">域名解析策略</string>
+    <string name="node_edit_strategy_as_is">跟随全局</string>
     <string name="node_edit_ws_ping">WS ping 周期（秒）</string>
     <string name="node_edit_ws_ping_hint">每 N 秒发送 WebSocket ping，防止 CDN 掐断空闲连接。留空 = 关闭。</string>
     <string name="node_edit_advanced">高级覆盖（JSON）</string>

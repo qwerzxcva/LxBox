@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.leadaxe.aibox.R
+import com.leadaxe.aibox.app.DomainStrategyOptions
 import com.leadaxe.aibox.app.OutboundProfile
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -70,6 +71,7 @@ fun NodeEditorPage(
         )
     }
     var advancedJson by remember { mutableStateOf(initial.override) }
+    var domainStrategy by remember { mutableStateOf(initial.domainStrategy) }
     var pqEnabled by remember {
         mutableStateOf(
             ((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
@@ -117,6 +119,7 @@ fun NodeEditorPage(
                     pqEnabled = pqEnabled,
                     realityOn = realityOn,
                     wsPingInterval = wsPingInterval,
+                    domainStrategy = domainStrategy,
                 )
                 when (built) {
                     is OverrideBuild.Invalid -> error = built.reason
@@ -193,6 +196,23 @@ fun NodeEditorPage(
                             supporting = stringResource(R.string.node_edit_ws_ping_hint),
                         )
                     }
+                    // Per-node domain resolution strategy (mikuRay's list):
+                    // how the node's own server address is dialed.
+                    SingleChoiceChips(
+                        label = stringResource(R.string.node_edit_domain_strategy),
+                        options = com.leadaxe.aibox.app.DomainStrategyOptions,
+                        selected = domainStrategy,
+                        onSelect = { domainStrategy = it },
+                        display = {
+                            when (it) {
+                                "prefer_ipv4" -> stringResource(R.string.settings_prefer_ipv4)
+                                "prefer_ipv6" -> stringResource(R.string.settings_prefer_ipv6)
+                                "ipv4_only" -> stringResource(R.string.settings_ipv4_only)
+                                "ipv6_only" -> stringResource(R.string.settings_ipv6_only)
+                                else -> stringResource(R.string.node_edit_strategy_as_is)
+                            }
+                        },
+                    )
                     // REALITY post-quantum switch: keeps X25519MLKEM768 in
                     // the ClientHello. Only shown for reality nodes; the
                     // kernel strips the group unless this is on.
@@ -271,6 +291,7 @@ private fun buildOverride(
     pqEnabled: Boolean,
     realityOn: Boolean,
     wsPingInterval: String,
+    domainStrategy: String,
 ): OverrideBuild {
     fun field(key: String): String =
         (base?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()

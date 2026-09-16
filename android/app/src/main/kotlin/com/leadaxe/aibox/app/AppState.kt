@@ -342,6 +342,13 @@ data class OutboundProfile(
     val override: String = "",
     /** True when the user edited [override]; such nodes skip auto-name. */
     val edited: Boolean = false,
+    /**
+     * Per-node domain resolution strategy for dialing the node's own
+     * server address (mikuRay's "domain strategy"): as_is / prefer_ipv4 /
+     * prefer_ipv6 / ipv4_only / ipv6_only. Empty = follow the global
+     * default_domain_resolver.
+     */
+    val domainStrategy: String = "",
 ) {
     val tag: String get() = "node-$id"
 }
@@ -657,6 +664,11 @@ const val LbStrategyConsistentHashing = "consistent-hashing"
 const val LbStrategyStickySessions = "sticky-sessions"
 
 val LbStrategies = listOf(LbStrategyRoundRobin, LbStrategyConsistentHashing, LbStrategyStickySessions)
+
+/** Domain resolution strategies for outbound dialing (mikuRay's list). */
+val DomainStrategyOptions = listOf(
+    "", "prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only",
+)
 
 val StickyHashComponents = listOf("process", "domain", "source_ip", "dest_ip", "dest_port")
 

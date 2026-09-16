@@ -475,6 +475,8 @@
     <string name="node_edit_sni_hint">Server name the TLS handshake presents; usually the masked domain.</string>
     <string name="node_edit_pq">Post-quantum key exchange</string>
     <string name="node_edit_pq_hint">Keeps the X25519MLKEM768 share in the REALITY handshake. Only for newer servers — older ones reject it and the node dies.</string>
+    <string name="node_edit_domain_strategy">Domain resolution</string>
+    <string name="node_edit_strategy_as_is">Follow global</string>
     <string name="node_edit_ws_ping">WS ping interval (s)</string>
     <string name="node_edit_ws_ping_hint">Sends a WebSocket ping every N seconds to keep the connection alive behind CDNs that drop idle streams. Empty = off.</string>
     <string name="node_edit_advanced">Advanced override (JSON)</string>

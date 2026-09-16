@@ -636,6 +636,15 @@ object ConfigCompiler {
                 applyMultiplex(state, parsed)
                 // TCP keep-alive idle seconds (0 = kernel default).
                 applyKeepAlive(state, parsed)
+                // Per-node domain resolution strategy (mikuRay list):
+                // dial the node's server address with the chosen A/AAAA
+                // policy. Empty = follow the route default resolver.
+                val strategy = profile.domainStrategy.trim()
+                if (strategy.isNotBlank() && strategy != "as_is") {
+                    put("domain_resolver", buildJsonObject {
+                        put("strategy", strategy)
+                    })
+                }
             }))
         }
         // User-configured groups, after their constituent nodes.
