@@ -562,7 +562,7 @@ private fun MatchFields(
             )
             MultiChoiceChips(
                 label = stringResource(R.string.routes_field_network),
-                options = listOf("tcp", "udp"),
+                options = listOf("tcp", "udp", "icmp"),
                 selected = rule.network,
                 onToggle = { n ->
                     onChange(rule.copy(network = if (n in rule.network) rule.network - n else rule.network + n))

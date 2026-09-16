@@ -284,7 +284,13 @@ val MuxProtocols = listOf(MuxProtocolH2mux, MuxProtocolSmux, MuxProtocolYamux)
  * the request through the direct outbound; everything else maps to the
  * sing-box server type of the same name.
  */
-val DnsServerTypes = listOf("local", "direct", "udp", "tcp", "tls", "https", "quic", "h3", "group")
+val DnsServerTypes = listOf("local", "direct", "hosts", "udp", "tcp", "tls", "https", "quic", "h3", "group")
+
+/**
+ * DNS hosts entries for the `hosts` transport: domain → IP (one per line
+ * in the UI, `domain=ip`). The kernel answers these locally.
+ */
+val DnsServerTypesWithHosts = DnsServerTypes
 
 val DnsStrategies = listOf("", "prefer_ipv4", "prefer_ipv6", "ipv4_only", "ipv6_only")
 
@@ -566,6 +572,22 @@ data class OutboundGroup(
     val selected: String = "",
     /** UrlTest only: one shared delay number for the group instead of per-node. */
     val unifiedDelay: Boolean = false,
+    /**
+     * Include/exclude alias filter (reference client's group member
+     * filtering): a regex matched against each member's display name when
+     * the group compiles. Both empty = all members.
+     */
+    val includeRegex: String = "",
+    val excludeRegex: String = "",
+    /**
+     * Load-balance strategy (kernel `loadbalance` outbound): round-robin /
+     * consistent-hashing (same domain sticks to the same node) /
+     * sticky-sessions (same source+destination sticks until TTL). Empty =
+     * not a load-balance group.
+     */
+    val lbStrategy: String = "",
+    /** Load-balance TTL for sticky sessions, e.g. "1h". Empty = engine default. */
+    val lbTtl: String = "",
 ) {
     val tag: String get() = "group-$id"
 
@@ -575,6 +597,7 @@ data class OutboundGroup(
         const val ModeLeastTest = "least_test"
         const val ModeFallback = "fallback"
         const val ModeRoundRobin = "round_robin"
+        const val ModeLoadBalance = "loadbalance"
     }
 }
 
@@ -594,7 +617,15 @@ val OutboundGroupModes = listOf(
     OutboundGroup.ModeLeastTest,
     OutboundGroup.ModeFallback,
     OutboundGroup.ModeRoundRobin,
+    OutboundGroup.ModeLoadBalance,
 )
+
+/** Kernel loadbalance strategies (protocol/group/loadbalance.go). */
+const val LbStrategyRoundRobin = "round-robin"
+const val LbStrategyConsistentHashing = "consistent-hashing"
+const val LbStrategyStickySessions = "sticky-sessions"
+
+val LbStrategies = listOf(LbStrategyRoundRobin, LbStrategyConsistentHashing, LbStrategyStickySessions)
 
 val StickyHashComponents = listOf("process", "domain", "source_ip", "dest_ip", "dest_port")
 
@@ -675,6 +706,8 @@ data class DnsServerState(
     // ----- group type (sing-box-lx) -----
     /** Member server TAGS for `type = "group"`. Order is not meaningful. */
     val groupServers: List<String> = emptyList(),
+    /** hosts transport: `domain=ip` entries answered locally. */
+    val hostsEntries: List<String> = emptyList(),
     /** group selection strategy: [DnsGroupStable] | [DnsGroupFastest] | [DnsGroupParallel]. */
     val groupMode: String = DnsGroupStable,
     /** How long an error record lives, e.g. "2m". Empty = engine default. */

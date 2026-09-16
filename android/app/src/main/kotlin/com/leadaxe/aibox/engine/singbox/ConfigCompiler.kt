@@ -10,6 +10,7 @@ import com.leadaxe.aibox.app.DnsRuleActionReject
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.FakeIpServerTag
+import com.leadaxe.aibox.app.LbStrategyRoundRobin
 import com.leadaxe.aibox.app.MuxProtocolH2mux
 import com.leadaxe.aibox.app.OutboundGroup
 import com.leadaxe.aibox.app.ProxySelectorTag
@@ -222,6 +223,21 @@ object ConfigCompiler {
             "direct" -> {
                 put("type", "local")
                 put("detour", DirectOutboundTag)
+            }
+            "hosts" -> {
+                // Kernel hosts transport: predefined domain→address map,
+                // answered locally without touching upstreams.
+                put("type", "hosts")
+                val predefined = buildJsonObject {
+                    server.hostsEntries.forEach { entry ->
+                        val eq = entry.indexOf('=')
+                        if (eq <= 0) return@forEach
+                        val domain = entry.substring(0, eq).trim().lowercase()
+                        val ip = entry.substring(eq + 1).trim()
+                        if (domain.isNotBlank() && ip.isNotBlank()) put(domain, ip)
+                    }
+                }
+                if (predefined.isNotEmpty()) put("predefined", predefined)
             }
             "group" -> {
                 // reF1nd kernel DNS group: fans every query out to all
@@ -588,22 +604,61 @@ object ConfigCompiler {
      * member stops answering. Emitting `mode: "fallback"` would be rejected
      * at load time.
      */
+    private fun liveOutboundTagsFor(state: AppState): Set<String> = buildSet {
+        state.outbounds.forEach { add(it.tag) }
+        state.outboundGroups.filter { it.enabled }.forEach { add(it.tag) }
+        add(DirectOutboundTag)
+    }
+
     private fun compileOutboundGroup(group: OutboundGroup, state: AppState): JsonObject =
         buildJsonObject {
-            put("type", group.kind)
+            // loadbalance is the kernel's own outbound type; the editor
+            // stores it as kind=urltest + lbStrategy set.
+            val effectiveKind = if (group.kind == OutboundGroup.KindUrlTest && group.lbStrategy.isNotBlank()) {
+                OutboundGroup.ModeLoadBalance
+            } else {
+                group.kind
+            }
+            put("type", effectiveKind)
             put("tag", group.tag)
-            val members = group.members.ifEmpty {
+            // Alias filter (reference client's member filtering): a regex
+            // matched against each member's display name. Invalid regex is
+            // ignored rather than failing the config.
+            val include = group.includeRegex.trim().takeIf { it.isNotBlank() }?.let {
+                runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull()
+            }
+            val exclude = group.excludeRegex.trim().takeIf { it.isNotBlank() }?.let {
+                runCatching { Regex(it, RegexOption.IGNORE_CASE) }.getOrNull()
+            }
+            val filteredBase = if (include != null || exclude != null) {
+                state.outbounds.filter { node ->
+                    val name = node.name.ifBlank { node.tag }
+                    (include == null || include.containsMatchIn(name)) &&
+                        (exclude == null || !exclude.containsMatchIn(name))
+                }.map { it.tag }
+            } else {
+                null
+            }
+            val members = (filteredBase ?: group.members.ifEmpty {
                 // A group with no explicit members falls back to every node,
                 // so a freshly created group still produces a usable config.
                 state.outbounds.map { it.tag }
-            }
+            }).filter { it in liveOutboundTagsFor(state) }
             putJsonArray("outbounds") { members.forEach(::add) }
-            when (group.kind) {
+            when (effectiveKind) {
                 OutboundGroup.KindSelector -> {
                     if (group.selected.isNotBlank() && group.selected in members) {
                         put("default", group.selected)
                     }
                     put("interrupt_exist_connections", true)
+                }
+                OutboundGroup.ModeLoadBalance -> {
+                    put("url", group.url.ifBlank { state.speedTestUrl })
+                    val interval = group.interval.ifBlank { defaultUrlTestInterval() }
+                    put("interval", interval)
+                    if (group.idleTimeout.isNotBlank()) put("idle_timeout", group.idleTimeout)
+                    put("strategy", group.lbStrategy.ifBlank { LbStrategyRoundRobin })
+                    if (group.lbTtl.isNotBlank()) put("ttl", group.lbTtl)
                 }
                 else -> {
                     put("url", group.url.ifBlank { state.speedTestUrl })

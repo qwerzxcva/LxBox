@@ -412,6 +412,7 @@ private fun DnsServerEditor(
     var tlsServerName by remember { mutableStateOf(initial?.tlsServerName.orEmpty()) }
     var insecure by remember { mutableStateOf(initial?.insecure ?: false) }
     var groupServers by remember { mutableStateOf(initial?.groupServers ?: emptyList()) }
+    var hostsEntries by remember { mutableStateOf(initial?.hostsEntries ?: emptyList()) }
     var groupMode by remember { mutableStateOf(initial?.groupMode ?: com.leadaxe.aibox.app.DnsGroupStable) }
     var groupErrorTtl by remember { mutableStateOf(initial?.groupErrorTtl.orEmpty()) }
     var groupWinTtl by remember { mutableStateOf(initial?.groupWinTtl.orEmpty()) }
@@ -450,7 +451,16 @@ private fun DnsServerEditor(
                     onSelect = { type = it },
                     display = { t -> if (t == "group") stringResource(R.string.dns_type_group) else t },
                 )
-                if (type != "local" && type != "direct" && type != "group") {
+                if (type == "hosts") {
+                    ListField(
+                        label = stringResource(R.string.dns_hosts_entries),
+                        values = hostsEntries,
+                        onValuesChange = { hostsEntries = it },
+                        placeholder = "example.com=1.2.3.4",
+                        supporting = stringResource(R.string.dns_hosts_hint),
+                    )
+                }
+                if (type != "local" && type != "direct" && type != "group" && type != "hosts") {
                     StringField(
                         label = stringResource(R.string.dns_address),
                         value = address,
@@ -560,6 +570,7 @@ private fun DnsServerEditor(
                             tlsServerName = tlsServerName,
                             insecure = insecure,
                             groupServers = groupServers,
+                            hostsEntries = hostsEntries,
                             groupMode = groupMode,
                             groupErrorTtl = groupErrorTtl,
                             groupWinTtl = groupWinTtl,

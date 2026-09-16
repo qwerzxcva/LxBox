@@ -258,6 +258,21 @@
     <string name="settings_github_mirror_hint">Prefix applied to GitHub URLs (rule sets, subscriptions) when the site is unreachable directly, e.g. https://ghfast.top</string>
     <string name="settings_github_token">GitHub token (optional)</string>
     <string name="settings_github_token_hint">Raises the raw/api.github.com rate limit for rule-set updates. Sent only to github.com hosts, stored on-device.</string>
+    <string name="dns_hosts_entries">Hosts entries</string>
+    <string name="dns_hosts_hint">domain=ip, one per line. Answered locally — no upstream query is sent for these domains.</string>
+    <string name="subs_sort_delay">Sort by delay</string>
+    <string name="subs_sort_config">Config order</string>
+    <string name="groups_alias_include">Include filter (regex)</string>
+    <string name="groups_alias_exclude">Exclude filter (regex)</string>
+    <string name="groups_alias_hint">Matched against each node\'s display name when the group is built. Empty = all members.</string>
+    <string name="groups_lb_strategy">Balance strategy</string>
+    <string name="groups_lb_round_robin">Round robin</string>
+    <string name="groups_lb_hashing">Same domain → same node</string>
+    <string name="groups_lb_sticky">Sticky sessions</string>
+    <string name="groups_lb_ttl">Sticky TTL</string>
+    <string name="groups_lb_ttl_hint">How long a sticky session keeps pointing at the same node, e.g. 1h.</string>
+    <string name="groups_kind_loadbalance">Load balance</string>
+    <string name="groups_lb_none">None (url-test)</string>
     <string name="settings_battery_tunnel_policy_desc">Screen off pauses the tunnel and closes idle connections. Doze deep-suspend stops the kernel timers entirely; the next wake resets the network so pushes arrive fresh. Network switches (Wi-Fi ↔ cellular) close half-dead sockets and reload the config automatically.</string>
     <string name="settings_section_mux">Multiplex (mux)</string>
     <string name="settings_mux_enable">Enable multiplexing</string>

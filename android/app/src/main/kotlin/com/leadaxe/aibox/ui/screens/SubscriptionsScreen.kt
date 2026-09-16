@@ -79,6 +79,8 @@ fun SubscriptionsScreen() {
     var muxExpanded by remember { mutableStateOf(false) }
     var probeExpanded by remember { mutableStateOf(false) }
     var nodesExpanded by remember { mutableStateOf(false) }
+    // null = config order; true = delay ascending (failures last)
+    var sortByDelay by remember { mutableStateOf<Boolean?>(null) }
     var sourcesExpanded by remember { mutableStateOf(false) }
     var foldersExpanded by remember { mutableStateOf(false) }
     val relay = remember { app.vpnRelay }
@@ -232,19 +234,38 @@ fun SubscriptionsScreen() {
                     subtitle = stringResource(R.string.subs_section_nodes_short),
                 ) {
                     if (state.outbounds.isNotEmpty()) {
-                        FilledTonalButton(onClick = {
-                            // Sequential probes: requests go to the :vpn
-                            // process one at a time, keeping the list
-                            // readable and avoiding a connection burst.
-                            scope.launch {
-                                for (node in state.outbounds) {
-                                    pingResults = pingResults + (node.id to PingState.Triggered)
-                                    relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = {
+                                // Sequential probes: requests go to the :vpn
+                                // process one at a time, keeping the list
+                                // readable and avoiding a connection burst.
+                                scope.launch {
+                                    for (node in state.outbounds) {
+                                        pingResults = pingResults + (node.id to PingState.Triggered)
+                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                    }
                                 }
+                            }) { Text(stringResource(R.string.subs_ping_all)) }
+                            // Cycle: config order → delay asc → config order.
+                            FilledTonalButton(onClick = {
+                                sortByDelay = if (sortByDelay == null) true else null
+                            }) {
+                                Text(
+                                    stringResource(
+                                        if (sortByDelay == true) R.string.subs_sort_config
+                                        else R.string.subs_sort_delay,
+                                    ),
+                                )
                             }
-                        }) { Text(stringResource(R.string.subs_ping_all)) }
+                        }
                     }
-                    state.outbounds.forEach { node ->
+                    val displayNodes = when (sortByDelay) {
+                        true -> state.outbounds.sortedWith(
+                            compareBy { node -> (pingResults[node.id] as? PingState.Ok)?.delayMillis ?: Int.MAX_VALUE },
+                        )
+                        else -> state.outbounds
+                    }
+                    displayNodes.forEach { node ->
                         NodeRow(
                             node = node,
                             selected = node.tag == state.selectedOutbound,
@@ -1124,6 +1145,10 @@ private fun GroupEditor(
     var url by remember { mutableStateOf(initial?.url.orEmpty()) }
     var interval by remember { mutableStateOf(initial?.interval.orEmpty()) }
     var idleTimeout by remember { mutableStateOf(initial?.idleTimeout.orEmpty()) }
+    var includeRegex by remember { mutableStateOf(initial?.includeRegex.orEmpty()) }
+    var excludeRegex by remember { mutableStateOf(initial?.excludeRegex.orEmpty()) }
+    var lbStrategy by remember { mutableStateOf(initial?.lbStrategy.orEmpty()) }
+    var lbTtl by remember { mutableStateOf(initial?.lbTtl.orEmpty()) }
     var tolerance by remember { mutableStateOf((initial?.tolerance ?: 0).toString()) }
     var unifiedDelay by remember { mutableStateOf(initial?.unifiedDelay ?: false) }
     var mode by remember { mutableStateOf(initial?.mode ?: com.leadaxe.aibox.app.OutboundGroup.ModeLeastTest) }
@@ -1156,11 +1181,35 @@ private fun GroupEditor(
                     selected = kind,
                     onSelect = { kind = it },
                     display = {
-                        if (it == com.leadaxe.aibox.app.OutboundGroup.KindSelector)
-                            stringResource(R.string.groups_kind_selector)
-                        else stringResource(R.string.groups_kind_urltest)
+                        when (it) {
+                            com.leadaxe.aibox.app.OutboundGroup.KindSelector ->
+                                stringResource(R.string.groups_kind_selector)
+                            else -> stringResource(R.string.groups_kind_urltest)
+                        }
                     },
                 )
+                // Load-balance sub-mode: only meaningful for urltest groups —
+                // the compiler emits a loadbalance outbound when a strategy
+                // is picked.
+                if (kind == com.leadaxe.aibox.app.OutboundGroup.KindUrlTest) {
+                    SingleChoiceChips(
+                        label = stringResource(R.string.groups_kind_loadbalance),
+                        options = listOf("") + com.leadaxe.aibox.app.LbStrategies,
+                        selected = lbStrategy,
+                        onSelect = { lbStrategy = it },
+                        display = {
+                            when (it) {
+                                com.leadaxe.aibox.app.LbStrategyRoundRobin ->
+                                    stringResource(R.string.groups_lb_round_robin)
+                                com.leadaxe.aibox.app.LbStrategyConsistentHashing ->
+                                    stringResource(R.string.groups_lb_hashing)
+                                com.leadaxe.aibox.app.LbStrategyStickySessions ->
+                                    stringResource(R.string.groups_lb_sticky)
+                                else -> stringResource(R.string.groups_lb_none)
+                            }
+                        },
+                    )
+                }
                 MultiChoiceChips(
                     label = stringResource(R.string.groups_members),
                     options = nodeTags,
@@ -1172,6 +1221,17 @@ private fun GroupEditor(
                     selectAllAction = {
                         members = if (members.containsAll(nodeTags)) emptyList() else nodeTags.toList()
                     },
+                )
+                StringField(
+                    label = stringResource(R.string.groups_alias_include),
+                    value = includeRegex,
+                    onValueChange = { includeRegex = it },
+                    supporting = stringResource(R.string.groups_alias_hint),
+                )
+                StringField(
+                    label = stringResource(R.string.groups_alias_exclude),
+                    value = excludeRegex,
+                    onValueChange = { excludeRegex = it },
                 )
                 if (state.outbounds.isEmpty()) {
                     Text(
@@ -1205,6 +1265,15 @@ private fun GroupEditor(
                         placeholder = com.leadaxe.aibox.app.defaultUrlTestInterval(),
                         supporting = stringResource(R.string.groups_interval_hint),
                     )
+                    if (lbStrategy.isNotBlank()) {
+                        StringField(
+                            label = stringResource(R.string.groups_lb_ttl),
+                            value = lbTtl,
+                            onValueChange = { lbTtl = it },
+                            placeholder = "1h",
+                            supporting = stringResource(R.string.groups_lb_ttl_hint),
+                        )
+                    }
                     StringField(
                         label = stringResource(R.string.groups_idle_timeout),
                         value = idleTimeout,
@@ -1284,6 +1353,10 @@ private fun GroupEditor(
                             url = url,
                             interval = interval,
                             idleTimeout = idleTimeout,
+                            includeRegex = includeRegex,
+                            excludeRegex = excludeRegex,
+                            lbStrategy = lbStrategy,
+                            lbTtl = lbTtl,
                             tolerance = tolerance.toIntOrNull() ?: 0,
                             unifiedDelay = unifiedDelay,
                             mode = mode,

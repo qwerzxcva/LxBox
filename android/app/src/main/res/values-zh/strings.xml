@@ -256,6 +256,21 @@
     <string name="settings_github_mirror_hint">直连不了 GitHub 时（规则集/订阅），给 GitHub 链接加前缀，如 https://ghfast.top</string>
     <string name="settings_github_token">GitHub Token（可选）</string>
     <string name="settings_github_token_hint">提高规则集更新时 raw/api.github.com 的速率限制。仅发送给 github.com 域名，保存在本机。</string>
+    <string name="dns_hosts_entries">Hosts 条目</string>
+    <string name="dns_hosts_hint">domain=ip，每行一条。这些域名在本地直接应答，不发上游。</string>
+    <string name="subs_sort_delay">按延迟排序</string>
+    <string name="subs_sort_config">按配置顺序</string>
+    <string name="groups_alias_include">包含过滤（正则）</string>
+    <string name="groups_alias_exclude">排除过滤（正则）</string>
+    <string name="groups_alias_hint">构建组时按节点显示名匹配。留空 = 全部成员。</string>
+    <string name="groups_lb_strategy">均衡策略</string>
+    <string name="groups_lb_round_robin">轮询</string>
+    <string name="groups_lb_hashing">同域名同节点</string>
+    <string name="groups_lb_sticky">会话保持</string>
+    <string name="groups_lb_ttl">会话保持 TTL</string>
+    <string name="groups_lb_ttl_hint">会话保持指向同一节点的时长，如 1h。</string>
+    <string name="groups_kind_loadbalance">负载均衡</string>
+    <string name="groups_lb_none">无（自动测速）</string>
     <string name="settings_battery_tunnel_policy_desc">熄屏时暂停隧道并关闭空闲连接；进入 Doze 深暂停（彻底停内核定时器），下次唤醒重置网络以恢复推送。网络切换（Wi-Fi ↔ 蜂窝）自动关闭半死连接并重载配置。</string>
     <string name="settings_section_mux">多路复用（mux）</string>
     <string name="settings_mux_enable">启用多路复用</string>
