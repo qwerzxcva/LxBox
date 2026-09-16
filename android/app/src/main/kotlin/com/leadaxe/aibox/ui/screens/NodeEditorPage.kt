@@ -129,6 +129,7 @@ fun NodeEditorPage(
                                 name = name.ifBlank { initial.name },
                                 override = if (built.json.isEmpty()) "" else built.json.toString(),
                                 edited = true,
+                                domainStrategy = domainStrategy,
                             ),
                         )
                     }

@@ -207,7 +207,10 @@ object ConfigPostSteps {
         val outbounds = config["outbounds"] as? JsonArray ?: return config to repairs
         val newOutbounds = JsonArray(outbounds.map timingMap@{ element ->
             val outbound = element as? JsonObject ?: return@timingMap element
-            if ((outbound["type"] as? JsonPrimitive)?.content != "urltest") {
+            // Both group types share the constructor check (NewURLTestGroup
+            // and NewLoadBalanceGroup each reject interval > idle_timeout).
+            val type = (outbound["type"] as? JsonPrimitive)?.content
+            if (type != "urltest" && type != "loadbalance") {
                 return@timingMap outbound
             }
             val interval = effectiveDuration(outbound, "interval", coreIntervalNs)

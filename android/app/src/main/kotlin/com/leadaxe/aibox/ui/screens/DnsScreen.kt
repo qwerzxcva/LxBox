@@ -70,8 +70,13 @@ import java.util.UUID
 @Composable
 fun DnsScreen() {
     val context = LocalContext.current
-    val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
+    val app = context.applicationContext as AIBoxApp
+    val store = remember { app.appStateStore }
     val state by store.state.collectAsState()
+    // Live tunnel state from the :vpn process (the persistent proxyRunning
+    // flag is only for boot autostart decisions).
+    val relay = remember { app.vpnRelay }
+    val boxState by relay.state.collectAsState()
 
     var editingServer: DnsServerState? by remember { mutableStateOf(null) }
     var creatingServer by remember { mutableStateOf(false) }
@@ -191,7 +196,6 @@ fun DnsScreen() {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val engine = remember { com.leadaxe.aibox.engine.vpn.BoxEngine.shared() }
                     var dnsCacheMessage by remember { mutableStateOf("") }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -210,17 +214,23 @@ fun DnsScreen() {
                                 )
                             }
                         }
+                        // The engine lives in the :vpn process — the request
+                        // goes over as a service intent, same as reload.
                         FilledTonalButton(
                             onClick = {
-                                val result = engine?.clearDNSCache()
-                                dnsCacheMessage = context.getString(
-                                    if (result?.isSuccess == true)
-                                        R.string.dns_clear_cache_done
-                                    else
-                                        R.string.dns_clear_cache_offline,
-                                )
+                                val offline = boxState !is com.leadaxe.aibox.engine.vpn.BoxState.Connected
+                                if (offline) {
+                                    dnsCacheMessage = context.getString(R.string.dns_clear_cache_offline)
+                                } else {
+                                    dnsCacheMessage = context.getString(R.string.dns_clear_cache_done)
+                                    context.startService(
+                                        android.content.Intent(
+                                            context,
+                                            com.leadaxe.aibox.engine.vpn.AIVpnService::class.java,
+                                        ).setAction(com.leadaxe.aibox.engine.vpn.AIVpnService.ACTION_CLEAR_DNS_CACHE),
+                                    )
+                                }
                             },
-                            enabled = engine != null,
                         ) {
                             Text(stringResource(R.string.dns_clear_cache_action))
                         }

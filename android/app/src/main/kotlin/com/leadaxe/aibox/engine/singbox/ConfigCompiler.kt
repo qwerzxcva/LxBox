@@ -25,6 +25,7 @@ import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
 import com.leadaxe.aibox.app.TunInboundTag
 import com.leadaxe.aibox.app.defaultUrlTestInterval
+import com.leadaxe.aibox.engine.vpn.LocalProxyTrigger
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -131,13 +132,19 @@ object ConfigCompiler {
             // traffic when the user picks "proxy" (or when auto falls back).
             add(compileLocalProxyInbound())
             state.let {
-                if (it.enableLocalSocks5) add(buildJsonObject {
+                // The per-app trigger opens the inbounds temporarily (no
+                // state mutation): manual switch OR an open trigger window.
+                val socksOn = it.enableLocalSocks5 ||
+                    (it.localProxyAutoTrigger && LocalProxyTrigger.isEngaged)
+                val httpOn = it.enableLocalHttp ||
+                    (it.localProxyAutoTrigger && LocalProxyTrigger.isEngaged)
+                if (socksOn) add(buildJsonObject {
                     put("type", "socks")
                     put("tag", "local-socks5")
                     put("listen", "127.0.0.1")
                     put("listen_port", it.localSocks5Port.coerceIn(1024, 65535))
                 })
-                if (it.enableLocalHttp) add(buildJsonObject {
+                if (httpOn) add(buildJsonObject {
                     put("type", "http")
                     put("tag", "local-http")
                     put("listen", "127.0.0.1")
@@ -244,7 +251,13 @@ object ConfigCompiler {
     private fun compileDnsServer(server: DnsServerState, liveDnsTags: Set<String>): JsonObject? = buildJsonObject {
         put("tag", server.tag)
         when (server.type) {
-            "local" -> put("type", "local")
+            "local" -> {
+                put("type", "local")
+                // The synthesized final shortcuts (final:proxy/direct) pin
+                // their detour — otherwise they would dial the default
+                // interface and ignore the exit choice.
+                if (server.detour.isNotBlank()) put("detour", server.detour)
+            }
             "direct" -> {
                 put("type", "local")
                 put("detour", DirectOutboundTag)
@@ -349,34 +362,39 @@ object ConfigCompiler {
         // be faked also need the "rest" routed through the normal chain, or
         // every domain ends up on the fake range and rule matching breaks.
         if (state.enableFakeIp) {
-            // Scope: proxyOnly merges the user's filter with the domain
-            // matchers of every direct-bound route rule — direct-bound
-            // domains must resolve to real addresses, or the direct dial
-            // would carry a fake IP no local network can route.
-            val filter = buildList {
-                state.fakeIpFilter.map { it.trim() }.filterTo(this) { it.isNotEmpty() }
-                if (state.fakeIpScope == FakeIpScopeProxyOnly) {
-                    directBoundDomainMatchers(state.routeRules).forEach(::add)
+            // proxyOnly scope: direct-bound domains (from the route rules)
+            // must resolve to real addresses — a fake IP on a direct dial
+            // is unroutable. These always form a blacklist, independent of
+            // the user's whitelist/blacklist choice for [fakeIpFilter].
+            val directExclusions = if (state.fakeIpScope == FakeIpScopeProxyOnly) {
+                directBoundDomainMatchers(state.routeRules).distinct()
+            } else {
+                emptyList()
+            }
+            val userFilter = state.fakeIpFilter.map { it.trim() }.filter { it.isNotEmpty() }
+
+            if (state.fakeIpFilterExclude || directExclusions.isNotEmpty()) {
+                // Blacklist pass first: everything listed (user exclusions +
+                // direct-bound domains under proxyOnly) resolves through the
+                // normal chain; the catch-all then fakes the rest.
+                val exclusions = (userFilter + directExclusions).distinct()
+                if (exclusions.isNotEmpty()) {
+                    add(buildJsonObject {
+                        putJsonArray("domain_suffix") { exclusions.forEach(::add) }
+                        put("server", finalServer)
+                    })
                 }
-            }.distinct()
-            if (filter.isEmpty()) {
+                add(buildJsonObject { put("server", FakeIpServerTag) })
+            } else if (userFilter.isNotEmpty()) {
+                // Whitelist: only the listed suffixes are faked.
+                add(buildJsonObject {
+                    putJsonArray("domain_suffix") { userFilter.forEach(::add) }
+                    put("server", FakeIpServerTag)
+                })
+            } else {
                 // Everything is faked; `final` still resolves for the
                 // domains excluded by rule ordering.
                 add(buildJsonObject { put("server", FakeIpServerTag) })
-            } else if (state.fakeIpFilterExclude) {
-                // Blacklist: the listed suffixes bypass the pool and go to
-                // the normal chain; everything else is faked.
-                add(buildJsonObject {
-                    putJsonArray("domain_suffix") { filter.forEach(::add) }
-                    put("server", finalServer)
-                })
-                add(buildJsonObject { put("server", FakeIpServerTag) })
-            } else {
-                // Whitelist: only the listed suffixes are faked.
-                add(buildJsonObject {
-                    putJsonArray("domain_suffix") { filter.forEach(::add) }
-                    put("server", FakeIpServerTag)
-                })
             }
         }
         // Route-rule derived DNS rules are materialised as JSON dnsRules at
@@ -517,7 +535,9 @@ object ConfigCompiler {
         // over the local network, via a synthesized local resolver pinned
         // to that detour (appended to the servers list by the caller).
         if (explicit == DnsFinalProxy || explicit == DnsFinalDirect) {
-            return explicit
+            // The synthesized shadow server (appended above) carries the
+            // matching tag: dns-final-proxy / dns-final-direct.
+            return "dns-" + explicit.removePrefix("final:")
         }
         return usableServers.firstOrNull { it.type != "local" }?.tag
             ?: usableServers.firstOrNull()?.tag

@@ -165,6 +165,7 @@ class AIVpnService : VpnService() {
             ACTION_CONNECT -> handleConnect()
             ACTION_DISCONNECT -> handleDisconnect()
             ACTION_RELOAD -> handleReload()
+            ACTION_CLEAR_DNS_CACHE -> handleClearDnsCache()
             else -> {
                 Log.w(TAG, "unknown action: ${intent?.action}")
                 stopSelf()
@@ -272,17 +273,11 @@ class AIVpnService : VpnService() {
         // trigger package connects, the inbounds switch on (config reload
         // with the flags temporarily forced); after the hold window without
         // trigger traffic they switch back off.
-        localProxyTrigger = LocalProxyTrigger(store, scope) { engage ->
-            val current = store.current
-            if (current.localProxyAutoTrigger) {
-                val target = current.copy(
-                    enableLocalSocks5 = engage || current.enableLocalSocks5,
-                    enableLocalHttp = engage || current.enableLocalHttp,
-                )
-                if (target != current) {
-                    engine.reload(target)
-                }
-            }
+        localProxyTrigger = LocalProxyTrigger(store, scope) {
+            // Just rebuild the config: the compiler reads the trigger flag
+            // and adds/removes the inbounds. No state mutation, so the
+            // user's manual switches and any concurrent edits survive.
+            runCatching { handleReload() }
         }
         localProxyTrigger?.start()
         // Refresh stale rule sets in the background after the box is up;
@@ -401,6 +396,18 @@ class AIVpnService : VpnService() {
     private fun handleReload() {
         val state = store.current
         engine.reload(state)
+    }
+
+    /**
+     * Flushes the kernel's DNS caches (client cache, reverse mapping) and
+     * asks the platform resolver to follow. Runs in the :vpn process where
+     * the engine actually lives — the UI process has no engine handle.
+     */
+    private fun handleClearDnsCache() {
+        scope.launch {
+            val result = engine.clearDNSCache()
+            Log.i(TAG, "clear dns cache: ${result.isSuccess}")
+        }
     }
 
     // ----------------- state observation ------------------------------------
@@ -557,6 +564,7 @@ class AIVpnService : VpnService() {
         const val ACTION_CONNECT = "com.leadaxe.aibox.engine.CONNECT"
         const val ACTION_DISCONNECT = "com.leadaxe.aibox.engine.DISCONNECT"
         const val ACTION_RELOAD = "com.leadaxe.aibox.engine.RELOAD"
+        const val ACTION_CLEAR_DNS_CACHE = "com.leadaxe.aibox.engine.CLEAR_DNS_CACHE"
 
         private const val ROUTE_ALL = "0.0.0.0"
         private const val ROUTE_ALL_V6 = "::"

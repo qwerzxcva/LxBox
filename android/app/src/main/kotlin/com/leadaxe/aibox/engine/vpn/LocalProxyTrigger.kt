@@ -34,14 +34,14 @@ import kotlinx.coroutines.launch
 class LocalProxyTrigger(
     private val store: AppStateStore,
     private val scope: CoroutineScope,
-    private val onTransition: (suspend (Boolean) -> Unit),
+    private val onEngagedChange: () -> Unit,
 ) {
 
     /** Remaining hold time in ms; 0 = the inbound should be off. */
     @Volatile
     private var holdUntil: Long = 0
 
-    /** Whether the inbounds are currently compiled in. */
+    /** Whether the inbounds are currently engaged (trigger window open). */
     @Volatile
     private var engaged: Boolean = false
 
@@ -66,6 +66,8 @@ class LocalProxyTrigger(
         }
     }
 
+
+
     /**
      * Feeds a connection snapshot in. Called from the engine's connections
      * collector (VPN process), so this runs at the push cadence.
@@ -88,13 +90,22 @@ class LocalProxyTrigger(
         val wantsOn = state.localProxyAutoTrigger && now < holdUntil
         if (wantsOn != engaged) {
             engaged = wantsOn
-            onTransition(wantsOn)
+            isEngaged = wantsOn
+            onEngagedChange()
         }
     }
 
     companion object {
         /** How often the hold timer is re-evaluated. */
         const val POLL_MS = 5_000L
+
+        /**
+         * Read by the compiler on every config build (VPN process). Static
+         * because the compiler has no handle on the trigger instance.
+         */
+        @Volatile
+        var isEngaged: Boolean = false
+            private set
 
         /** Default hold window after the last trigger-package request. */
         const val DEFAULT_HOLD_MS = 60_000L

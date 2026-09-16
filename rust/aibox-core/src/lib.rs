@@ -162,6 +162,14 @@ mod bench_lite {
         let (json, _) = snapshot_json_and_fingerprint(&conns);
         let elapsed = start.elapsed();
         println!("1000-conn snapshot: {elapsed:?}, {} bytes", json.len());
-        assert!(elapsed.as_millis() < 100);
+        // The 100 ms bar holds for optimized builds; a debug build does
+        // ~2x worse and CI runners are shared machines. The regression
+        // signal is a jump by an order of magnitude, not the absolute
+        // number.
+        let budget_ms: u128 = if cfg!(debug_assertions) { 500 } else { 100 };
+        assert!(
+            elapsed.as_millis() < budget_ms,
+            "snapshot regressed: {elapsed:?} > {budget_ms}ms"
+        );
     }
 }
