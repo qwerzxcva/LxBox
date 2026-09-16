@@ -202,6 +202,7 @@ class BoxEngine internal constructor(
             // the kernel's own message, before any tun fd is opened or a
             // half-started service needs rolling back.
             io.nekohasekai.libbox.Libbox.checkConfig(cfg)
+            applyQuicCompat(state)
             val s = CommandServer(this, platform).also { server = it }
             s.startOrReloadService(cfg, state.toOverrideOptions())
             attachClient()
@@ -272,6 +273,18 @@ class BoxEngine internal constructor(
 
     /** Re-derived per-start so each VPN session has its own client + secret. */
     private var currentSecret: String = ""
+
+    /**
+     * QUIC compatibility switches, applied before the service starts so the
+     * first QUIC connection already honours them (the kernel reads the env
+     * lazily per connection, so this also reaches later sessions on reload).
+     */
+    private fun applyQuicCompat(state: AppState) {
+        runCatching {
+            io.nekohasekai.libbox.Libbox.setQuicGoGsoDisabled(state.quicDisableGso)
+            io.nekohasekai.libbox.Libbox.setQuicGoEcnDisabled(state.quicDisableEcn)
+        }.onFailure { Log.w("BoxEngine", "quic compat switches failed: ${it.message}") }
+    }
 
     /** Live command channel; kept so the UI can request a latency probe. */
     @Volatile

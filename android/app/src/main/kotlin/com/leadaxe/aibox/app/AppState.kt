@@ -229,6 +229,19 @@ data class AppState(
     val healthCheckIntervalMinutes: Int = 0,
     /** Per-probe timeout for the manual/health checks, milliseconds. */
     val speedTestTimeoutMs: Int = 5_000,
+
+    // ----- QUIC compatibility (experimental) -----
+    /**
+     * Disable QUIC GSO (generic segmentation offload) inside the kernel.
+     * Some SoC/kernel combos stall or add latency with GSO; the kernel
+     * reads this at every QUIC connection creation.
+     */
+    val quicDisableGso: Boolean = false,
+    /**
+     * Disable QUIC explicit congestion notification (ECN). Some carrier
+     * NATs drop ECN-marked packets, stalling QUIC sessions.
+     */
+    val quicDisableEcn: Boolean = false,
     /** Persist rule-set / fake-IP caches to disk (experimental.cache_file). */
     val enableCacheFile: Boolean = true,
     /**

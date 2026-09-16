@@ -360,6 +360,11 @@
     <string name="settings_tls_fragment_record">Record split (fast)</string>
     <string name="settings_tls_fragment_packet">Packet split (strong)</string>
     <string name="settings_tls_fragment_desc">Splits the TLS ClientHello so middleboxes cannot regex-match the SNI. Record split is cheap and preferred; packet split is stronger but slower — enable only on censored networks.</string>
+    <string name="settings_quic_compat">QUIC compatibility (experimental)</string>
+    <string name="settings_quic_disable_gso">Disable QUIC GSO</string>
+    <string name="settings_quic_disable_gso_desc">Turn off generic segmentation offload for QUIC. Fix for QUIC stalls or high latency on some SoC/kernel combinations. Takes effect on new connections.</string>
+    <string name="settings_quic_disable_ecn">Disable QUIC ECN</string>
+    <string name="settings_quic_disable_ecn_desc">Turn off explicit congestion notification. Fix for QUIC stalls on networks whose NAT drops ECN-marked packets. Takes effect on new connections.</string>
     <string name="settings_ntp">Clock sync (NTP)</string>
     <string name="settings_ntp_desc">Reality and shadowsocks-2022 reject handshakes outside a ±30 s clock window; the core syncs via SNTP every 30 minutes to prevent \'node suddenly broke\'.</string>
     <string name="settings_section_sniffer">Sniffer</string>
