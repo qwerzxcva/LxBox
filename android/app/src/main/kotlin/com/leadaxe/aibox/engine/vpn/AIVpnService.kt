@@ -268,6 +268,23 @@ class AIVpnService : VpnService() {
         // observatory, interval user-chosen). The kernel's URLTest result
         // stream feeds the delay columns and auto-group re-selection.
         scheduleHealthProbe(state)
+        // Per-app auto-start of the local HTTP/SOCKS5 inbounds: when a
+        // trigger package connects, the inbounds switch on (config reload
+        // with the flags temporarily forced); after the hold window without
+        // trigger traffic they switch back off.
+        localProxyTrigger = LocalProxyTrigger(store, scope) { engage ->
+            val current = store.current
+            if (current.localProxyAutoTrigger) {
+                val target = current.copy(
+                    enableLocalSocks5 = engage || current.enableLocalSocks5,
+                    enableLocalHttp = engage || current.enableLocalHttp,
+                )
+                if (target != current) {
+                    engine.reload(target)
+                }
+            }
+        }
+        localProxyTrigger?.start()
         // Refresh stale rule sets in the background after the box is up;
         // we don't gate the connection on the fetch — `compileRuleSets`
         // already falls back to the remote URL when the local cache is
@@ -283,6 +300,7 @@ class AIVpnService : VpnService() {
     }
 
     private var healthProbeJob: kotlinx.coroutines.Job? = null
+    private var localProxyTrigger: LocalProxyTrigger? = null
 
     private fun scheduleHealthProbe(state: AppState) {
         healthProbeJob?.cancel()
@@ -370,6 +388,8 @@ class AIVpnService : VpnService() {
     private fun handleDisconnect() {
         healthProbeJob?.cancel()
         healthProbeJob = null
+        localProxyTrigger?.stop()
+        localProxyTrigger = null
         if (HevTun.isRunning()) HevTun.stop()
         networkMonitor.stop()
         engine.stop()
@@ -446,6 +466,7 @@ class AIVpnService : VpnService() {
         // so skip pushes while nothing changed.
         scope.launch {
             engine.connections.collect { list ->
+                localProxyTrigger?.onConnections(list)
                 val json = VpnIpc.connectionsToJson(list)
                 // Rust path first (fast native fingerprint); the plain JSON
                 // comparison is the fallback when the .so is unavailable.

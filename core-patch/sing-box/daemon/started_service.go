@@ -1104,6 +1104,22 @@ func (s *StartedService) CloseConnection(ctx context.Context, request *CloseConn
 	return &emptypb.Empty{}, nil
 }
 
+func (s *StartedService) ClearDNSCache(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
+	s.serviceAccess.RLock()
+	nowService := s.instance
+	s.serviceAccess.RUnlock()
+	if nowService != nil {
+		// Clears the DNS client cache, the reverse mapping, and asks the
+		// platform interface to flush the system resolver as well. The DNS
+		// router registers itself in the instance context.
+		dnsRouter := service.FromContext[adapter.DNSRouter](nowService.ctx)
+		if dnsRouter != nil {
+			dnsRouter.ClearCache()
+		}
+	}
+	return &emptypb.Empty{}, nil
+}
+
 func (s *StartedService) CloseAllConnections(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
 	s.serviceAccess.RLock()
 	nowService := s.instance

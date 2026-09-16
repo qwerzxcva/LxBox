@@ -56,6 +56,16 @@ data class AppState(
     val localSocks5Port: Int = 2081,
     val enableLocalHttp: Boolean = false,
     val localHttpPort: Int = 2082,
+    /**
+     * Auto-start/stop of the local HTTP/SOCKS5 inbounds: when any of these
+     * packages has a live connection, the inbounds are switched on; after
+     * [localProxyHoldMs] without one, switched off. Empty = no auto
+     * trigger — the inbounds follow [enableLocalSocks5]/[enableLocalHttp]
+     * manually as before.
+     */
+    val localProxyAutoTrigger: Boolean = false,
+    val localProxyTriggerPackages: List<String> = emptyList(),
+    val localProxyHoldMs: Long = 60_000L,
     /** Extra DNS cache knobs (0 = engine default). */
     val dnsCacheCapacity: Int = 4096,
     val dnsIndependentCache: Boolean = true,
@@ -270,6 +280,14 @@ const val BlockOutboundTag = "block"
 const val DnsOutboundTag = "dns-out"
 const val TunInboundTag = "tun-in"
 const val FakeIpServerTag = "dns-fakeip"
+
+/**
+ * Built-in final-DNS shortcuts (see [AppState.finalDnsServer]): resolve
+ * through the main proxy selector's exit, or straight over the local
+ * network — without pinning a specific server tag.
+ */
+const val DnsFinalProxy = "final:proxy"
+const val DnsFinalDirect = "final:direct"
 
 /** FakeIP scope values (see [AppState.fakeIpScope]). */
 const val FakeIpScopeAll = "all"

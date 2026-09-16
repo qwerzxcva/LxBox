@@ -1,12 +1,19 @@
 package com.leadaxe.aibox.engine.singbox
 
 import com.leadaxe.aibox.app.AppState
+import com.leadaxe.aibox.app.BlockOutboundTag
 import com.leadaxe.aibox.app.ClashModeDirect
 import com.leadaxe.aibox.app.ClashModeGlobal
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsOutboundTag
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRule
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionReject
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.FakeIpScopeProxyOnly
@@ -175,6 +182,23 @@ object ConfigCompiler {
         }
         val usableServers = state.dnsServers.filter { server ->
             server.enabled && (server.detour.isBlank() || server.detour in liveOutboundTags)
+        }.toMutableList()
+        // Built-in final shortcuts: a local resolver pinned to the proxy
+        // exit or the direct path. `local` type dials through the detour's
+        // network, so the OS resolver's queries follow the chosen exit.
+        when (state.finalDnsServer) {
+            DnsFinalProxy -> usableServers += DnsServerState(
+                id = "final-proxy",
+                name = "Final (proxy)",
+                type = "local",
+                detour = ProxySelectorTag,
+            )
+            DnsFinalDirect -> usableServers += DnsServerState(
+                id = "final-direct",
+                name = "Final (direct)",
+                type = "local",
+                detour = DirectOutboundTag,
+            )
         }
         putJsonArray("servers") {
             usableServers.forEach { server ->
@@ -489,6 +513,12 @@ object ConfigCompiler {
         if (explicit.isNotBlank() && usableServers.any { it.tag == explicit }) {
             return explicit
         }
+        // Built-in shortcuts: resolve through the proxy exit or straight
+        // over the local network, via a synthesized local resolver pinned
+        // to that detour (appended to the servers list by the caller).
+        if (explicit == DnsFinalProxy || explicit == DnsFinalDirect) {
+            return explicit
+        }
         return usableServers.firstOrNull { it.type != "local" }?.tag
             ?: usableServers.firstOrNull()?.tag
             ?: FakeIpServerTag
@@ -616,6 +646,14 @@ object ConfigCompiler {
             put("type", "direct")
             put("tag", DirectOutboundTag)
         })
+        // The route `final` catch-all can target block; only emit it when
+        // configured so lean configs stay lean.
+        if (state.unknownTrafficOutbound == BlockOutboundTag) {
+            add(buildJsonObject {
+                put("type", "block")
+                put("tag", BlockOutboundTag)
+            })
+        }
         add(buildJsonObject {
             put("type", "dns")
             put("tag", DnsOutboundTag)

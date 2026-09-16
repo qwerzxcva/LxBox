@@ -46,6 +46,7 @@ import androidx.compose.ui.zIndex
 import com.leadaxe.aibox.AIBoxApp
 import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.AppState
+import com.leadaxe.aibox.app.BlockOutboundTag
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
@@ -179,7 +180,7 @@ fun RoutesScreen() {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     val outboundOptions = remember(state.outbounds, state.outboundGroups) {
-                        listOf("", DirectOutboundTag) +
+                        listOf("", DirectOutboundTag, BlockOutboundTag) +
                             state.outboundGroups.filter { it.enabled }.map { it.tag } +
                             state.outbounds.map { it.tag }
                     }
@@ -192,6 +193,7 @@ fun RoutesScreen() {
                             when (tag) {
                                 "" -> stringResource(R.string.routes_unknown_traffic_proxy)
                                 DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+                                BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
                                 else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
                                     ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
                                     ?: tag

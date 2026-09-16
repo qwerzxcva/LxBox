@@ -462,6 +462,15 @@ class BoxEngine internal constructor(
         _connections.value = emptyList()
     }
 
+    /**
+     * Flushes the kernel's DNS client cache, the reverse mapping, and asks
+     * the platform resolver to do the same. Fails when the box is down.
+     */
+    fun clearDNSCache(): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("engine not running"))
+        return runCatching { c.clearDNSCache() }
+    }
+
     private fun filesDir(): File = context.filesDir
     private fun workDir(): File = File(context.filesDir, "box").apply { mkdirs() }
 

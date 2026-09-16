@@ -46,10 +46,20 @@ import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsDetourDirect
 import com.leadaxe.aibox.app.DnsDetourProxy
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRule
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionReject
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRoute
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
+import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.DnsServerTypes
@@ -181,6 +191,40 @@ fun DnsScreen() {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val engine = remember { com.leadaxe.aibox.engine.vpn.BoxEngine.shared() }
+                    var dnsCacheMessage by remember { mutableStateOf("") }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.dns_clear_cache),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            if (dnsCacheMessage.isNotBlank()) {
+                                Text(
+                                    dnsCacheMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        FilledTonalButton(
+                            onClick = {
+                                val result = engine?.clearDNSCache()
+                                dnsCacheMessage = context.getString(
+                                    if (result?.isSuccess == true)
+                                        R.string.dns_clear_cache_done
+                                    else
+                                        R.string.dns_clear_cache_offline,
+                                )
+                            },
+                            enabled = engine != null,
+                        ) {
+                            Text(stringResource(R.string.dns_clear_cache_action))
+                        }
+                    }
                     SwitchRow(
                         label = stringResource(R.string.dns_hijack),
                         supporting = stringResource(R.string.dns_hijack_desc),
@@ -194,14 +238,23 @@ fun DnsScreen() {
                         onSelect = { v -> store.update { it.copy(dnsStrategy = v) } },
                         display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
                     )
+                    // Final resolver: a specific server, or a built-in
+                    // shortcut (proxy chain / direct) without pinning one.
+                    val finalOptions = remember(state.dnsServers) {
+                        listOf("", DnsFinalProxy, DnsFinalDirect) + state.dnsServers.map { it.tag }
+                    }
                     SingleChoiceChips(
                         label = stringResource(R.string.dns_final_server),
-                        options = listOf("") + state.dnsServers.map { it.tag },
+                        options = finalOptions,
                         selected = state.finalDnsServer,
                         onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
                         display = {
-                            if (it.isEmpty()) stringResource(R.string.dns_final_auto)
-                            else state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                            when (it) {
+                                "" -> stringResource(R.string.dns_final_auto)
+                                DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
+                                DnsFinalDirect -> stringResource(R.string.dns_final_direct)
+                                else -> state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                            }
                         },
                     )
                     SwitchRow(

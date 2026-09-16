@@ -261,6 +261,34 @@ fun SettingsScreen() {
                         },
                     )
                 }
+                // Per-app auto-start of the local inbounds: while a trigger
+                // app has live connections, the inbounds stay on; after the
+                // hold window they switch off. Saves battery vs. always-on.
+                SwitchRow(
+                    label = stringResource(R.string.settings_local_trigger),
+                    supporting = stringResource(R.string.settings_local_trigger_desc),
+                    checked = state.localProxyAutoTrigger,
+                    onCheckedChange = { v -> store.update { it.copy(localProxyAutoTrigger = v) } },
+                )
+                if (state.localProxyAutoTrigger) {
+                    ListField(
+                        label = stringResource(R.string.settings_local_trigger_packages),
+                        values = state.localProxyTriggerPackages.toList(),
+                        onValuesChange = { v -> store.update { it.copy(localProxyTriggerPackages = v) } },
+                        supporting = stringResource(R.string.settings_local_trigger_packages_hint),
+                    )
+                    StringField(
+                        label = stringResource(R.string.settings_local_trigger_hold),
+                        value = state.localProxyHoldMs.toString(),
+                        onValueChange = { v ->
+                            store.update { st ->
+                                st.copy(localProxyHoldMs = v.filter { c -> c.isDigit() }.toLongOrNull() ?: st.localProxyHoldMs)
+                            }
+                        },
+                        placeholder = "60000",
+                        supporting = stringResource(R.string.settings_local_trigger_hold_hint),
+                    )
+                }
                 Text(
                     stringResource(R.string.settings_tun_addresses),
                     style = MaterialTheme.typography.titleMedium,

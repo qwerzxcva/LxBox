@@ -603,6 +603,16 @@ func (c *CommandClient) CloseConnection(connId string) error {
 	return nil
 }
 
+func (c *CommandClient) ClearDNSCache() error {
+	_, err := callWithResult(c, func(ctx context.Context, client daemon.StartedServiceClient) (*emptypb.Empty, error) {
+		return client.ClearDNSCache(ctx, &emptypb.Empty{})
+	})
+	if err != nil {
+		return E.Cause(err, "clear dns cache")
+	}
+	return nil
+}
+
 func (c *CommandClient) CloseConnections() error {
 	_, err := callWithResult(c, func(ctx context.Context, client daemon.StartedServiceClient) (*emptypb.Empty, error) {
 		return client.CloseAllConnections(ctx, &emptypb.Empty{})

@@ -2,7 +2,6 @@ package daemon
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -31,6 +30,7 @@ const (
 	StartedService_SubscribeConnections_FullMethodName           = "/daemon.StartedService/SubscribeConnections"
 	StartedService_CloseConnection_FullMethodName                = "/daemon.StartedService/CloseConnection"
 	StartedService_CloseAllConnections_FullMethodName            = "/daemon.StartedService/CloseAllConnections"
+	StartedService_ClearDNSCache_FullMethodName                  = "/daemon.StartedService/ClearDNSCache"
 	StartedService_GetDeprecatedWarnings_FullMethodName          = "/daemon.StartedService/GetDeprecatedWarnings"
 	StartedService_GetStartedAt_FullMethodName                   = "/daemon.StartedService/GetStartedAt"
 	StartedService_SubscribeOutbounds_FullMethodName             = "/daemon.StartedService/SubscribeOutbounds"
@@ -79,6 +79,7 @@ type StartedServiceClient interface {
 	SubscribeConnections(ctx context.Context, in *SubscribeConnectionsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConnectionEvents], error)
 	CloseConnection(ctx context.Context, in *CloseConnectionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	CloseAllConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ClearDNSCache(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	GetDeprecatedWarnings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*DeprecatedWarnings, error)
 	GetStartedAt(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*StartedAt, error)
 	SubscribeOutbounds(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[OutboundList], error)
@@ -323,6 +324,16 @@ func (c *startedServiceClient) CloseAllConnections(ctx context.Context, in *empt
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, StartedService_CloseAllConnections_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *startedServiceClient) ClearDNSCache(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, StartedService_ClearDNSCache_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -717,6 +728,7 @@ type StartedServiceServer interface {
 	SubscribeConnections(*SubscribeConnectionsRequest, grpc.ServerStreamingServer[ConnectionEvents]) error
 	CloseConnection(context.Context, *CloseConnectionRequest) (*emptypb.Empty, error)
 	CloseAllConnections(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
+	ClearDNSCache(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	GetDeprecatedWarnings(context.Context, *emptypb.Empty) (*DeprecatedWarnings, error)
 	GetStartedAt(context.Context, *emptypb.Empty) (*StartedAt, error)
 	SubscribeOutbounds(*emptypb.Empty, grpc.ServerStreamingServer[OutboundList]) error
@@ -756,167 +768,129 @@ type UnimplementedStartedServiceServer struct{}
 func (UnimplementedStartedServiceServer) GetVersion(context.Context, *emptypb.Empty) (*Version, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetVersion not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeServiceStatus(*emptypb.Empty, grpc.ServerStreamingServer[ServiceStatus]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeServiceStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeLog(*emptypb.Empty, grpc.ServerStreamingServer[Log]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeLog not implemented")
 }
-
 func (UnimplementedStartedServiceServer) GetDefaultLogLevel(context.Context, *emptypb.Empty) (*DefaultLogLevel, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDefaultLogLevel not implemented")
 }
-
 func (UnimplementedStartedServiceServer) ClearLogs(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ClearLogs not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeStatus(*SubscribeStatusRequest, grpc.ServerStreamingServer[Status]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeGroups(*emptypb.Empty, grpc.ServerStreamingServer[Groups]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeGroups not implemented")
 }
-
 func (UnimplementedStartedServiceServer) GetClashModeStatus(context.Context, *emptypb.Empty) (*ClashModeStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetClashModeStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeClashMode(*emptypb.Empty, grpc.ServerStreamingServer[ClashMode]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeClashMode not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SetClashMode(context.Context, *ClashMode) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetClashMode not implemented")
 }
-
 func (UnimplementedStartedServiceServer) URLTest(context.Context, *URLTestRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method URLTest not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SelectOutbound(context.Context, *SelectOutboundRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SelectOutbound not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SetGroupExpand(context.Context, *SetGroupExpandRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetGroupExpand not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeConnections(*SubscribeConnectionsRequest, grpc.ServerStreamingServer[ConnectionEvents]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeConnections not implemented")
 }
-
 func (UnimplementedStartedServiceServer) CloseConnection(context.Context, *CloseConnectionRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CloseConnection not implemented")
 }
-
 func (UnimplementedStartedServiceServer) CloseAllConnections(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CloseAllConnections not implemented")
 }
-
+func (UnimplementedStartedServiceServer) ClearDNSCache(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ClearDNSCache not implemented")
+}
 func (UnimplementedStartedServiceServer) GetDeprecatedWarnings(context.Context, *emptypb.Empty) (*DeprecatedWarnings, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetDeprecatedWarnings not implemented")
 }
-
 func (UnimplementedStartedServiceServer) GetStartedAt(context.Context, *emptypb.Empty) (*StartedAt, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStartedAt not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeOutbounds(*emptypb.Empty, grpc.ServerStreamingServer[OutboundList]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeOutbounds not implemented")
 }
-
 func (UnimplementedStartedServiceServer) StartNetworkQualityTest(*NetworkQualityTestRequest, grpc.ServerStreamingServer[NetworkQualityTestProgress]) error {
 	return status.Error(codes.Unimplemented, "method StartNetworkQualityTest not implemented")
 }
-
 func (UnimplementedStartedServiceServer) StartSTUNTest(*STUNTestRequest, grpc.ServerStreamingServer[STUNTestProgress]) error {
 	return status.Error(codes.Unimplemented, "method StartSTUNTest not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeTailscaleStatus(*emptypb.Empty, grpc.ServerStreamingServer[TailscaleStatusUpdate]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeTailscaleStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) StartTailscalePing(*TailscalePingRequest, grpc.ServerStreamingServer[TailscalePingResponse]) error {
 	return status.Error(codes.Unimplemented, "method StartTailscalePing not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SetTailscaleExitNode(context.Context, *SetTailscaleExitNodeRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetTailscaleExitNode not implemented")
 }
-
 func (UnimplementedStartedServiceServer) TailscaleLogout(context.Context, *TailscaleLogoutRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method TailscaleLogout not implemented")
 }
-
 func (UnimplementedStartedServiceServer) GetTailscaleCertificate(context.Context, *TailscaleCertificateRequest) (*TailscaleCertificate, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTailscaleCertificate not implemented")
 }
-
 func (UnimplementedStartedServiceServer) StartTailscaleSSHSession(grpc.BidiStreamingServer[TailscaleSSHClientMessage, TailscaleSSHServerMessage]) error {
 	return status.Error(codes.Unimplemented, "method StartTailscaleSSHSession not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeTaildropInbox(*SubscribeTaildropInboxRequest, grpc.ServerStreamingServer[TaildropInbox]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeTaildropInbox not implemented")
 }
-
 func (UnimplementedStartedServiceServer) MarkTaildropInboxRead(context.Context, *MarkTaildropInboxReadRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method MarkTaildropInboxRead not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SendTaildropFiles(grpc.BidiStreamingServer[TaildropSendClientMessage, TaildropSendServerMessage]) error {
 	return status.Error(codes.Unimplemented, "method SendTaildropFiles not implemented")
 }
-
 func (UnimplementedStartedServiceServer) DownloadTaildropFile(*DownloadTaildropFileRequest, grpc.ServerStreamingServer[DownloadTaildropFileChunk]) error {
 	return status.Error(codes.Unimplemented, "method DownloadTaildropFile not implemented")
 }
-
 func (UnimplementedStartedServiceServer) DeleteTaildropFile(context.Context, *DeleteTaildropFileRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteTaildropFile not implemented")
 }
-
 func (UnimplementedStartedServiceServer) CancelTaildropReceiving(context.Context, *CancelTaildropReceivingRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelTaildropReceiving not implemented")
 }
-
 func (UnimplementedStartedServiceServer) ProvideUSBDevices(grpc.BidiStreamingServer[USBProviderMessage, USBServerMessage]) error {
 	return status.Error(codes.Unimplemented, "method ProvideUSBDevices not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeUSBIPServerStatus(*emptypb.Empty, grpc.ServerStreamingServer[USBIPServerStatusUpdate]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeUSBIPServerStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeOpenConnectStatus(*emptypb.Empty, grpc.ServerStreamingServer[OpenConnectStatusUpdate]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeOpenConnectStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubmitOpenConnectAuthResponse(context.Context, *OpenConnectAuthResponseSubmission) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitOpenConnectAuthResponse not implemented")
 }
-
 func (UnimplementedStartedServiceServer) CancelOpenConnectAuthChallenge(context.Context, *OpenConnectAuthChallengeCancel) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelOpenConnectAuthChallenge not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeOpenVPNStatus(*emptypb.Empty, grpc.ServerStreamingServer[OpenVPNStatusUpdate]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeOpenVPNStatus not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubmitOpenVPNChallengeResponse(context.Context, *OpenVPNChallengeSubmission) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitOpenVPNChallengeResponse not implemented")
 }
-
 func (UnimplementedStartedServiceServer) CancelOpenVPNChallenge(context.Context, *OpenVPNChallengeCancel) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelOpenVPNChallenge not implemented")
 }
-
 func (UnimplementedStartedServiceServer) SubscribeNotifications(*emptypb.Empty, grpc.ServerStreamingServer[NotificationEvent]) error {
 	return status.Error(codes.Unimplemented, "method SubscribeNotifications not implemented")
 }
@@ -1183,6 +1157,24 @@ func _StartedService_CloseAllConnections_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StartedServiceServer).CloseAllConnections(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StartedService_ClearDNSCache_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StartedServiceServer).ClearDNSCache(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StartedService_ClearDNSCache_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StartedServiceServer).ClearDNSCache(ctx, req.(*emptypb.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1591,6 +1583,10 @@ var StartedService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CloseAllConnections",
 			Handler:    _StartedService_CloseAllConnections_Handler,
+		},
+		{
+			MethodName: "ClearDNSCache",
+			Handler:    _StartedService_ClearDNSCache_Handler,
 		},
 		{
 			MethodName: "GetDeprecatedWarnings",

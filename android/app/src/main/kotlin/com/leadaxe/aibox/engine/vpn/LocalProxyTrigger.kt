@@ -1,0 +1,102 @@
+package com.leadaxe.aibox.engine.vpn
+
+import com.leadaxe.aibox.app.AppState
+import com.leadaxe.aibox.app.AppStateStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/**
+ * Auto-start/stop of the local HTTP/SOCKS5 inbounds based on which apps are
+ * making connections.
+ *
+ * The use case: a desktop tool (or another device on the LAN via a hotspot)
+ * needs a proxy only while a specific app on the phone is actually working
+ * — keeping the inbound always-on wastes battery and invites other apps to
+ * silently route through it.
+ *
+ * Mechanics:
+ *
+ *  - The trigger watches the live connection stream the engine already
+ *    produces; a connection's [BoxEngine.ConnectionInfo.packageNames] is
+ *    how an app is identified.
+ *  - When any connection from a trigger package is seen, the configured
+ *    inbounds are switched on (kernel reload) and a hold timer starts.
+ *  - While trigger traffic keeps appearing the hold timer refreshes; when
+ *    it stops, the inbound switches off after the idle hold elapses — so a
+ *    short gap between requests does not flap the tunnel.
+ *
+ * Flapping is bounded: a reload only happens on a state *transition*, and
+ * the hold window (default 60s) is far longer than the poll cadence.
+ */
+class LocalProxyTrigger(
+    private val store: AppStateStore,
+    private val scope: CoroutineScope,
+    private val onTransition: (suspend (Boolean) -> Unit),
+) {
+
+    /** Remaining hold time in ms; 0 = the inbound should be off. */
+    @Volatile
+    private var holdUntil: Long = 0
+
+    /** Whether the inbounds are currently compiled in. */
+    @Volatile
+    private var engaged: Boolean = false
+
+    private var job: Job? = null
+
+    fun start() {
+        stop()
+        job = scope.launch {
+            while (isActive) {
+                delay(POLL_MS)
+                tick()
+            }
+        }
+    }
+
+    fun stop() {
+        job?.cancel()
+        job = null
+        holdUntil = 0
+        if (engaged) {
+            engaged = false
+        }
+    }
+
+    /**
+     * Feeds a connection snapshot in. Called from the engine's connections
+     * collector (VPN process), so this runs at the push cadence.
+     */
+    fun onConnections(connections: List<BoxEngine.ConnectionInfo>) {
+        val state = store.current
+        val triggers = state.localProxyTriggerPackages
+        if (triggers.isEmpty()) return
+        val hit = connections.any { conn ->
+            conn.active && conn.packageNames.any { it in triggers }
+        }
+        if (hit) {
+            holdUntil = System.currentTimeMillis() + state.localProxyHoldMs
+        }
+    }
+
+    private suspend fun tick() {
+        val state = store.current
+        val now = System.currentTimeMillis()
+        val wantsOn = state.localProxyAutoTrigger && now < holdUntil
+        if (wantsOn != engaged) {
+            engaged = wantsOn
+            onTransition(wantsOn)
+        }
+    }
+
+    companion object {
+        /** How often the hold timer is re-evaluated. */
+        const val POLL_MS = 5_000L
+
+        /** Default hold window after the last trigger-package request. */
+        const val DEFAULT_HOLD_MS = 60_000L
+    }
+}
