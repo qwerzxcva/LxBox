@@ -160,3 +160,48 @@ fun materializePreset(
  */
 fun List<RouteRule>.withoutPreset(presetId: String): List<RouteRule> =
     filterNot { it.presetId == presetId }
+
+/**
+ * Managed id for the per-subscription suffix rule (see
+ * [Subscription.routeBySuffix]). One rule per subscription; a later
+ * materialisation replaces the previous one in place.
+ */
+fun subscriptionRuleId(subscriptionId: String) = "sub-route-$subscriptionId"
+
+/**
+ * Materialises the subscription host as a domain-suffix rule so the panel
+ * itself is routed the way the subscription is fetched: proxy mode → the
+ * main selector; direct/auto mode → direct (auto tries direct first, so
+ * pinning direct matches what actually happens). Managed like presets:
+ * visible in the rules list, removable, replaced (not duplicated) on
+ * re-save. Returns null when the URL has no hostname.
+ */
+fun subscriptionSuffixRule(subscription: Subscription): RouteRule? {
+    val host = runCatching {
+        java.net.URI(subscription.url.trim()).host
+    }.getOrNull()?.lowercase() ?: return null
+    if (host.isBlank()) return null
+    val outbound = if (subscription.fetchVia == FetchViaProxy) ProxySelectorTag else DirectOutboundTag
+    return RouteRule(
+        id = subscriptionRuleId(subscription.id),
+        name = subscription.name.ifBlank { host },
+        domainSuffix = listOf(host.removePrefix("www.")),
+        outbound = outbound,
+        presetId = subscriptionRuleId(subscription.id),
+    )
+}
+
+/**
+ * Applies the routeBySuffix toggle of [subscription] to [rules]: removes
+ * any previous managed rule for it, then appends the fresh one when
+ * enabled. Returns the updated list (same instance when nothing changed).
+ */
+fun List<RouteRule>.withSubscriptionRule(subscription: Subscription): List<RouteRule> {
+    val managedId = subscriptionRuleId(subscription.id)
+    val without = filterNot { it.id == managedId || it.presetId == managedId }
+    if (!subscription.routeBySuffix) {
+        return if (without.size == size) this else without
+    }
+    val rule = subscriptionSuffixRule(subscription) ?: return without
+    return without + rule
+}

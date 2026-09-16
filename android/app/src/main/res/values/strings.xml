@@ -66,6 +66,11 @@
     <string name="subs_resolver">DNS resolver</string>
     <string name="subs_resolver_system">System default</string>
     <string name="subs_resolver_hint">Only https/h3 DNS servers can be used for fetching.</string>
+    <string name="subs_resolver_follow">Follow tunnel DNS</string>
+    <string name="subs_resolver_custom">Custom DNS</string>
+    <string name="subs_resolver_custom_hint">DoH endpoint (https://…) resolves the panel host for fetching; anything else falls back to the system resolver.</string>
+    <string name="subs_route_by_suffix">Route the panel by its domain</string>
+    <string name="subs_route_by_suffix_desc">Adds a domain-suffix rule for this panel: proxy mode routes it through the proxy, direct (and auto) routes it direct — visible in the rules list.</string>
     <string name="subs_deduplicate">Remove duplicate nodes</string>
     <string name="subs_deduplicate_desc">Drop nodes with the same protocol, server, port and credentials.</string>
     <string name="subs_group">Folder</string>
@@ -475,7 +480,7 @@
     <string name="settings_local_trigger_packages">Trigger apps (package name, one per line)</string>
     <string name="settings_local_trigger_packages_hint">e.g. com.example.desktopcompanion — the app\'s requests bring the inbounds up.</string>
     <string name="settings_local_trigger_hold">Hold window (ms)</string>
-    <string name="settings_local_trigger_hold_hint">How long the inbounds stay up after the last request from a trigger app.</string>
+    <string name="settings_local_trigger_hold_hint">How long the inbounds stay open after a request from a trigger app. Every new request from that app restarts the timer, so the inbounds stay up as long as it keeps working — and close once it goes quiet for the whole window.</string>
     <string name="settings_tun_addresses">TUN addresses</string>
     <string name="settings_tun_ipv4">TUN IPv4 address</string>
     <string name="settings_tun_ipv6">TUN IPv6 address</string>
@@ -492,6 +497,8 @@
 
     <!-- common -->
     <string name="common_save">Save</string>
+    <string name="common_expand">Show choices</string>
+    <string name="common_collapse">Hide choices</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_select_all">Select all</string>
     <string name="common_select_none">Clear</string>

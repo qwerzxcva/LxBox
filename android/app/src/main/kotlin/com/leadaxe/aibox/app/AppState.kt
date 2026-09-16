@@ -416,6 +416,13 @@ data class Subscription(
      * [AppState.dnsServers]. Empty = system resolver.
      */
     val dnsServer: String = "",
+    /**
+     * Custom resolver address entered in the subscription editor when none
+     * of the saved DNS servers fit. Only DoH endpoints (https:// or h3) can
+     * be queried without a full DNS stack; other values fall back to the
+     * system resolver. Empty = use [dnsServer] / system.
+     */
+    val customDnsServer: String = "",
     /** Drop duplicate nodes (same type + server + port + credentials) on import. */
     val deduplicate: Boolean = true,
     /**
@@ -452,6 +459,14 @@ data class Subscription(
      * (off / 12h / 24h / 72h); the fetcher checks staleness lazily.
      */
     val updateIntervalHours: Int = 0,
+    /**
+     * Add this subscription's host as a domain-suffix route rule, steering
+     * the panel's traffic by the chosen fetch mode: proxy → the main
+     * selector, direct (and auto) → direct. The rule is materialised into
+     * [AppState.routeRules] at save/refresh time with [RulePresets]-style
+     * managed ids so it stays visible and removable.
+     */
+    val routeBySuffix: Boolean = false,
     /**
      * User override of the display name; empty = derived from the panel's
      * `profile-title` header (or the URL host) on first successful fetch.

@@ -54,6 +54,7 @@ import com.leadaxe.aibox.AIBoxApp
 import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.OutboundProfile
 import com.leadaxe.aibox.app.Subscription
+import com.leadaxe.aibox.app.withSubscriptionRule
 import com.leadaxe.aibox.engine.share.ShareLinkParser
 import com.leadaxe.aibox.engine.share.SubscriptionFetcher
 import com.leadaxe.aibox.engine.vpn.VpnRelay
@@ -309,6 +310,9 @@ fun SubscriptionsScreen() {
                                     st.copy(
                                         subscriptions = st.subscriptions.filterNot { it.id == sub.id },
                                         outbounds = st.outbounds.filterNot { it.subscriptionId == sub.id },
+                                        routeRules = st.routeRules.withSubscriptionRule(
+                                            sub.copy(routeBySuffix = false),
+                                        ),
                                     )
                                 }
                             },
@@ -405,7 +409,10 @@ fun SubscriptionsScreen() {
             },
             onAdd = { sub ->
                 store.update { st ->
-                    st.copy(subscriptions = st.subscriptions + sub)
+                    st.copy(
+                        subscriptions = st.subscriptions + sub,
+                        routeRules = st.routeRules.withSubscriptionRule(sub),
+                    )
                 }
                 scope.launch {
                     runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers, existingFor = emptyList()) }
@@ -546,7 +553,12 @@ fun SubscriptionsScreen() {
             onDismiss = { editingSubscription = null },
             onSave = { updated ->
                 store.update { st ->
-                    st.copy(subscriptions = st.subscriptions.map { if (it.id == updated.id) updated else it })
+                    st.copy(
+                        subscriptions = st.subscriptions.map { if (it.id == updated.id) updated else it },
+                        // Re-materialise the managed suffix rule: the URL,
+                        // fetch mode or the toggle may all have changed.
+                        routeRules = st.routeRules.withSubscriptionRule(updated),
+                    )
                 }
                 editingSubscription = null
                 // The link or the update mode changed — refetch so the node
@@ -649,6 +661,8 @@ private fun EditSubscriptionDialog(
     var url by remember { mutableStateOf(initial.url) }
     var fetchVia by remember { mutableStateOf(initial.fetchVia) }
     var resolver by remember { mutableStateOf(initial.dnsServer) }
+    var customResolver by remember { mutableStateOf(initial.customDnsServer) }
+    var routeBySuffix by remember { mutableStateOf(initial.routeBySuffix) }
     var enableEch by remember { mutableStateOf(initial.enableEch) }
     var echQueryServerName by remember { mutableStateOf(initial.echQueryServerName) }
     var echConfig by remember { mutableStateOf(initial.echConfig) }
@@ -701,15 +715,18 @@ private fun EditSubscriptionDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                SingleChoiceChips(
-                    label = stringResource(R.string.subs_resolver),
-                    options = listOf("") + resolverOptions.map { it.tag },
-                    selected = resolver,
-                    onSelect = { resolver = it },
-                    display = { tag ->
-                        if (tag.isEmpty()) stringResource(R.string.subs_resolver_system)
-                        else resolverOptions.firstOrNull { s -> s.tag == tag }?.name?.ifBlank { tag } ?: tag
-                    },
+                ResolverPicker(
+                    allServers = state.dnsServers,
+                    selectedTag = resolver,
+                    custom = customResolver,
+                    onSelectTag = { resolver = it; customResolver = "" },
+                    onCustom = { customResolver = it; resolver = "" },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.subs_route_by_suffix),
+                    supporting = stringResource(R.string.subs_route_by_suffix_desc),
+                    checked = routeBySuffix,
+                    onCheckedChange = { routeBySuffix = it },
                 )
                 SwitchRow(
                     label = stringResource(R.string.subs_ech),
@@ -745,6 +762,8 @@ private fun EditSubscriptionDialog(
                             url = url.trim(),
                             fetchVia = fetchVia,
                             dnsServer = resolver,
+                            customDnsServer = customResolver,
+                            routeBySuffix = routeBySuffix,
                             enableEch = enableEch,
                             echQueryServerName = echQueryServerName,
                             echConfig = echConfig,
@@ -755,6 +774,88 @@ private fun EditSubscriptionDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
+}
+
+/**
+ * Subscription DNS-resolver picker. Collapsed by default: one label chip
+ * showing the current choice (default = the tunnel's DNS, i.e. the
+ * subscription's host is resolved by the rules' DNS chain — including the
+ * fallback). Tapping expands to all saved DNS servers plus a custom-entry
+ * tail. DoH-only servers are marked, but any server is selectable —
+ * non-DoH ones simply resolve via the system resolver.
+ */
+@Composable
+private fun ResolverPicker(
+    allServers: List<com.leadaxe.aibox.app.DnsServerState>,
+    selectedTag: String,
+    custom: String,
+    onSelectTag: (String) -> Unit,
+    onCustom: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var editingCustom by remember { mutableStateOf(false) }
+
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.subs_resolver),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = when {
+                    custom.isNotBlank() -> custom
+                    selectedTag.isNotBlank() ->
+                        allServers.firstOrNull { it.tag == selectedTag }?.name?.ifBlank { selectedTag } ?: selectedTag
+                    else -> stringResource(R.string.subs_resolver_follow)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (expanded) {
+            FilterChip(
+                selected = selectedTag.isBlank() && custom.isBlank(),
+                onClick = { onSelectTag("") },
+                label = { Text(stringResource(R.string.subs_resolver_follow)) },
+            )
+            allServers.forEach { server ->
+                FilterChip(
+                    selected = selectedTag == server.tag,
+                    onClick = { onSelectTag(server.tag) },
+                    label = {
+                        Text(
+                            (server.name.ifBlank { server.tag }) +
+                                if (server.type == "https" || server.type == "h3") " (DoH)" else "",
+                        )
+                    },
+                )
+            }
+            FilterChip(
+                selected = custom.isNotBlank() || editingCustom,
+                onClick = { editingCustom = !editingCustom },
+                label = { Text(stringResource(R.string.subs_resolver_custom)) },
+            )
+            if (editingCustom || custom.isNotBlank()) {
+                StringField(
+                    label = stringResource(R.string.subs_resolver_custom),
+                    value = custom,
+                    onValueChange = onCustom,
+                    placeholder = "https://dns.google/dns-query",
+                    supporting = stringResource(R.string.subs_resolver_custom_hint),
+                )
+            }
+        }
+        TextButton(onClick = { expanded = !expanded }) {
+            Text(
+                if (expanded) stringResource(R.string.common_collapse)
+                else stringResource(R.string.common_expand),
+            )
+        }
+    }
 }
 
 @Composable
@@ -840,6 +941,8 @@ private fun AddSubscriptionDialog(
     var url by remember { mutableStateOf("") }
     var fetchVia by remember { mutableStateOf(com.leadaxe.aibox.app.FetchViaAuto) }
     var resolver by remember { mutableStateOf("") }
+    var customResolver by remember { mutableStateOf("") }
+    var routeBySuffix by remember { mutableStateOf(false) }
     var deduplicate by remember { mutableStateOf(true) }
     var userAgent by remember { mutableStateOf(com.leadaxe.aibox.app.UserAgentSingBox) }
     var tlsFingerprint by remember { mutableStateOf(com.leadaxe.aibox.app.FingerprintChrome) }
@@ -885,15 +988,12 @@ private fun AddSubscriptionDialog(
                         }
                     },
                 )
-                SingleChoiceChips(
-                    label = stringResource(R.string.subs_resolver),
-                    options = listOf("") + resolverOptions.map { it.tag },
-                    selected = resolver,
-                    onSelect = { resolver = it },
-                    display = { tag ->
-                        if (tag.isEmpty()) stringResource(R.string.subs_resolver_system)
-                        else resolverOptions.firstOrNull { s -> s.tag == tag }?.name?.ifBlank { tag } ?: tag
-                    },
+                ResolverPicker(
+                    allServers = state.dnsServers,
+                    selectedTag = resolver,
+                    custom = customResolver,
+                    onSelectTag = { resolver = it; customResolver = "" },
+                    onCustom = { customResolver = it; resolver = "" },
                 )
                 if (resolverOptions.isEmpty()) {
                     Text(
@@ -902,6 +1002,12 @@ private fun AddSubscriptionDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                SwitchRow(
+                    label = stringResource(R.string.subs_route_by_suffix),
+                    supporting = stringResource(R.string.subs_route_by_suffix_desc),
+                    checked = routeBySuffix,
+                    onCheckedChange = { routeBySuffix = it },
+                )
                 SingleChoiceChips(
                     label = stringResource(R.string.subs_update_interval),
                     options = com.leadaxe.aibox.app.UpdateIntervalOptions.map { it.first.toString() },
@@ -1014,6 +1120,8 @@ private fun AddSubscriptionDialog(
                             groupId = groupId,
                             fetchVia = fetchVia,
                             dnsServer = resolver,
+                            customDnsServer = customResolver,
+                            routeBySuffix = routeBySuffix,
                             deduplicate = deduplicate,
                             userAgent = userAgent,
                             tlsFingerprint = tlsFingerprint,

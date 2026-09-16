@@ -64,6 +64,11 @@
     <string name="subs_resolver">DNS 解析器</string>
     <string name="subs_resolver_system">系统默认</string>
     <string name="subs_resolver_hint">仅 https/h3 类型的 DNS 服务器可用于抓取订阅。</string>
+    <string name="subs_resolver_follow">跟随隧道 DNS</string>
+    <string name="subs_resolver_custom">自定义 DNS</string>
+    <string name="subs_resolver_custom_hint">填 DoH 端点（https://…）可在抓取时解析面板域名；其他值回落到系统解析器。</string>
+    <string name="subs_route_by_suffix">按面板域名分流</string>
+    <string name="subs_route_by_suffix_desc">为该面板添加域名后缀规则：获取方式选代理则面板走代理，直连（及自动）走直连 — 规则可在路由列表中查看和删除。</string>
     <string name="subs_deduplicate">节点去重</string>
     <string name="subs_deduplicate_desc">按协议、服务器、端口与凭据去重，丢弃重复节点。</string>
     <string name="subs_group">所属文件夹</string>
@@ -473,7 +478,7 @@
     <string name="settings_local_trigger_packages">触发应用（包名，每行一个）</string>
     <string name="settings_local_trigger_packages_hint">例如 com.example.desktopcompanion — 该应用的请求会拉起入站。</string>
     <string name="settings_local_trigger_hold">保持窗口（毫秒）</string>
-    <string name="settings_local_trigger_hold_hint">触发应用最后一次请求后，入站保持开启的时长。</string>
+    <string name="settings_local_trigger_hold_hint">触发应用每次发起新请求都会重新计时，只要它还在活动，SOCKS5/HTTP 入站就一直开着；整个窗口时长内没有任何该应用的请求才自动关闭。</string>
     <string name="settings_tun_addresses">TUN 地址</string>
     <string name="settings_tun_ipv4">TUN IPv4 地址</string>
     <string name="settings_tun_ipv6">TUN IPv6 地址</string>
@@ -490,6 +495,8 @@
 
     <!-- common -->
     <string name="common_save">保存</string>
+    <string name="common_expand">展开选项</string>
+    <string name="common_collapse">收起选项</string>
     <string name="common_cancel">取消</string>
     <string name="common_select_all">全选</string>
     <string name="common_select_none">清除</string>

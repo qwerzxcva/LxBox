@@ -383,9 +383,19 @@ class SubscriptionFetcher(private val context: Context) {
         dnsServers: List<DnsServerState>,
         url: URL,
     ): InetAddress? {
+        val host = url.host ?: return null
+        // Custom address wins: a DoH endpoint typed into the editor is used
+        // as-is, anything else (plain IP / udp server) can't be queried
+        // without a full DNS stack and falls back to the system resolver.
+        val custom = subscription.customDnsServer.trim()
+        if (custom.isNotEmpty()) {
+            if (custom.startsWith("https://") || custom.startsWith("h3://")) {
+                return queryDoh(custom, host)
+            }
+            return null
+        }
         if (subscription.dnsServer.isBlank()) return null
         val server = dnsServers.firstOrNull { it.tag == subscription.dnsServer } ?: return null
-        val host = url.host ?: return null
         // Only DoH endpoints can be queried without a full DNS stack. Plain
         // udp/tcp/local servers are left to the system resolver.
         if (server.type != "https" && server.type != "h3") return null

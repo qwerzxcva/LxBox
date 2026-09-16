@@ -71,13 +71,24 @@ class LocalProxyTrigger(
     /**
      * Feeds a connection snapshot in. Called from the engine's connections
      * collector (VPN process), so this runs at the push cadence.
+     *
+     * Hold is refreshed by ANY live connection from a trigger package — the
+     * window is "time since the trigger app was last seen", not a fixed
+     * duration per request. Local-inbound connections (desktop tool →
+     * local-socks5/local-http) carry no package name, but once the inbounds
+     * are engaged they exist only because a trigger app is using them, so
+     * they count too — otherwise the inbounds would close mid-use.
      */
     fun onConnections(connections: List<BoxEngine.ConnectionInfo>) {
         val state = store.current
         val triggers = state.localProxyTriggerPackages
         if (triggers.isEmpty()) return
         val hit = connections.any { conn ->
-            conn.active && conn.packageNames.any { it in triggers }
+            when {
+                !conn.active -> false
+                conn.inbound == "local-socks5" || conn.inbound == "local-http" -> engaged
+                else -> conn.packageNames.any { it in triggers }
+            }
         }
         if (hit) {
             holdUntil = System.currentTimeMillis() + state.localProxyHoldMs
