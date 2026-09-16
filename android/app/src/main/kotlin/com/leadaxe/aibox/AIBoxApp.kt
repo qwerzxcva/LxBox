@@ -27,6 +27,12 @@ class AIBoxApp : Application() {
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannels()
+        // Download aids (mirror + token) live in the state store; the
+        // fetcher reads them through this provider on every batch.
+        com.leadaxe.aibox.engine.share.SubscriptionFetcher.downloadAidsProvider = {
+            val s = appStateStore.current
+            s.githubMirror to s.githubToken
+        }
         scheduleStaleSubscriptionRefresh()
     }
 

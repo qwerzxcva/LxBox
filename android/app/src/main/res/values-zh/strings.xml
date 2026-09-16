@@ -245,6 +245,17 @@
     <string name="settings_backup_exported">备份已导出。</string>
     <string name="settings_backup_restored">备份已恢复。</string>
     <string name="settings_backup_failed">备份操作失败。</string>
+    <string name="settings_section_network">网络策略与下载</string>
+    <string name="settings_ssid_policy">SSID 策略</string>
+    <string name="settings_ssid_off">关闭</string>
+    <string name="settings_ssid_blacklist">这些网络断开隧道</string>
+    <string name="settings_ssid_whitelist">仅这些网络保持隧道</string>
+    <string name="settings_ssid_list">WiFi 网络（SSID，每行一个）</string>
+    <string name="settings_ssid_list_hint">不区分大小写。新版 Android 读取 SSID 需要位置权限。</string>
+    <string name="settings_github_mirror">GitHub 镜像</string>
+    <string name="settings_github_mirror_hint">直连不了 GitHub 时（规则集/订阅），给 GitHub 链接加前缀，如 https://ghfast.top</string>
+    <string name="settings_github_token">GitHub Token（可选）</string>
+    <string name="settings_github_token_hint">提高规则集更新时 raw/api.github.com 的速率限制。仅发送给 github.com 域名，保存在本机。</string>
     <string name="settings_battery_tunnel_policy_desc">熄屏时暂停隧道并关闭空闲连接；进入 Doze 深暂停（彻底停内核定时器），下次唤醒重置网络以恢复推送。网络切换（Wi-Fi ↔ 蜂窝）自动关闭半死连接并重载配置。</string>
     <string name="settings_section_mux">多路复用（mux）</string>
     <string name="settings_mux_enable">启用多路复用</string>

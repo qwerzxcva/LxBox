@@ -219,6 +219,31 @@ data class AppState(
      * Written by the VPN service on state transitions.
      */
     val vpnWasRunning: Boolean = false,
+
+    // ------------------------------------------------- network policy (box)
+    /**
+     * SSID-based tunnel policy (reference client's network control): when
+     * non-empty, the tunnel state follows the matched network — disconnect
+     * on a blacklisted SSID, connect-level enforcement on a whitelisted one.
+     * Empty = no SSID policy.
+     */
+    val ssidPolicyMode: String = "",
+    /** SSIDs the policy applies to. */
+    val ssidPolicyList: List<String> = emptyList(),
+
+    // ------------------------------------------------------- download aids
+    /**
+     * Optional GitHub access token for rule-set/subscription downloads that
+     * hit api.github.com rate limits (60/hr unauthenticated). Stored in the
+     * same state file as everything else — device-local.
+     */
+    val githubToken: String = "",
+    /**
+     * Mirror prefix for GitHub downloads (raw.githubusercontent.com / 
+     * github.com release URLs), e.g. "https://ghfast.top". Empty = direct.
+     * Reference client's use_ghproxy/url_ghproxy pair.
+     */
+    val githubMirror: String = "",
 )
 
 const val ClashModeRule = "Rule"

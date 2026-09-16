@@ -247,6 +247,17 @@
     <string name="settings_backup_exported">Backup exported.</string>
     <string name="settings_backup_restored">Backup restored.</string>
     <string name="settings_backup_failed">Backup operation failed.</string>
+    <string name="settings_section_network">Network policy &amp; downloads</string>
+    <string name="settings_ssid_policy">SSID policy</string>
+    <string name="settings_ssid_off">Off</string>
+    <string name="settings_ssid_blacklist">Disconnect on these</string>
+    <string name="settings_ssid_whitelist">Only connect on these</string>
+    <string name="settings_ssid_list">WiFi networks (SSID, one per line)</string>
+    <string name="settings_ssid_list_hint">Matching is case-insensitive. Requires location permission for the SSID to be readable on modern Android.</string>
+    <string name="settings_github_mirror">GitHub mirror</string>
+    <string name="settings_github_mirror_hint">Prefix applied to GitHub URLs (rule sets, subscriptions) when the site is unreachable directly, e.g. https://ghfast.top</string>
+    <string name="settings_github_token">GitHub token (optional)</string>
+    <string name="settings_github_token_hint">Raises the raw/api.github.com rate limit for rule-set updates. Sent only to github.com hosts, stored on-device.</string>
     <string name="settings_battery_tunnel_policy_desc">Screen off pauses the tunnel and closes idle connections. Doze deep-suspend stops the kernel timers entirely; the next wake resets the network so pushes arrive fresh. Network switches (Wi-Fi ↔ cellular) close half-dead sockets and reload the config automatically.</string>
     <string name="settings_section_mux">Multiplex (mux)</string>
     <string name="settings_mux_enable">Enable multiplexing</string>

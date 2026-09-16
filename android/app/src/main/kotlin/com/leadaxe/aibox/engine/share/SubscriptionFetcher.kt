@@ -229,7 +229,9 @@ class SubscriptionFetcher(private val context: Context) {
         val dir = File(context.filesDir, "box/ruleset").apply { mkdirs() }
         val target = File(dir, "${ruleSet.id}.${ruleSet.extension}")
         // Rule-set payloads are not user-proxied content; always direct.
-        val body = openStream(URL(ruleSet.url), proxy = null, pinnedAddress = null)
+        // GitHub mirror aid still applies — most managed rule sets are
+        // raw.githubusercontent.com URLs that censored networks can't reach.
+        val body = openStream(URL(applyDownloadAids(ruleSet.url)), proxy = null, pinnedAddress = null)
         target.writeBytes(body.toByteArray(StandardCharsets.UTF_8))
         target
     }
@@ -239,12 +241,58 @@ class SubscriptionFetcher(private val context: Context) {
     private fun download(subscription: Subscription, dnsServers: List<DnsServerState>): String =
         downloadWithMeta(subscription, dnsServers).first
 
+    /**
+     * Applies the download aids from state (reference client's box.tool):
+     * a mirror prefix for GitHub URLs (ghfast.top-style), bypassing the
+     * blocks that make raw.githubusercontent.com unreachable from censored
+     * networks. Non-GitHub URLs pass through untouched.
+     */
+    private fun applyDownloadAids(rawUrl: String): String {
+        val mirror = currentGithubMirror
+        if (mirror.isBlank()) return rawUrl
+        val isGithub = rawUrl.startsWith("https://github.com/") ||
+            rawUrl.startsWith("https://raw.githubusercontent.com/") ||
+            rawUrl.startsWith("https://gist.github.com/") ||
+            rawUrl.startsWith("https://gist.githubusercontent.com/")
+        return if (isGithub && !rawUrl.startsWith(mirror)) {
+            mirror.trimEnd('/') + "/" + rawUrl
+        } else {
+            rawUrl
+        }
+    }
+
+    /** Latest mirror/token, read from the store on every call (cheap). */
+    private var cachedDownloadAids: Pair<String, String> = "" to ""
+
+    private var downloadAidsAt: Long = 0
+
+    private val currentGithubMirror: String
+        get() {
+            // Cache for 5s to avoid a disk read per URL in a batch refresh.
+            if (System.currentTimeMillis() - downloadAidsAt > 5_000) {
+                cachedDownloadAids = downloadAidsProvider?.invoke() ?: ("" to "")
+                downloadAidsAt = System.currentTimeMillis()
+            }
+            return cachedDownloadAids.first
+        }
+
+    private val currentGithubToken: String
+        get() {
+            if (System.currentTimeMillis() - downloadAidsAt > 5_000) {
+                cachedDownloadAids = downloadAidsProvider?.invoke() ?: ("" to "")
+                downloadAidsAt = System.currentTimeMillis()
+            }
+            return cachedDownloadAids.second
+        }
+
     /** [download] plus the response headers the panel advertised. */
     private fun downloadWithMeta(
         subscription: Subscription,
         dnsServers: List<DnsServerState>,
     ): Pair<String, Map<String, String>> {
-        val url = URL(subscription.url)
+        // GitHub mirror aid: censored networks often can't reach
+        // raw.githubusercontent.com directly; a mirror prefix fixes that.
+        val url = URL(applyDownloadAids(subscription.url))
         val mode = subscription.fetchVia
         val headers = subscriptionHeaders(subscription)
         return when (mode) {
@@ -370,6 +418,15 @@ class SubscriptionFetcher(private val context: Context) {
         extraHeaders: Map<String, String> = emptyMap(),
         depth: Int = 0,
     ): Pair<String, Map<String, String>> {
+        // GitHub token aid: raises the api/raw rate limit on hosts that
+        // receive anonymous 60/hr limits. Never sent to non-GitHub hosts.
+        val headers = if (currentGithubToken.isNotBlank() &&
+            url.host.orEmpty().let { it == "api.github.com" || it == "raw.githubusercontent.com" }
+        ) {
+            extraHeaders + ("Authorization" to "Bearer ${currentGithubToken}")
+        } else {
+            extraHeaders
+        }
         val realHost = url.host
         val connectUrl = if (pinnedAddress != null && url.protocol == "https") {
             // Keep the real host in the Host header / SNI while dialing the
@@ -394,7 +451,7 @@ class SubscriptionFetcher(private val context: Context) {
         if (pinnedAddress != null) {
             conn.setRequestProperty("Host", realHost)
         }
-        extraHeaders.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (conn is HttpsURLConnection && pinnedAddress != null) {
             conn.sslSocketFactory = SniSocketFactory(realHost)
         }
@@ -500,7 +557,7 @@ class SubscriptionFetcher(private val context: Context) {
     @Suppress("unused")
     private val unusedCert: X509Certificate? = null
 
-    private companion object {
+    companion object {
         const val LOOPBACK = "127.0.0.1"
 
         /** How long to wait for the loopback probe before giving up. */
@@ -508,5 +565,12 @@ class SubscriptionFetcher(private val context: Context) {
 
         /** Redirect hops accepted before giving up (panel → edge → sign). */
         const val MAX_REDIRECTS = 5
+
+        /**
+         * Set once by the service so the fetcher can read the user's
+         * download aids (mirror/token) without a direct store dependency.
+         */
+        @Volatile
+        var downloadAidsProvider: (() -> Pair<String, String>)? = null
     }
 }

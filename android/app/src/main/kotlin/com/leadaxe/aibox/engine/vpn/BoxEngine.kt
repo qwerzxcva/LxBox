@@ -196,6 +196,12 @@ class BoxEngine internal constructor(
             val cfg = ConfigCompiler
                 .compile(state, ruleSetDir = workDir()).toString()
             ensureLibboxInitialised()
+            // Pre-flight check (reference client's `sing-box check` pattern):
+            // construct the whole instance off the hot path and discard it.
+            // A config the kernel would reject at start now fails HERE with
+            // the kernel's own message, before any tun fd is opened or a
+            // half-started service needs rolling back.
+            io.nekohasekai.libbox.Libbox.checkConfig(cfg)
             val s = CommandServer(this, platform).also { server = it }
             s.startOrReloadService(cfg, state.toOverrideOptions())
             attachClient()

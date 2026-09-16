@@ -46,6 +46,13 @@ class NetworkMonitor(
     private var lastReloadTrigger: Long = 0
     private var reloadJob: Job? = null
 
+    // Reference-client fingerprinting (box net.inotify): a state key of
+    // everything that actually changes the config's view of the network —
+    // not just the callback event type. WiFi reconnecting with a fresh IP,
+    // or a captive portal re-validating on the same link, produces the same
+    // key and therefore no reload at all.
+    private var lastNetworkKey: String? = null
+
     fun start() {
         if (callback != null) return
         val req = NetworkRequest.Builder()
@@ -59,6 +66,7 @@ class NetworkMonitor(
 
             override fun onLost(network: Network) {
                 Log.d(TAG, "network lost: $network")
+                lastNetworkKey = null // force the next event through
                 scheduleReload("lost")
             }
 
@@ -71,6 +79,7 @@ class NetworkMonitor(
 
             override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
                 evaluateIpv6Availability(network, linkProperties)
+                scheduleReload("link")
             }
         }
         callback = cb
@@ -109,14 +118,94 @@ class NetworkMonitor(
         }
     }
 
+    /**
+     * Builds the fingerprint of the current default network: interface name,
+     * addresses, DNS servers, and validated capability. Mirrors the
+     * reference client's `wifi_status|ssid|bssid|ip` key — anything that
+     * changes here changes what the kernel dials through.
+     */
+    private fun currentNetworkKey(): String {
+        val active = runCatching {
+            @Suppress("DEPRECATION")
+            cm.allNetworks
+                .firstOrNull { net ->
+                    cm.getNetworkCapabilities(net)
+                        ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                }
+        }.getOrNull()
+        val lp = active?.let { runCatching { cm.getLinkProperties(it) }.getOrNull() } ?: return "none"
+        val caps = active.let { runCatching { cm.getNetworkCapabilities(it) }.getOrNull() }
+        val validated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        val addresses = lp.linkAddresses.joinToString(",") { it.address.hostAddress.orEmpty() }
+        val dns = lp.dnsServers.joinToString(",") { it.hostAddress }
+        val iface = lp.interfaceName.orEmpty()
+        val metered = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == true
+        return "$iface|$addresses|$dns|$validated|$metered"
+    }
+
+    /**
+     * SSID-based tunnel policy (reference client's network control). When
+     * the policy fires (blacklisted SSID connected, or whitelisted SSID not
+     * matched), the tunnel service is stopped and this returns true — the
+     * reload is suppressed because there is nothing to reload.
+     */
+    private fun evaluateSsidPolicy(): Boolean {
+        val state = store.current
+        val mode = state.ssidPolicyMode
+        if (mode.isBlank()) return false
+        val ssid = currentWifiSsid()?.removeSurrounding("\"") ?: return false
+        if (ssid.isBlank() || ssid == "<unknown ssid>") return false
+        val matched = state.ssidPolicyList.any { it.trim().equals(ssid, ignoreCase = true) }
+        val shouldStop = when (mode) {
+            "blacklist" -> matched
+            "whitelist" -> !matched
+            else -> return false
+        }
+        if (!shouldStop) return false
+        Log.i(TAG, "SSID policy ($mode): '$ssid' matched — stopping tunnel")
+        runCatching {
+            appCtx.startService(
+                android.content.Intent(appCtx, AIVpnService::class.java)
+                    .setAction(AIVpnService.ACTION_DISCONNECT),
+            )
+        }.onFailure { Log.w(TAG, "ssid policy stop failed", it) }
+        return true
+    }
+
+    /** Current SSID via WifiManager; location permission required to read it. */
+    private fun currentWifiSsid(): String? = runCatching {
+        val wifi = appCtx.applicationContext.getSystemService(Context.WIFI_SERVICE)
+            as? android.net.wifi.WifiManager ?: return null
+        val info = wifi.connectionInfo ?: return null
+        info.ssid
+    }.getOrNull()
+
     private fun scheduleReload(reason: String) {
-        // Coalesce bursts of events — `onLost` and `onAvailable` often fire
-        // within a few hundred ms of each other on the same physical link.
+        // Layer 1 — state fingerprint (box-style): identical view of the
+        // network, no reload. This is what kills the captive-portal and
+        // WiFi-reconnect churn the event-type debounce cannot see.
+        val key = currentNetworkKey()
+        if (key == lastNetworkKey && reason != "lost") {
+            Log.d(TAG, "network state unchanged ($reason), skip reload")
+            return
+        }
+
+        // Layer 1.5 — SSID policy (reference client's network control): a
+        // blacklisted SSID stops the tunnel, a whitelisted one keeps it.
+        // Implemented as a reload-suppressing disconnect: the service stops
+        // (not just skips config) so the VPN key icon goes away.
+        if (reason != "lost" && evaluateSsidPolicy()) {
+            return
+        }
+
+        // Layer 2 — time debounce: coalesce bursts (`onLost` + `onAvailable`
+        // fire within a few hundred ms of each other on the same link).
         val now = System.currentTimeMillis()
         if (now - lastReloadTrigger < DEBOUNCE_MS) {
             reloadJob?.cancel()
         }
         lastReloadTrigger = now
+        lastNetworkKey = key
         reloadJob = scope.launch {
             kotlinx.coroutines.delay(DEBOUNCE_MS)
             // quickResponse (Bettbox/FlClash): a network transition leaves

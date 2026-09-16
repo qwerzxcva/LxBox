@@ -369,6 +369,46 @@ fun SettingsScreen() {
         }
 
         item {
+            SettingsSection(stringResource(R.string.settings_section_network)) {
+                SingleChoiceChips(
+                    label = stringResource(R.string.settings_ssid_policy),
+                    options = listOf("", "blacklist", "whitelist"),
+                    selected = state.ssidPolicyMode,
+                    onSelect = { v -> store.update { it.copy(ssidPolicyMode = v) } },
+                    display = {
+                        when (it) {
+                            "blacklist" -> stringResource(R.string.settings_ssid_blacklist)
+                            "whitelist" -> stringResource(R.string.settings_ssid_whitelist)
+                            else -> stringResource(R.string.settings_ssid_off)
+                        }
+                    },
+                )
+                if (state.ssidPolicyMode.isNotBlank()) {
+                    ListField(
+                        label = stringResource(R.string.settings_ssid_list),
+                        values = state.ssidPolicyList,
+                        onValuesChange = { v -> store.update { it.copy(ssidPolicyList = v) } },
+                        supporting = stringResource(R.string.settings_ssid_list_hint),
+                    )
+                }
+                StringField(
+                    label = stringResource(R.string.settings_github_mirror),
+                    value = state.githubMirror,
+                    onValueChange = { v -> store.update { it.copy(githubMirror = v.trim()) } },
+                    placeholder = "https://ghfast.top",
+                    supporting = stringResource(R.string.settings_github_mirror_hint),
+                )
+                StringField(
+                    label = stringResource(R.string.settings_github_token),
+                    value = state.githubToken,
+                    onValueChange = { v -> store.update { it.copy(githubToken = v.trim()) } },
+                    placeholder = "ghp_… (optional)",
+                    supporting = stringResource(R.string.settings_github_token_hint),
+                )
+            }
+        }
+
+        item {
             SettingsSection(stringResource(R.string.settings_section_logging)) {
                 SingleChoiceChips(
                     label = stringResource(R.string.settings_log_level),
