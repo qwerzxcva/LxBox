@@ -524,6 +524,14 @@ data class RouteRule(
     /** EDNS client subnet for the resolve action, e.g. "1.2.3.0/24". Empty = off. */
     val clientSubnet: String = "",
     /**
+     * Destination override for this rule (kernel route action's
+     * override_address/override_port): rewrite where the connection goes
+     * after the match fires. Formats: "host", "host:port", or a bare port
+     * number ("8443" = keep the original host, change the port only).
+     * Empty = no rewrite.
+     */
+    val overrideAddress: String = "",
+    /**
      * DNS linkage, lxbox-style: when [syncDnsServer] is set, the compiler
      * derives a DNS rule from this route rule's domain matchers at compile
      * time — the domain list steers DNS without duplicating entries in the

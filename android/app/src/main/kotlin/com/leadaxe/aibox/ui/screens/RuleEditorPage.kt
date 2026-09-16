@@ -79,6 +79,7 @@ fun RuleEditorPage(
     var outbound by remember { mutableStateOf(initial?.outbound ?: ProxySelectorTag) }
     var syncDnsServer by remember { mutableStateOf(initial?.syncDnsServer.orEmpty()) }
     var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
+    var overrideAddress by remember { mutableStateOf(initial?.overrideAddress.orEmpty()) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
     var ipFamily by remember { mutableStateOf(initial?.ipFamily.orEmpty()) }
@@ -130,6 +131,7 @@ fun RuleEditorPage(
                                 initial = initial,
                                 name = name, kind = kind, action = action, outbound = outbound,
                                 syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
+                                overrideAddress = overrideAddress,
                                 enabled = enabled, jsonBody = jsonBody,
                                 ipFamily = ipFamily, ipPreference = ipPreference,
                                 branches = branches,
@@ -265,6 +267,15 @@ fun RuleEditorPage(
                                     selected = outbound,
                                     onSelect = { outbound = it },
                                     display = { outboundDisplayLabel(it, state) },
+                                )
+                                // Destination override: rewrite where matched
+                                // connections go (host, host:port, or bare port).
+                                StringField(
+                                    label = stringResource(R.string.routes_override),
+                                    value = overrideAddress,
+                                    onValueChange = { overrideAddress = it },
+                                    placeholder = "8443 / proxy.local:8080",
+                                    supporting = stringResource(R.string.routes_override_hint),
                                 )
                             }
                             // ECS / client subnet is a rule-level decision,
@@ -609,6 +620,7 @@ private fun compose(
     outbound: String,
     syncDnsServer: String,
     clientSubnet: String,
+    overrideAddress: String,
     enabled: Boolean,
     jsonBody: String,
     ipFamily: String,
@@ -625,6 +637,7 @@ private fun compose(
         return base.copy(
             name = name, kind = kind, action = action, outbound = outbound,
             syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
+            overrideAddress = overrideAddress,
             enabled = enabled, type = RouteRule.RuleTypeDefault,
             combine = m.combine,
             rules = emptyList(),
@@ -646,6 +659,7 @@ private fun compose(
     return base.copy(
         name = name, kind = kind, action = action, outbound = outbound,
         syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
+        overrideAddress = overrideAddress,
         enabled = enabled, logicalMode = RouteRule.LogicalOr,
         type = RouteRule.RuleTypeLogical,
         ipFamily = ipFamily, ipPreference = ipPreference,
