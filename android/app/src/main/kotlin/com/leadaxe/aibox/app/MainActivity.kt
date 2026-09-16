@@ -66,6 +66,19 @@ class MainActivity : ComponentActivity() {
         app.vpnRelay.startListening()
         setContent {
             val state by app.appStateStore.state.collectAsState()
+            // Privacy gate (rsxm-security's blockScreenshots verdict):
+            // FLAG_SECURE blanks the recents thumbnail and blocks screen
+            // recordings/non-system captures for every engine surface.
+            // Applied as a composition side effect so toggling the switch
+            // takes effect immediately, not only after an activity restart.
+            androidx.compose.runtime.SideEffect {
+                val flag = android.view.WindowManager.LayoutParams.FLAG_SECURE
+                if (state.blockScreenshots) {
+                    window.addFlags(flag)
+                } else {
+                    window.clearFlags(flag)
+                }
+            }
             LocalizedApp(language = state.language) {
                 LxTheme(colorMode = state.colorMode) {
                     RootScaffold(

@@ -12,7 +12,7 @@
 //! the runtime crate. Keeping it a separate micro-kernel means a future
 //! swap to a native Rust stack is a module replacement, not a rewrite.
 
-use rsxm_core::{Health, Module};
+use rsxm_core::Health;
 
 /// Configuration for the tun engine.
 #[derive(Debug, Clone)]
@@ -53,12 +53,17 @@ impl TunModule {
     }
 
     pub fn config(&self) -> std::sync::RwLockReadGuard<'_, TunConfig> {
-        self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Renders the engine configuration as YAML for the native layer.
     pub fn render_engine_config(&self) -> String {
-        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cfg = self
+            .config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut yaml = String::new();
         yaml.push_str("tunnel:\n");
         yaml.push_str(&format!("  mtu: {}\n", cfg.mtu));
@@ -76,7 +81,12 @@ impl TunModule {
 
 impl rsxm_core::Module for TunModule {
     fn name(&self) -> &'static str {
-        "tun"
+        "rsxm-tun"
+    }
+
+    fn depends_on(&self) -> &'static [&'static str] {
+        // Packets cannot leave until the dial plan exists.
+        &["rsxm-dialer"]
     }
 
     /// TUN 参数归本微内核所有：切片里有什么就更新什么，中央内核不读内容。
@@ -127,6 +137,7 @@ impl rsxm_core::Module for TunModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rsxm_core::Module;
 
     #[test]
     fn lifecycle_tracks_health() {

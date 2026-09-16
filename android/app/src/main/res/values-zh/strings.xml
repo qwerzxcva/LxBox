@@ -262,6 +262,11 @@
     <string name="settings_battery_tunnel_policy">隧道省电策略</string>
     <string name="settings_boot_autostart">开机自启</string>
     <string name="settings_boot_autostart_desc">重启或更新后自动恢复隧道（之前在运行时）。</string>
+    <string name="settings_section_privacy">隐私与安全</string>
+    <string name="settings_privacy_screenshots">禁止截屏与最近任务预览</string>
+    <string name="settings_privacy_screenshots_desc">在最近任务中隐藏节点列表、订阅与流量信息，并阻止录屏（FLAG_SECURE）。</string>
+    <string name="settings_privacy_insecure_dns">允许明文 DNS</string>
+    <string name="settings_privacy_insecure_dns_desc">允许未加密的 udp/tcp/dhcp DNS 上游。除非网络强制要求其解析器，否则请保持关闭——DoT/DoH/DoQ 可保护查询的域名不被窃听。</string>
     <string name="settings_section_backup">备份与恢复</string>
     <string name="settings_backup_desc">导出全部配置（节点/订阅/组/路由/DNS）到文件；导入可在新安装上恢复。包含订阅链接。</string>
     <string name="settings_backup_export">导出</string>

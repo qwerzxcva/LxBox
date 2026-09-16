@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 rsxm-core = { path = "../rsxm-core" }
+serde_json = "1"
 # Crypto primitives (pure-Rust stacks only: cross-compiles to aarch64-android
 # without cmake/llvm build hosts).
 aes-gcm = "0.10"

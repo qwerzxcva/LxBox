@@ -7,8 +7,11 @@
 //! frame format verified against `sing-vmess`'s Go sources.
 
 pub mod hello;
+pub mod module;
 pub mod tls13;
 pub mod vless;
+
+pub use module::{DialerModule, OutboundInfo};
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -57,7 +60,9 @@ impl VlessConnection {
         // Chunk to the TLS record limit.
         for chunk in data.chunks(tls13::MAX_RECORD_PAYLOAD) {
             let mut piece = chunk.to_vec();
-            let record = self.tls_write.seal_record(tls13::CONTENT_APP_DATA, &mut piece);
+            let record = self
+                .tls_write
+                .seal_record(tls13::CONTENT_APP_DATA, &mut piece);
             self.stream.write_all(&record)?;
         }
         self.stream.flush()
@@ -128,8 +133,7 @@ impl VlessRealityTarget {
             .map_err(|e| DialError::Reality(format!("public_key: {e}")))?;
         let short_id = short_id_hex_decode(short_id_hex)
             .map_err(|e| DialError::Reality(format!("short_id: {e}")))?;
-        let uuid = parse_uuid(uuid_str)
-            .ok_or_else(|| DialError::Vless("invalid uuid".into()))?;
+        let uuid = parse_uuid(uuid_str).ok_or_else(|| DialError::Vless("invalid uuid".into()))?;
         Ok(VlessRealityTarget {
             server,
             server_port,
@@ -186,7 +190,9 @@ pub fn dial(
     let ch_sh_transcript = transcript.clone();
     let (c_hs_secret, s_hs_secret) = ks.handshake_secrets(&shared, &ch_sh_transcript);
     let mut tls_read = ks.traffic_cipher(&s_hs_secret);
-    let mut tls_write = ks.traffic_cipher(&c_hs_secret);
+    // Client handshake traffic keys: the server flight is only read, so the
+    // write cipher stays armed for the (later) client Finished stage.
+    let _tls_write = ks.traffic_cipher(&c_hs_secret);
     #[cfg(feature = "tls-debug")]
     {
         eprintln!("[dbg] suite={suite:?} shared={:02x?}", &shared[..8]);
@@ -216,17 +222,20 @@ pub fn dial(
 
     loop {
         if record.0[0] != tls13::CONTENT_APP_DATA {
-            return Err(DialError::Tls(format!("unexpected record type {}", record.0[0])));
+            return Err(DialError::Tls(format!(
+                "unexpected record type {}",
+                record.0[0]
+            )));
         }
-        let (real_type, plaintext) = tls_read
-            .open_record(&record.0, &record.1)
-            .map_err(|e| {
-                #[cfg(feature = "tls-debug")]
-                eprintln!("[dbg] open failed at seq: {e}");
-                DialError::Tls(e)
-            })?;
+        let (real_type, plaintext) = tls_read.open_record(&record.0, &record.1).map_err(|e| {
+            #[cfg(feature = "tls-debug")]
+            eprintln!("[dbg] open failed at seq: {e}");
+            DialError::Tls(e)
+        })?;
         if real_type != tls13::CONTENT_HANDSHAKE {
-            return Err(DialError::Tls(format!("expected handshake, got {real_type}")));
+            return Err(DialError::Tls(format!(
+                "expected handshake, got {real_type}"
+            )));
         }
         let mut cursor = plaintext.as_slice();
         while !cursor.is_empty() {
@@ -308,7 +317,7 @@ pub fn dial(
     let hs_secret = ks.current_handshake_secret();
     let (c_app, s_app) = ks.application_secrets(&hs_secret, &transcript);
     let mut tls_write = ks.traffic_cipher(&c_app);
-    let mut tls_read = ks.traffic_cipher(&s_app);
+    let tls_read = ks.traffic_cipher(&s_app);
 
     // ---- client Finished (encrypted with handshake keys) ----
     let fk = ks.finished_key(&c_hs_secret);
@@ -334,6 +343,8 @@ pub fn dial(
     })
 }
 
+/// Concatenates the ClientHello and ServerHello transcript fragments.
+#[allow(dead_code)]
 fn transcript_ch_sh(ch_raw: &[u8], sh_raw: &[u8]) -> Vec<u8> {
     let mut t = Vec::with_capacity(ch_raw.len() + sh_raw.len());
     t.extend_from_slice(ch_raw);
@@ -357,7 +368,10 @@ fn read_handshake_message_clear(stream: &mut TcpStream) -> Result<(Vec<u8>, Vec<
     // record-wise accumulation.
     let (first_header, body) = read_record(stream)?;
     if first_header[0] != tls13::CONTENT_HANDSHAKE {
-        return Err(DialError::Tls(format!("expected handshake record, got {}", first_header[0])));
+        return Err(DialError::Tls(format!(
+            "expected handshake record, got {}",
+            first_header[0]
+        )));
     }
     buf.extend_from_slice(&body);
     if buf.len() < 4 {
@@ -491,7 +505,7 @@ pub fn base64_rawurl_decode_32(s: &str) -> Result<[u8; 32], String> {
 pub fn short_id_hex_decode(s: &str) -> Result<[u8; 8], String> {
     let mut out = [0u8; 8];
     let s = s.trim();
-    if s.len() % 2 != 0 || s.len() > 16 {
+    if !s.len().is_multiple_of(2) || s.len() > 16 {
         return Err("short_id must be 0-8 bytes of hex".into());
     }
     let bytes: Vec<u8> = (0..s.len() / 2)

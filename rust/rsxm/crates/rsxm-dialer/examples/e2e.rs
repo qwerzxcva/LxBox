@@ -15,7 +15,9 @@ fn main() {
     let target = VlessRealityTarget::from_parts(
         args.get(4).cloned().unwrap_or_else(|| "127.0.0.1".into()),
         args.get(5).map(|s| s.parse().unwrap()).unwrap_or(18443),
-        args.get(6).cloned().unwrap_or_else(|| "www.cloudflare.com".into()),
+        args.get(6)
+            .cloned()
+            .unwrap_or_else(|| "www.cloudflare.com".into()),
         &args[1],
         &args[2],
         &args[3],

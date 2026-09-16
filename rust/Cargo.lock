@@ -38,6 +38,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aho-corasick"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c982642fa9e8606056828ee9a8505737230110bb1099153c79efe865c59d12ba"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "aibox-core"
 version = "0.1.0"
 dependencies = [
@@ -431,12 +440,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad8553b9b26413251cbf30e620595c7a41b3887f03da04579c0e6b0d6a06b4b2"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-syntax"
+version = "0.8.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
 name = "rsxm-agent"
 version = "0.2.0"
 dependencies = [
  "rsxm-config",
  "rsxm-core",
+ "rsxm-dialer",
+ "rsxm-dns",
+ "rsxm-power",
  "rsxm-rules",
+ "rsxm-security",
+ "rsxm-stats",
  "rsxm-tun",
  "serde_json",
 ]
@@ -445,6 +488,7 @@ dependencies = [
 name = "rsxm-config"
 version = "0.2.0"
 dependencies = [
+ "rsxm-core",
  "serde_json",
 ]
 
@@ -452,9 +496,6 @@ dependencies = [
 name = "rsxm-core"
 version = "0.2.0"
 dependencies = [
- "rsxm-config",
- "rsxm-rules",
- "serde",
  "serde_json",
 ]
 
@@ -469,19 +510,54 @@ dependencies = [
  "hkdf",
  "hmac",
  "rsxm-core",
+ "serde_json",
  "sha2",
 ]
 
 [[package]]
 name = "rsxm-dns"
 version = "0.2.0"
+dependencies = [
+ "regex",
+ "rsxm-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rsxm-power"
+version = "0.2.0"
+dependencies = [
+ "rsxm-core",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "rsxm-rules"
 version = "0.2.0"
 dependencies = [
+ "regex",
+ "rsxm-core",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rsxm-security"
+version = "0.2.0"
+dependencies = [
+ "rsxm-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rsxm-stats"
+version = "0.2.0"
+dependencies = [
+ "rsxm-core",
+ "serde",
 ]
 
 [[package]]

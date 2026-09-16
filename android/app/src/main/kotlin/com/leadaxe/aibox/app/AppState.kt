@@ -239,6 +239,21 @@ data class AppState(
      */
     val tlsFragmentMode: String = "none",
     val tlsFragmentFallbackDelay: String = "",
+
+    // ------------------------------------------------------- privacy guards
+    /**
+     * Applies FLAG_SECURE to the engine surfaces: the recents thumbnail,
+     * screen recordings and non-system overlays cannot capture node lists,
+     * subscriptions or live traffic. Mirrors the rsxm-security slice
+     * (`blockScreenshots`); mikuRay-style fail-closed privacy posture.
+     */
+    val blockScreenshots: Boolean = false,
+    /**
+     * Allows plaintext DNS upstreams (udp/tcp/dhcp). Off by default so the
+     * rsxm-security leader keeps every DNS query encrypted (DoT/DoH/DoQ);
+     * flip on only when the local network requires its resolver.
+     */
+    val allowInsecureDns: Boolean = false,
     /**
      * SNTP sync inside the core. Reality and SS2022 both reject handshakes
      * outside a narrow clock window; a drifting device clock otherwise

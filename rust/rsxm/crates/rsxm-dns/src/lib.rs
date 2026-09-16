@@ -1,24 +1,35 @@
 //! RSXM DNS module — the resolution micro-kernel.
 //!
-//! Absorbs the three most valuable ideas of the sing-box DNS design (which
-//! the app exposes today) and gives them a Rust home:
+//! Absorbs the strongest ideas of the sing-box DNS design (karing/lxbox
+//! style configs) and gives them a Rust home:
 //!
-//!  - **fake-IP pool**: answers A/AAAA with addresses from a synthetic
-//!    range so the router can match on names without waiting for real
-//!    resolution, then maps the address back to the name for dialing;
+//!  - **DNS rules pick the upstream**: domain/qtype/package-scoped route
+//!    rules decide *which* server answers before any packet leaves, exactly
+//!    like sing-box's `dns.rules` (`route` / `reject` actions);
+//!  - **fake-IP pool**: answers A/AAAA with synthetic addresses so the
+//!    router matches on names without waiting for real resolution, then
+//!    maps the address back to the name for dialing;
 //!  - **TTL cache with optimistic serving**: an expired entry is handed out
-//!    immediately while a refresh happens in the background — the latency
-//!    win the user asked for ("过期缓存先用再后台刷新");
-//!  - **parallel race**: several upstreams are queried at once and the
-//!    first answer wins, with the losers cancelled.
+//!    immediately while a refresh happens in the background ("过期缓存先用
+//!    再后台刷新"); bounded LRU so a busy phone can never grow the map
+//!    without limit;
+//!  - **negative caching**: short-lived NXDOMAIN entries kill the
+//!    app-retry storms that re-ask for a name known not to exist;
+//!  - **hosts**: static name→address overrides answered locally;
+//!  - **parallel race**: several upstreams queried at once, first answer
+//!    wins, losers cancelled.
 //!
 //! The module is pure: no sockets, no timers — the transport layer feeds it
-//! answers and asks it what to do. That keeps it testable and keeps the
-//! policy (what to cache, what to fake, which upstream wins) separate from
-//! the I/O (which the runtime crate owns).
+//! answers and asks it what to do. Policy (what to cache, what to fake,
+//! which upstream wins) stays separated from I/O (owned by the runtime).
 
-use std::collections::HashMap;
+pub mod module;
+
+use regex::RegexBuilder;
+use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+pub use module::DnsModule;
 
 /// DNS record family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -73,6 +84,8 @@ impl CacheEntry {
     }
 }
 
+type CacheKey = (String, Family);
+
 /// What the caller should do with a query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
@@ -80,16 +93,125 @@ pub enum Decision {
     AnswerFromCache { address: IpAddr, stale: bool },
     /// Answer with a fake address from the pool.
     AnswerFake { address: IpAddr },
+    /// Answer from a local hosts override.
+    AnswerHosts { address: IpAddr },
+    /// A cached negative (NXDOMAIN); do not re-ask yet.
+    NegativeCached,
     /// The address is a fake one; here is the name it stands for.
     ReverseFake { name: String },
-    /// Forward the query upstream.
+    /// A DNS rule rejected the query (ad/tracker blocking at DNS layer).
+    Reject,
+    /// Forward the query to the server a DNS rule selected.
+    ForwardToServer { server: String },
+    /// Forward the query upstream (default selection).
     QueryUpstream,
 }
 
-/// The DNS policy engine: cache + fake pool + reverse mapping.
+/// What a matching DNS rule orders.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DnsAction {
+    Route(String),
+    /// A rule without an explicit action fails closed: reject. Privacy
+    /// beats silent forwarding.
+    #[default]
+    Reject,
+}
+
+/// One sing-box-style DNS rule: first match wins.
+#[derive(Debug, Clone, Default)]
+pub struct DnsRouteRule {
+    pub domains: Vec<String>,
+    pub suffixes: Vec<String>,
+    pub keywords: Vec<String>,
+    pub regexes: Vec<String>,
+    /// Query type names (`"A"`, `"AAAA"`, `"HTTPS"`…); empty = any.
+    pub query_types: Vec<String>,
+    /// Caller packages; empty = any.
+    pub packages: Vec<String>,
+    pub action: DnsAction,
+}
+
+impl DnsRouteRule {
+    fn matches(&self, name: &str, qtype: Option<&str>, package: Option<&str>) -> bool {
+        let name_hit = self.domains.iter().any(|d| d == name)
+            || self
+                .suffixes
+                .iter()
+                .any(|s| name == s || name.ends_with(&format!(".{s}")))
+            || self.keywords.iter().any(|k| name.contains(k.as_str()))
+            || self.regexes.iter().any(|p| {
+                RegexBuilder::new(p)
+                    .case_insensitive(true)
+                    .build()
+                    .map(|re| re.is_match(name))
+                    .unwrap_or(false)
+            });
+        if !name_hit {
+            return false;
+        }
+        if !self.query_types.is_empty()
+            && !qtype
+                .map(|q| self.query_types.iter().any(|t| t.eq_ignore_ascii_case(q)))
+                .unwrap_or(false)
+        {
+            return false;
+        }
+        if !self.packages.is_empty()
+            && !package
+                .map(|p| self.packages.iter().any(|x| x == p))
+                .unwrap_or(false)
+        {
+            return false;
+        }
+        true
+    }
+}
+
+/// The ordered DNS rule set the engine consults before the fake pool.
+#[derive(Debug, Clone, Default)]
+pub struct DnsRouter {
+    rules: Vec<DnsRouteRule>,
+}
+
+impl DnsRouter {
+    pub fn new(rules: Vec<DnsRouteRule>) -> Self {
+        Self { rules }
+    }
+
+    pub fn len(&self) -> usize {
+        self.rules.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+
+    /// First-hit-wins upstream selection, sing-box semantics.
+    pub fn select(
+        &self,
+        name: &str,
+        qtype: Option<&str>,
+        package: Option<&str>,
+    ) -> Option<&DnsAction> {
+        self.rules
+            .iter()
+            .find(|r| r.matches(name, qtype, package))
+            .map(|r| &r.action)
+    }
+}
+
+/// The DNS policy engine: router + cache + fake pool + hosts + reverse map.
 pub struct DnsEngine {
     fake: FakeIpConfig,
-    cache: HashMap<(String, Family), CacheEntry>,
+    router: DnsRouter,
+    hosts: Vec<(String, IpAddr)>,
+    cache: HashMap<CacheKey, CacheEntry>,
+    /// LRU access order (most recently used at the back).
+    order: VecDeque<CacheKey>,
+    cache_capacity: usize,
+    /// name/family → expiry of a cached NXDOMAIN.
+    negative: HashMap<CacheKey, i64>,
+    negative_ttl_ms: i64,
     /// fake address -> name (for reverse lookup when dialing).
     fake_reverse: HashMap<IpAddr, String>,
     /// name -> fake address (stable allocation).
@@ -101,9 +223,27 @@ pub struct DnsEngine {
 
 impl DnsEngine {
     pub fn new(fake: FakeIpConfig) -> Self {
+        Self::with_policy(fake, DnsRouter::default(), Vec::new(), 4096)
+    }
+
+    pub fn with_policy(
+        fake: FakeIpConfig,
+        router: DnsRouter,
+        hosts: Vec<(String, IpAddr)>,
+        cache_capacity: usize,
+    ) -> Self {
         Self {
             fake,
+            router,
+            hosts: hosts
+                .into_iter()
+                .map(|(name, ip)| (name.to_ascii_lowercase(), ip))
+                .collect(),
             cache: HashMap::new(),
+            order: VecDeque::new(),
+            cache_capacity: cache_capacity.clamp(16, 1_048_576),
+            negative: HashMap::new(),
+            negative_ttl_ms: 30_000,
             fake_reverse: HashMap::new(),
             fake_forward: HashMap::new(),
             v4_next: 1,
@@ -113,7 +253,29 @@ impl DnsEngine {
 
     /// Resolves what to do for a name. `reverse_ip` is checked first: a
     /// connection to a fake address must be mapped back to its name.
-    pub fn decide(&self, name: &str, family: Family, reverse_ip: Option<IpAddr>, now_ms: i64) -> Decision {
+    pub fn decide(
+        &mut self,
+        name: &str,
+        family: Family,
+        reverse_ip: Option<IpAddr>,
+        now_ms: i64,
+    ) -> Decision {
+        self.decide_routed(name, family, reverse_ip, now_ms, None, None)
+    }
+
+    /// Full decision path including DNS rules.
+    ///
+    /// `qtype` is the DNS question type (`"A"`/`"AAAA"`) and `package` the
+    /// calling app, when the caller knows them; both are optional.
+    pub fn decide_routed(
+        &mut self,
+        name: &str,
+        family: Family,
+        reverse_ip: Option<IpAddr>,
+        now_ms: i64,
+        qtype: Option<&str>,
+        package: Option<&str>,
+    ) -> Decision {
         if let Some(ip) = reverse_ip {
             if let Some(mapped) = self.fake_reverse.get(&ip) {
                 return Decision::ReverseFake {
@@ -121,43 +283,116 @@ impl DnsEngine {
                 };
             }
         }
-        if let Some(entry) = self.cache.get(&(name.to_string(), family)) {
-            if entry.is_fresh(now_ms) {
-                return Decision::AnswerFromCache {
-                    address: entry.address,
-                    stale: false,
-                };
-            }
-            if entry.is_optimistically_servable(now_ms) {
-                return Decision::AnswerFromCache {
-                    address: entry.address,
-                    stale: true,
-                };
+
+        let lname = name.to_ascii_lowercase();
+
+        // Hosts overrides beat everything except a fake reverse.
+        if let Some((_, addr)) = self
+            .hosts
+            .iter()
+            .find(|(h, _)| h == &lname)
+            .filter(|(_, addr)| family_matches(family, *addr))
+        {
+            return Decision::AnswerHosts { address: *addr };
+        }
+
+        let key = (lname.clone(), family);
+
+        // Negative cache: still valid → refuse; expired → forget it.
+        if let Some(expiry) = self.negative.get(&key) {
+            if now_ms < *expiry {
+                return Decision::NegativeCached;
             }
         }
+
+        // Probe the cache inside a closure so the immutable borrow ends
+        // before `touch` takes a mutable one.
+        let cached = self.cache.get(&key).and_then(|entry| {
+            if entry.is_fresh(now_ms) {
+                Some((entry.address, false))
+            } else if entry.is_optimistically_servable(now_ms) {
+                Some((entry.address, true))
+            } else {
+                None
+            }
+        });
+        if let Some((address, stale)) = cached {
+            self.touch(&key);
+            return Decision::AnswerFromCache { address, stale };
+        }
+
+        // DNS rules choose the upstream (or reject) before the fake pool.
+        if let Some(action) = self.router.select(&lname, qtype, package) {
+            return match action {
+                DnsAction::Reject => Decision::Reject,
+                DnsAction::Route(server) => Decision::ForwardToServer {
+                    server: server.clone(),
+                },
+            };
+        }
+
         if self.fake.enabled {
             // Allocation is the caller's job (it happens when an upstream
-            // query is issued); this read-only path only answers names that
-            // were allocated before.
-            if let Some(existing) = self.fake_forward.get(name) {
-                return Decision::AnswerFake {
-                    address: *existing,
-                };
+            // query is issued); this path only answers names allocated
+            // before.
+            if let Some(existing) = self.fake_forward.get(&lname) {
+                return Decision::AnswerFake { address: *existing };
             }
         }
         Decision::QueryUpstream
     }
 
-    /// Stores an upstream answer (TTL in milliseconds).
+    fn touch(&mut self, key: &CacheKey) {
+        self.order.retain(|k| k != key);
+        self.order.push_back(key.clone());
+    }
+
+    fn evict_if_needed(&mut self) {
+        while self.cache.len() > self.cache_capacity {
+            let Some(victim) = self.order.pop_front() else {
+                break;
+            };
+            // A front entry may have been re-touched without this stale
+            // queue occurrence being removed (cannot happen with touch(),
+            // but keep the guard cheap): only evict a still-present key.
+            if self.cache.contains_key(&victim) {
+                self.cache.remove(&victim);
+            }
+        }
+        let neg_cap = (self.cache_capacity / 8).max(64);
+        if self.negative.len() > neg_cap {
+            // Drop arbitrary entries beyond cap; negatives are tiny and
+            // self-expiring, so no LRU bookkeeping is worth it here.
+            let extras = self.negative.len() - neg_cap;
+            let to_remove: Vec<CacheKey> = self.negative.keys().take(extras).cloned().collect();
+            for key in to_remove {
+                self.negative.remove(&key);
+            }
+        }
+    }
+
+    /// Stores an upstream answer (TTL in milliseconds) and clears any
+    /// negative entry for the name.
     pub fn store(&mut self, name: &str, family: Family, address: IpAddr, ttl_ms: i64, now_ms: i64) {
+        let key = (name.to_ascii_lowercase(), family);
         self.cache.insert(
-            (name.to_string(), family),
+            key.clone(),
             CacheEntry {
                 address,
                 stored_at_ms: now_ms,
                 ttl_ms,
             },
         );
+        self.negative.remove(&key);
+        self.touch(&key);
+        self.evict_if_needed();
+    }
+
+    /// Records a negative answer (NXDOMAIN) for the name.
+    pub fn store_negative(&mut self, name: &str, family: Family, now_ms: i64) {
+        let key = (name.to_ascii_lowercase(), family);
+        self.negative.insert(key, now_ms + self.negative_ttl_ms);
+        self.evict_if_needed();
     }
 
     /// Allocates a fake address for a name (idempotent).
@@ -168,7 +403,8 @@ impl DnsEngine {
         if !self.fake.enabled {
             return None;
         }
-        if let Some(existing) = self.fake_forward.get(name) {
+        let lname = name.to_ascii_lowercase();
+        if let Some(existing) = self.fake_forward.get(&lname) {
             return Some(*existing);
         }
         let address = match family {
@@ -189,8 +425,8 @@ impl DnsEngine {
                 IpAddr::V6(Ipv6Addr::from(base | candidate))
             }
         };
-        self.fake_forward.insert(name.to_string(), address);
-        self.fake_reverse.insert(address, name.to_string());
+        self.fake_forward.insert(lname.clone(), address);
+        self.fake_reverse.insert(address, lname);
         Some(address)
     }
 
@@ -202,10 +438,21 @@ impl DnsEngine {
         self.fake_forward.len()
     }
 
+    pub fn router_len(&self) -> usize {
+        self.router.len()
+    }
+
     /// True when `addr` falls inside the configured fake ranges.
     pub fn is_fake_address(&self, addr: IpAddr) -> bool {
         self.fake_reverse.contains_key(&addr)
     }
+}
+
+fn family_matches(family: Family, addr: IpAddr) -> bool {
+    matches!(
+        (family, addr),
+        (Family::V4, IpAddr::V4(_)) | (Family::V6, IpAddr::V6(_))
+    )
 }
 
 /// Races several upstream attempts and returns the first success.
@@ -215,9 +462,7 @@ impl DnsEngine {
 /// every attempt fails) without owning any runtime. In the runtime crate
 /// the closures are async; here they are synchronous callables so the
 /// policy is testable.
-pub fn race_first<T, E>(
-    attempts: Vec<Box<dyn FnOnce() -> Result<T, E>>>,
-) -> Result<T, Vec<E>> {
+pub fn race_first<T, E>(attempts: Vec<Box<dyn FnOnce() -> Result<T, E>>>) -> Result<T, Vec<E>> {
     let mut errors = Vec::with_capacity(attempts.len());
     for attempt in attempts {
         match attempt() {
@@ -236,10 +481,20 @@ mod tests {
         s.parse().expect("v4 literal")
     }
 
+    fn router(rules: Vec<DnsRouteRule>) -> DnsRouter {
+        DnsRouter::new(rules)
+    }
+
     #[test]
     fn fresh_entry_answers_without_stale_flag() {
         let mut engine = DnsEngine::new(FakeIpConfig::default());
-        engine.store("example.com", Family::V4, v4("93.184.216.34"), 60_000, 1_000);
+        engine.store(
+            "example.com",
+            Family::V4,
+            v4("93.184.216.34"),
+            60_000,
+            1_000,
+        );
         let decision = engine.decide("example.com", Family::V4, None, 30_000);
         assert_eq!(
             decision,
@@ -254,7 +509,6 @@ mod tests {
     fn expired_entry_is_served_optimistically_within_window() {
         let mut engine = DnsEngine::new(FakeIpConfig::default());
         engine.store("example.com", Family::V4, v4("1.2.3.4"), 10_000, 0);
-        // t=15s: TTL (10s) passed, optimistic window (20s) not.
         let decision = engine.decide("example.com", Family::V4, None, 15_000);
         assert_eq!(
             decision,
@@ -269,7 +523,6 @@ mod tests {
     fn fully_stale_entry_forwards_upstream() {
         let mut engine = DnsEngine::new(FakeIpConfig::default());
         engine.store("example.com", Family::V4, v4("1.2.3.4"), 10_000, 0);
-        // t=25s: beyond 2x TTL.
         assert_eq!(
             engine.decide("example.com", Family::V4, None, 25_000),
             Decision::QueryUpstream
@@ -299,14 +552,16 @@ mod tests {
         let mut engine = DnsEngine::new(FakeIpConfig {
             enabled: true,
             v4_base: Ipv4Addr::new(198, 18, 0, 0),
-            v4_prefix: 30, // tiny pool: 4 addresses
+            v4_prefix: 30,
             ..Default::default()
         });
         for i in 0..10 {
             let addr = engine
                 .allocate_fake(&format!("host{i}.test"), Family::V4)
                 .unwrap();
-            let IpAddr::V4(v4) = addr else { panic!("expected v4") };
+            let IpAddr::V4(v4) = addr else {
+                panic!("expected v4")
+            };
             let octets = v4.octets();
             assert_eq!(&octets[..2], &[198, 18]);
             assert!(octets[3] < 4, "address escaped the /30 pool: {v4}");
@@ -328,9 +583,7 @@ mod tests {
         let allocated = engine.allocate_fake("known.test", Family::V4).unwrap();
         assert_eq!(
             engine.decide("known.test", Family::V4, None, 0),
-            Decision::AnswerFake {
-                address: allocated
-            }
+            Decision::AnswerFake { address: allocated }
         );
     }
 
@@ -373,5 +626,137 @@ mod tests {
         if let Decision::AnswerFromCache { address, .. } = v6_decision {
             assert!(address.is_ipv6());
         }
+    }
+
+    #[test]
+    fn dns_rules_select_upstream_or_reject_first_hit() {
+        let r = router(vec![
+            DnsRouteRule {
+                suffixes: vec!["cn".into()],
+                action: DnsAction::Route("local".into()),
+                ..Default::default()
+            },
+            DnsRouteRule {
+                domains: vec!["ads.tracker".into()],
+                action: DnsAction::Reject,
+                ..Default::default()
+            },
+            DnsRouteRule {
+                suffixes: vec!["example.com".into()],
+                query_types: vec!["A".into()],
+                action: DnsAction::Route("remote".into()),
+                ..Default::default()
+            },
+        ]);
+        assert!(matches!(
+            r.select("www.cn", None, None),
+            Some(DnsAction::Route(s)) if s == "local"
+        ));
+        assert_eq!(
+            r.select("ads.tracker", None, None),
+            Some(&DnsAction::Reject)
+        );
+        // qtype gate: AAAA does not match the A-only rule.
+        assert_eq!(r.select("api.example.com", Some("AAAA"), None), None);
+        assert!(matches!(
+            r.select("api.example.com", Some("A"), None),
+            Some(DnsAction::Route(s)) if s == "remote"
+        ));
+    }
+
+    #[test]
+    fn engine_forwards_to_rule_selected_server() {
+        let engine = DnsEngine::with_policy(
+            FakeIpConfig::default(),
+            router(vec![DnsRouteRule {
+                suffixes: vec!["lan".into()],
+                action: DnsAction::Route("local-dns".into()),
+                ..Default::default()
+            }]),
+            Vec::new(),
+            64,
+        );
+        // decide_routed needs &mut self only for LRU touch; engines with an
+        // empty cache never mutate here, but keep the signature honest.
+        let mut engine = engine;
+        assert_eq!(
+            engine.decide_routed("host.lan", Family::V4, None, 0, Some("A"), None),
+            Decision::ForwardToServer {
+                server: "local-dns".into()
+            }
+        );
+    }
+
+    #[test]
+    fn hosts_override_answers_locally_per_family() {
+        let mut engine = DnsEngine::with_policy(
+            FakeIpConfig::default(),
+            DnsRouter::default(),
+            vec![("router.home".into(), v4("192.168.1.1"))],
+            64,
+        );
+        assert_eq!(
+            engine.decide("router.home", Family::V4, None, 0),
+            Decision::AnswerHosts {
+                address: v4("192.168.1.1")
+            }
+        );
+        // No AAAA record in hosts → upstream, not a fake v4 answer.
+        assert_eq!(
+            engine.decide("router.home", Family::V6, None, 0),
+            Decision::QueryUpstream
+        );
+    }
+
+    #[test]
+    fn negative_cache_short_circuits_then_expires() {
+        let mut engine = DnsEngine::new(FakeIpConfig::default());
+        engine.store_negative("gone.test", Family::V4, 1_000);
+        assert_eq!(
+            engine.decide("gone.test", Family::V4, None, 10_000),
+            Decision::NegativeCached
+        );
+        // After 30s default negative TTL the query escapes upstream.
+        assert_eq!(
+            engine.decide("gone.test", Family::V4, None, 31_001),
+            Decision::QueryUpstream
+        );
+    }
+
+    #[test]
+    fn cache_respects_lru_capacity() {
+        // The policy clamps capacity to a 16-entry floor; exercise the LRU
+        // contract right at that floor.
+        let mut engine = DnsEngine::with_policy(
+            FakeIpConfig::default(),
+            DnsRouter::default(),
+            Vec::new(),
+            16,
+        );
+        for i in 0..16 {
+            engine.store(
+                &format!("h{i}.test"),
+                Family::V4,
+                v4(&format!("1.0.0.{i}")),
+                60_000,
+                0,
+            );
+        }
+        // Re-touch h0 so it becomes most-recent; the next insert must evict
+        // h1 (least recently used), never h0.
+        assert!(matches!(
+            engine.decide("h0.test", Family::V4, None, 0),
+            Decision::AnswerFromCache { stale: false, .. }
+        ));
+        engine.store("overflow.test", Family::V4, v4("2.0.0.1"), 60_000, 0);
+        assert_eq!(engine.cache_len(), 16);
+        assert!(matches!(
+            engine.decide("h0.test", Family::V4, None, 0),
+            Decision::AnswerFromCache { stale: false, .. }
+        ));
+        assert_eq!(
+            engine.decide("h1.test", Family::V4, None, 0),
+            Decision::QueryUpstream
+        );
     }
 }

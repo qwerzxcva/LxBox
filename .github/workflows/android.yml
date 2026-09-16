@@ -17,7 +17,10 @@ name: Android
 
 on:
   push:
-    branches: [main, develop, rust-dev, rsxm-dev]
+    # aibox/** are the AIBox integration branches (rsxm conductor +
+    # microkernels). They build dev APKs only — no GitHub Release is ever
+    # cut from them; the release job stays tag-gated below.
+    branches: [main, develop, rust-dev, rsxm-dev, aibox, aibox/**]
     tags: ['v*']
     paths:
       - 'android/**'
@@ -69,23 +72,35 @@ jobs:
       - name: Set up Rust
         # The aibox-core native helper (connection-snapshot fingerprinting)
         # builds for aarch64-linux-android with the pinned NDK linker.
+        # rustfmt + clippy gate the rsxm workspace before any APK build.
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+          components: rustfmt, clippy
 
       - name: Test and build Rust (aibox-core + rsxm)
         # One workspace since the route-check feature: aibox-core links
         # rsxm-rules, and the rsxm crates (rules/core/dns/tun + agent CLI)
-        # live under rust/rsxm/crates. `cargo test` runs the whole workspace;
-        # the release build produces both the Android .so and the agent
+        # live under rust/rsxm/crates. Gates run in order — fmt, clippy,
+        # tests, release build — and every log is mirrored into ci-logs/ so
+        # the always-on upload step can publish it even when this step fails.
+        # The release build produces both the Android .so and the agent
         # binary for the same target.
         working-directory: rust
         env:
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: /usr/local/lib/android/sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
         run: |
           set -euo pipefail
-          cargo test --locked
-          cargo build --release --locked --target aarch64-linux-android
+          LOGDIR="$GITHUB_WORKSPACE/ci-logs"
+          mkdir -p "$LOGDIR"
+          echo "==> cargo fmt --check"
+          cargo fmt --all -- --check 2>&1 | tee "$LOGDIR/rust-fmt.log"
+          echo "==> cargo clippy (-D warnings)"
+          cargo clippy --locked --workspace --all-targets -- -D warnings 2>&1 | tee "$LOGDIR/rust-clippy.log"
+          echo "==> cargo test"
+          cargo test --locked --workspace 2>&1 | tee "$LOGDIR/rust-test.log"
+          echo "==> cargo build --release (aarch64-linux-android)"
+          cargo build --release --locked --target aarch64-linux-android 2>&1 | tee "$LOGDIR/rust-build.log"
           install -D target/aarch64-linux-android/release/libaibox_core.so \
             ../android/app/src/main/jniLibs/arm64-v8a/libaibox_core.so
           test -x target/aarch64-linux-android/release/rsxm-agent
@@ -277,6 +292,11 @@ jobs:
         # build log as a diagnostics artifact.
         run: |
           set +e
+          LOGDIR="$GITHUB_WORKSPACE/ci-logs"
+          mkdir -p "$LOGDIR"
+          # Mirror the Gradle log into ci-logs no matter how the build ends,
+          # so the always-on artifact step publishes it on success too.
+          trap 'cp /tmp/assembleRelease.log "$LOGDIR/assembleRelease.log" 2>/dev/null || true' EXIT
           GRADLE_ZIP=/tmp/gradle-8.14.3-bin.zip
           if [ ! -s "$GRADLE_ZIP" ]; then
             curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
@@ -354,6 +374,17 @@ jobs:
           path: android/build-diagnostics/
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Upload build logs (always)
+        # Full fmt/clippy/test/native/gradle logs for every run — including
+        # green ones — so a dev build can be audited without rerunning CI.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aibox-ci-logs
+          path: ci-logs/
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Smoke-test the APK
         # aapt2 dump badging is a cheap sanity check that the build produced

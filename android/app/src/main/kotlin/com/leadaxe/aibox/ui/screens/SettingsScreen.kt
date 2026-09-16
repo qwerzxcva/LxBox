@@ -323,6 +323,23 @@ fun SettingsScreen() {
         }
 
         item {
+            SettingsSection(stringResource(R.string.settings_section_privacy)) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_privacy_screenshots),
+                    supporting = stringResource(R.string.settings_privacy_screenshots_desc),
+                    checked = state.blockScreenshots,
+                    onCheckedChange = { v -> store.update { it.copy(blockScreenshots = v) } },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.settings_privacy_insecure_dns),
+                    supporting = stringResource(R.string.settings_privacy_insecure_dns_desc),
+                    checked = state.allowInsecureDns,
+                    onCheckedChange = { v -> store.update { it.copy(allowInsecureDns = v) } },
+                )
+            }
+        }
+
+        item {
             SettingsSection(stringResource(R.string.settings_section_backup)) {
                 Text(
                     stringResource(R.string.settings_backup_desc),
