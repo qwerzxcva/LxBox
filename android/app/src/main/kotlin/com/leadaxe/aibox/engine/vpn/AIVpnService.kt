@@ -274,9 +274,12 @@ class AIVpnService : VpnService() {
         // missing or empty, so first-launch users get a working tunnel
         // while the rule files trickle in.
         scope.launch {
-            runCatching { SubscriptionFetcher(this@AIVpnService).refreshStaleRuleSets(state.ruleSets) }
+            val fetcher = SubscriptionFetcher(this@AIVpnService)
+            // First pass: cache missing rule sets (freshly materialised or
+            // previously failed downloads).
+            runCatching { fetcher.refreshStaleRuleSets(state.ruleSets) }
+            observeState()
         }
-        observeState()
     }
 
     private var healthProbeJob: kotlinx.coroutines.Job? = null
@@ -293,6 +296,15 @@ class AIVpnService : VpnService() {
                 val groups = current.outboundGroups.filter { it.enabled }
                 for (group in groups) {
                     runCatching { engine.pingOutbound(group.tag, url) }
+                }
+                // Piggyback: retry rule-set downloads that failed earlier —
+                // a cached file is missing for exactly those, and the
+                // compile-side remote fallback covers the gap in between.
+                if (current.ruleSets.isNotEmpty()) {
+                    runCatching {
+                        SubscriptionFetcher(this@AIVpnService)
+                            .refreshStaleRuleSets(current.ruleSets)
+                    }
                 }
                 // Sequential per group: the kernel fires the probe for the
                 // whole group; members' delays arrive on the outbounds

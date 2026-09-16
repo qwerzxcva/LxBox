@@ -208,10 +208,19 @@ class SubscriptionFetcher(private val context: Context) {
      */
     suspend fun refreshStaleRuleSets(resources: List<RuleSetResource>): List<File> =
         withContext(Dispatchers.IO) {
+            val dir = File(context.filesDir, "box/ruleset")
             val now = System.currentTimeMillis()
             val stale = resources.filter { rs ->
-                rs.updateIntervalHours > 0 &&
-                    now - rs.lastUpdatedEpochMillis >= rs.updateIntervalHours * 3_600_000L
+                val cache = File(dir, "${rs.id}.${rs.extension}")
+                when {
+                    // No cache at all (fresh entry or failed download):
+                    // retry now — the compile-side remote fallback covers
+                    // queries until this lands.
+                    !cache.isFile || cache.length() == 0L -> true
+                    rs.updateIntervalHours > 0 &&
+                        now - rs.lastUpdatedEpochMillis >= rs.updateIntervalHours * 3_600_000L -> true
+                    else -> false
+                }
             }
             stale.map { rs -> runCatching { cacheRuleSet(rs) }.getOrNull() }
                 .filterNotNull()
