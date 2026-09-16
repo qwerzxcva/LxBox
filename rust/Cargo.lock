@@ -477,6 +477,15 @@ name = "rsxm-dns"
 version = "0.2.0"
 
 [[package]]
+name = "rsxm-power"
+version = "0.2.0"
+dependencies = [
+ "rsxm-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rsxm-rules"
 version = "0.2.0"
 dependencies = [

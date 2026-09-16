@@ -304,13 +304,7 @@ pub fn dial(
         return Err(DialError::Reality("server did not prove REALITY".into()));
     }
 
-    // ---- application traffic keys ----
-    let hs_secret = ks.current_handshake_secret();
-    let (c_app, s_app) = ks.application_secrets(&hs_secret, &transcript);
-    let mut tls_write = ks.traffic_cipher(&c_app);
-    let mut tls_read = ks.traffic_cipher(&s_app);
-
-    // ---- client Finished (encrypted with handshake keys) ----
+    // ---- client Finished (encrypted with the HANDSHAKE write key) ----
     let fk = ks.finished_key(&c_hs_secret);
     let verify = ks.finished_verify_data(&fk, &transcript);
     let mut finished_msg = vec![0x14];
@@ -319,6 +313,12 @@ pub fn dial(
     let out = tls_write.seal_record(tls13::CONTENT_HANDSHAKE, &mut finished_msg);
     stream.write_all(&out)?;
     stream.flush()?;
+
+    // ---- key change: application traffic keys (after client Finished) ----
+    let hs_secret = ks.current_handshake_secret();
+    let (c_app, s_app) = ks.application_secrets(&hs_secret, &transcript);
+    let mut tls_write = ks.traffic_cipher(&c_app);
+    let mut tls_read = ks.traffic_cipher(&s_app);
 
     // ---- VLESS request frame (first application data) ----
     let frame = vless::encode_request(request);
