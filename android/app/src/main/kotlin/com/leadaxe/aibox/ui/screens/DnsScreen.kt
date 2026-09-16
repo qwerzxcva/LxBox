@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -261,13 +264,12 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     )
                     // Final resolver: intercept (block all residual
                     // queries), a built-in shortcut (proxy exit / direct
-                    // exit), or a specific server. Split per Clash mode:
-                    // Rule / Global / Direct each pin their own fallback, so
-                    // e.g. Global can resolve through the proxy exit while
-                    // Rule follows the rules' servers. "Follow mode default"
-                    // (empty) means the mode has no override; the global
-                    // row below is the fallback of last resort. Intercept
-                    // hides the server choice — there is nothing to pick.
+                    // exit), or a specific server. Two exit rows — proxy
+                    // and direct — map to the route fallback: when a
+                    // connection lands on the fallback exit, its row's
+                    // resolver applies. Each row also carries a
+                    // follow-global option; the global fallback below is
+                    // the last resort and lives in a collapsed section.
                     val DnsFinalReject = "final:reject"
                     val finalOptions = remember(state.dnsServers) {
                         listOf("", DnsFinalProxy, DnsFinalDirect, DnsFinalReject) +
@@ -277,16 +279,12 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                         stringResource(R.string.dns_final_server),
                         style = MaterialTheme.typography.labelLarge,
                     )
-                    ClashModes.forEach { mode ->
-                        val modeValue = state.finalDnsServerByMode[mode].orEmpty()
+                    listOf("proxy", "direct").forEach { exit ->
+                        val exitValue = state.finalDnsServerByExit[exit].orEmpty()
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = when (mode) {
-                                    ClashModeRule -> stringResource(R.string.home_mode_rule)
-                                    ClashModeGlobal -> stringResource(R.string.home_mode_global)
-                                    ClashModeDirect -> stringResource(R.string.home_mode_direct)
-                                    else -> mode
-                                },
+                                text = if (exit == "proxy") stringResource(R.string.dns_final_exit_proxy)
+                                else stringResource(R.string.dns_final_exit_direct),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(0.28f),
@@ -298,12 +296,12 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                             ) {
                                 finalOptions.forEach { option ->
                                     FilterChip(
-                                        selected = option == modeValue,
+                                        selected = option == exitValue,
                                         onClick = {
                                             store.update { st ->
-                                                val map = st.finalDnsServerByMode.toMutableMap()
-                                                if (option.isBlank()) map.remove(mode) else map[mode] = option
-                                                st.copy(finalDnsServerByMode = map)
+                                                val map = st.finalDnsServerByExit.toMutableMap()
+                                                if (option.isBlank()) map.remove(exit) else map[exit] = option
+                                                st.copy(finalDnsServerByExit = map)
                                             }
                                         },
                                         label = {
@@ -323,22 +321,56 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                             }
                         }
                     }
-                    // Global fallback: used by modes without their own pick.
-                    SingleChoiceChips(
-                        label = stringResource(R.string.dns_final_global_fallback),
-                        options = finalOptions,
-                        selected = state.finalDnsServer,
-                        onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
-                        display = {
-                            when (it) {
+                    // Global fallback, collapsed: the last resort for exits
+                    // without their own pick.
+                    var globalFinalExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { globalFinalExpanded = !globalFinalExpanded },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            stringResource(R.string.dns_final_global_fallback),
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = when (val g = state.finalDnsServer) {
                                 "" -> stringResource(R.string.dns_final_auto)
                                 DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
                                 DnsFinalDirect -> stringResource(R.string.dns_final_direct)
                                 DnsFinalReject -> stringResource(R.string.dns_final_reject)
-                                else -> state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
-                            }
-                        },
-                    )
+                                else -> state.dnsServers.firstOrNull { s -> s.tag == g }?.name?.ifBlank { g } ?: g
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Icon(
+                            if (globalFinalExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    AnimatedVisibility(visible = globalFinalExpanded) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SingleChoiceChips(
+                                label = stringResource(R.string.dns_final_global_fallback),
+                                options = finalOptions,
+                                selected = state.finalDnsServer,
+                                onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
+                                display = {
+                                    when (it) {
+                                        "" -> stringResource(R.string.dns_final_auto)
+                                        DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
+                                        DnsFinalDirect -> stringResource(R.string.dns_final_direct)
+                                        DnsFinalReject -> stringResource(R.string.dns_final_reject)
+                                        else -> state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                                    }
+                                },
+                            )
+                        }
+                    }
                     if (state.finalDnsServer == DnsFinalReject) {
                         Text(
                             stringResource(R.string.dns_final_reject_desc),

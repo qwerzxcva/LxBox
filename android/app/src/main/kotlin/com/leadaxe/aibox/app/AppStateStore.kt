@@ -183,11 +183,11 @@ internal fun sanitizeAppStateReferences(state: AppState): AppState {
         state.finalDnsServer
     }
 
-    val finalDnsServerByMode = state.finalDnsServerByMode.filterValues { v ->
+    val finalDnsServerByExit = state.finalDnsServerByExit.filterValues { v ->
         v.isBlank() || v in listOf(DnsFinalProxy, DnsFinalDirect, DnsFinalReject) ||
             dnsServers.any { it.enabled && it.tag == v }
     }.let {
-        if (it.size != state.finalDnsServerByMode.size) changed = true
+        if (it.size != state.finalDnsServerByExit.size) changed = true
         it
     }
 
@@ -221,7 +221,7 @@ internal fun sanitizeAppStateReferences(state: AppState): AppState {
         state.copy(
             dnsServers = dnsServers,
             finalDnsServer = finalDnsServer,
-            finalDnsServerByMode = finalDnsServerByMode,
+            finalDnsServerByExit = finalDnsServerByExit,
             outboundGroups = outboundGroups,
             selectedOutbound = selectedOutbound,
         )

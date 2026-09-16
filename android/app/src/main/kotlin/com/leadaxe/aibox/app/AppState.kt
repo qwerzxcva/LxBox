@@ -93,12 +93,14 @@ data class AppState(
      */
     val finalDnsServer: String = "",
     /**
-     * Per-Clash-mode fallback resolver override (see [finalDnsServer] for
-     * the value grammar). Key = mode name (Rule/Global/Direct); when the
-     * active mode has an entry it wins over [finalDnsServer], so e.g.
-     * Global can resolve through the proxy exit while Rule stays automatic.
+     * Per-exit fallback resolver (see [finalDnsServer] for the value
+     * grammar). Key = "proxy" or "direct": when a query's connection falls
+     * through to the route fallback ([fallbackRouteMode]), the DNS fallback
+     * for THAT exit applies — e.g. the direct fallback can be the ISP
+     * resolver while the proxy fallback is a remote DoH. An exit without
+     * an entry falls back to [finalDnsServer].
      */
-    val finalDnsServerByMode: Map<String, String> = emptyMap(),
+    val finalDnsServerByExit: Map<String, String> = emptyMap(),
 
     // -------------------------------------------------------------- fake-ip
     /** Built-in fake-IP pool for the `dns.fakeip` server (see ConfigCompiler). */

@@ -2,8 +2,6 @@ package com.leadaxe.aibox.engine.singbox
 
 import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.BlockOutboundTag
-import com.leadaxe.aibox.app.ClashModeDirect
-import com.leadaxe.aibox.app.ClashModeGlobal
 import com.leadaxe.aibox.app.ClashModeRule
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.FallbackRouteDirect
@@ -37,22 +35,20 @@ class ConfigCompilerFallbackTest {
         config["dns"]!!.jsonObject["final"]?.jsonPrimitive?.content
 
     @Test
-    fun `final dns follows the active clash mode`() {
+    fun `final dns follows the route fallback exit`() {
+        // The route fallback picks the exit; the DNS fallback row for THAT
+        // exit applies.
         val state = AppState(
-            finalDnsServerByMode = mapOf(
-                ClashModeGlobal to DnsFinalProxy,
-                ClashModeDirect to "final:direct",
-            ),
+            fallbackRouteMode = FallbackRouteProxy,
+            finalDnsServerByExit = mapOf("proxy" to DnsFinalProxy, "direct" to "final:direct"),
         )
-        // Global: the mode override wins → synthesized shadow server tag.
-        val global = compile(state.copy(clashMode = ClashModeGlobal))
-        assertEquals("dns-final-proxy", dnsFinalOf(global))
-        // Direct: its own override.
-        val direct = compile(state.copy(clashMode = ClashModeDirect))
+        val proxy = compile(state)
+        assertEquals("dns-final-proxy", dnsFinalOf(proxy))
+        val direct = compile(state.copy(fallbackRouteMode = FallbackRouteDirect))
         assertEquals("dns-final-direct", dnsFinalOf(direct))
-        // Rule: no override → automatic (first usable default server).
-        val rule = compile(state.copy(clashMode = ClashModeRule))
-        assertEquals("dns-remote", dnsFinalOf(rule))
+        // No fallback mode → no exit key → global (automatic first server).
+        val none = compile(state.copy(fallbackRouteMode = ""))
+        assertEquals("dns-remote", dnsFinalOf(none))
     }
     /** The fallback rule is the last rule of the *rule-mode* table: it sits
      *  before the Global/Direct bypass shortcuts, which must stay last. */

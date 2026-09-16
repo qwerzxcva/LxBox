@@ -621,14 +621,29 @@ object ConfigCompiler {
      * server (local / udp / tls / …): fakeip cannot resolve names.
      */
     /**
-     * The fallback resolver for the *active* Clash mode: the mode map wins
-     * over the global choice, so Global can resolve through the proxy exit
-     * while Rule stays automatic.
+     * The fallback resolver for the *route fallback exit*: when the rules
+     * table ends in the fallback (proxy or direct, per
+     * [AppState.fallbackRouteMode] / unknownTrafficOutbound), queries that
+     * land there use this exit's DNS fallback. An exit without its own
+     * entry falls back to the global [AppState.finalDnsServer].
      */
-    private fun effectiveFinalDns(state: AppState): String =
-        state.finalDnsServerByMode[state.clashMode]
+    private fun effectiveFinalDns(state: AppState): String {
+        val exit = when {
+            state.unknownTrafficOutbound.isNotBlank() -> state.unknownTrafficOutbound
+            state.fallbackRouteMode == FallbackRouteDirect -> DirectOutboundTag
+            state.fallbackRouteMode == FallbackRouteProxy -> ProxySelectorTag
+            else -> ""
+        }
+        val key = when (exit) {
+            ProxySelectorTag -> "proxy"
+            DirectOutboundTag -> "direct"
+            else -> ""
+        }
+        if (key.isBlank()) return state.finalDnsServer
+        return state.finalDnsServerByExit[key]
             ?.takeIf { it.isNotBlank() }
             ?: state.finalDnsServer
+    }
 
     private fun pickDefaultResolver(state: AppState): String? {
         val liveOutboundTags = buildSet {
