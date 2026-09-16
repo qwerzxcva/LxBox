@@ -58,7 +58,7 @@ class AppStateStore(
     fun update(transform: (AppState) -> AppState) {
         val next = transform(_state.value)
         if (next === _state.value) return
-        _state.value = sanitizeReferences(next)
+        _state.value = sanitizeAppStateReferences(next)
         schedulePersist(next)
     }
 
@@ -69,88 +69,7 @@ class AppStateStore(
      * gone, the reference is reset to a safe default — the kernel would
      * otherwise refuse to start with "outbound detour not found".
      */
-    private fun sanitizeReferences(state: AppState): AppState {
-        val liveTags = buildSet {
-            add(DirectOutboundTag)
-            add(ProxySelectorTag)
-            state.outbounds.forEach { add(it.tag) }
-            state.outboundGroups.filter { it.enabled }.forEach { add(it.tag) }
-        }
-        var changed = false
 
-        val dnsServers = state.dnsServers.map { server ->
-            when {
-                server.detour.isNotBlank() && server.detour !in liveTags -> {
-                    changed = true
-                    // Fall back to the main selector, not direct: the user
-                    // pinned an exit for a reason (a censored resolver is
-                    // useless over a direct path).
-                    server.copy(detour = ProxySelectorTag)
-                }
-                server.type == "group" && server.groupServers.any { it !in liveTags } -> {
-                    changed = true
-                    server.copy(groupServers = server.groupServers.filter { it in liveTags })
-                }
-                else -> server
-            }
-        }.filter { server ->
-            // A group that lost every member is not a server any more.
-            if (server.type == "group" && server.groupServers.isEmpty()) {
-                changed = true
-                false
-            } else {
-                true
-            }
-        }
-
-        val finalDnsServer = if (state.finalDnsServer.isNotBlank() &&
-            state.dnsServers.none { it.tag == state.finalDnsServer } ||
-            (state.finalDnsServer.isNotBlank() &&
-                dnsServers.none { it.enabled && it.tag == state.finalDnsServer })
-        ) {
-            changed = true
-            ""
-        } else {
-            state.finalDnsServer
-        }
-
-        val outboundGroups = state.outboundGroups.mapNotNull { group ->
-            val live = group.members.filter { it in liveTags }
-            val updated = if (live.size != group.members.size) {
-                changed = true
-                group.copy(members = live)
-            } else {
-                group
-            }
-            // An empty urltest/selector group is dead weight the kernel
-            // would compile to an empty outbounds array — drop it.
-            if (updated.members.isEmpty() && state.outbounds.isNotEmpty()) {
-                changed = true
-                null
-            } else {
-                updated
-            }
-        }
-        val selectedOutbound = if (state.selectedOutbound.isNotBlank() &&
-            state.selectedOutbound !in liveTags
-        ) {
-            changed = true
-            ""
-        } else {
-            state.selectedOutbound
-        }
-
-        return if (changed) {
-            state.copy(
-                dnsServers = dnsServers,
-                finalDnsServer = finalDnsServer,
-                outboundGroups = outboundGroups,
-                selectedOutbound = selectedOutbound,
-            )
-        } else {
-            state
-        }
-    }
 
     private fun schedulePersist(value: AppState) {
         pendingPersist.set(value)
@@ -206,5 +125,93 @@ class AppStateStore(
         }
         update { imported }
         return "ok"
+    }
+}
+
+internal fun sanitizeAppStateReferences(state: AppState): AppState {
+    val liveTags = buildSet {
+        add(DirectOutboundTag)
+        add(ProxySelectorTag)
+        state.outbounds.forEach { add(it.tag) }
+        state.outboundGroups.filter { it.enabled }.forEach { add(it.tag) }
+    }
+    // DNS-group members reference DNS server tags, not outbound tags —
+    // they live in a different namespace. Disabled servers stay live
+    // here: disabled ≠ deleted, and stripping them from the group would
+    // silently uncheck the user's selection in the editor.
+    val liveDnsTags = state.dnsServers.map { it.tag }.toSet()
+    var changed = false
+
+    val dnsServers = state.dnsServers.map { server ->
+        when {
+            server.detour.isNotBlank() && server.detour !in liveTags -> {
+                changed = true
+                // Fall back to the main selector, not direct: the user
+                // pinned an exit for a reason (a censored resolver is
+                // useless over a direct path).
+                server.copy(detour = ProxySelectorTag)
+            }
+            server.type == "group" && server.groupServers.any { it !in liveDnsTags } -> {
+                changed = true
+                server.copy(groupServers = server.groupServers.filter { it in liveDnsTags })
+            }
+            else -> server
+        }
+    }.filter { server ->
+        // A group that lost every member is not a server any more.
+        if (server.type == "group" && server.groupServers.isEmpty()) {
+            changed = true
+            false
+        } else {
+            true
+        }
+    }
+
+    val finalDnsServer = if (state.finalDnsServer.isNotBlank() &&
+        state.dnsServers.none { it.tag == state.finalDnsServer } ||
+        (state.finalDnsServer.isNotBlank() &&
+            dnsServers.none { it.enabled && it.tag == state.finalDnsServer })
+    ) {
+        changed = true
+        ""
+    } else {
+        state.finalDnsServer
+    }
+
+    val outboundGroups = state.outboundGroups.mapNotNull { group ->
+        val live = group.members.filter { it in liveTags }
+        val updated = if (live.size != group.members.size) {
+            changed = true
+            group.copy(members = live)
+        } else {
+            group
+        }
+        // An empty urltest/selector group is dead weight the kernel
+        // would compile to an empty outbounds array — drop it.
+        if (updated.members.isEmpty() && state.outbounds.isNotEmpty()) {
+            changed = true
+            null
+        } else {
+            updated
+        }
+    }
+    val selectedOutbound = if (state.selectedOutbound.isNotBlank() &&
+        state.selectedOutbound !in liveTags
+    ) {
+        changed = true
+        ""
+    } else {
+        state.selectedOutbound
+    }
+
+    return if (changed) {
+        state.copy(
+            dnsServers = dnsServers,
+            finalDnsServer = finalDnsServer,
+            outboundGroups = outboundGroups,
+            selectedOutbound = selectedOutbound,
+        )
+    } else {
+        state
     }
 }

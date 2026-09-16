@@ -176,7 +176,8 @@ object ConfigCompiler {
         }
         putJsonArray("servers") {
             usableServers.forEach { server ->
-                add(compileDnsServer(server))
+                compileDnsServer(server, liveDnsTags = usableServers.map { it.tag }.toSet())
+                    ?.let(::add)
             }
             if (state.enableFakeIp) {
                 add(compileFakeIpServer(state))
@@ -214,7 +215,7 @@ object ConfigCompiler {
         if (state.dnsCacheCapacity > 0) put("cache_capacity", state.dnsCacheCapacity)
     }
 
-    private fun compileDnsServer(server: DnsServerState): JsonObject = buildJsonObject {
+    private fun compileDnsServer(server: DnsServerState, liveDnsTags: Set<String>): JsonObject? = buildJsonObject {
         put("tag", server.tag)
         when (server.type) {
             "local" -> put("type", "local")
@@ -227,8 +228,21 @@ object ConfigCompiler {
                 // members in parallel and answers with the fastest response
                 // (`fastest response from <tag>`). There is no mode/TTL
                 // config — the old sing-box-lx group semantics are gone.
+                //
+                // Kernel Start() rejects: missing member ("DNS server not
+                // found"), a member that is itself a group, and fakeip
+                // members. Filter all three here — a disabled server is
+                // also not emitted, so it must not stay in the list.
+                val liveMembers = server.groupServers.filter { tag ->
+                    liveDnsTags.contains(tag) && tag != FakeIpServerTag && tag != server.tag
+                }
+                if (liveMembers.isEmpty()) {
+                    // Nothing the kernel would accept: drop the group rather
+                    // than failing the whole config at start.
+                    return null
+                }
                 put("type", "group")
-                putJsonArray("servers") { server.groupServers.forEach(::add) }
+                putJsonArray("servers") { liveMembers.forEach(::add) }
             }
             else -> {
                 put("type", server.type)
