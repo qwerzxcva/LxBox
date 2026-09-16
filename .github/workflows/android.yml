@@ -17,10 +17,11 @@ name: Android
 
 on:
   push:
-    # aibox/** are the AIBox integration branches (rsxm conductor +
-    # microkernels). They build dev APKs only — no GitHub Release is ever
-    # cut from them; the release job stays tag-gated below.
-    branches: [main, develop, rust-dev, rsxm-dev, aibox, aibox/**]
+    # aibox/** (slash) and aibox-** (hyphen) are the AIBox integration
+    # branches (rsxm conductor + microkernels, e.g. aibox-rsxm). They build
+    # dev APKs only — no GitHub Release is ever cut from them; the release
+    # job stays tag-gated below.
+    branches: [main, develop, rust-dev, rsxm-dev, aibox, aibox-rsxm, aibox/**, aibox-**]
     tags: ['v*']
     paths:
       - 'android/**'
