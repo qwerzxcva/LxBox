@@ -1,6 +1,18 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,17 +22,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -28,6 +39,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +59,6 @@ import com.leadaxe.aibox.app.MainActivity
 import com.leadaxe.aibox.engine.vpn.BoxController
 import com.leadaxe.aibox.engine.vpn.BoxRuntimeSnapshot
 import com.leadaxe.aibox.engine.vpn.BoxState
-import com.leadaxe.aibox.engine.vpn.VpnRelay
 
 @Composable
 fun HomeScreen(
@@ -67,16 +83,13 @@ fun HomeScreen(
             text = stringResource(R.string.home_title),
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.fillMaxWidth(),
         )
 
-        // Betttbox-style hero control: one large target dominates the screen,
-        // with the status and action label inside it. Everything else on the
-        // tab is supporting information.
-        PowerDial(
+        PowerDome(
             state = boxState,
             onConnect = {
-                val activityRef = activity
-                val intent = controller.prepareVpn(activityRef ?: return@PowerDial)
+                val intent = controller.prepareVpn(activity ?: return@PowerDome)
                 if (intent != null) {
                     onRequestVpnConsent(intent)
                 } else {
@@ -85,21 +98,6 @@ fun HomeScreen(
             },
             onDisconnect = { controller.stop() },
         )
-
-        Text(
-            text = if (boxState is BoxState.Connected)
-                stringResource(
-                    R.string.home_via_node,
-                    appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
-                        ?.name?.ifBlank { appState.selectedOutbound }
-                        ?: appState.selectedOutbound.ifBlank { "proxy" },
-                )
-            else statusHeadline(boxState),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        StatusCard(state = boxState, runtime = runtime ?: BoxRuntimeSnapshot())
 
         ClashModeRow(
             current = appState.clashMode,
@@ -122,65 +120,138 @@ fun HomeScreen(
                 )
             }
         }
+
+        StatusCard(state = boxState, runtime = runtime ?: BoxRuntimeSnapshot())
     }
 }
 
-@Composable
-private fun statusHeadline(state: BoxState): String = when (state) {
-    BoxState.Idle -> stringResource(R.string.home_status_idle)
-    BoxState.Starting -> stringResource(R.string.home_status_starting)
-    is BoxState.Connected -> stringResource(R.string.home_status_connected)
-    BoxState.Stopping -> stringResource(R.string.home_status_stopping)
-    is BoxState.Error -> stringResource(R.string.home_status_error, state.message)
-}
-
 /**
- * Large circular connect/disconnect control. The ring colour tracks the
- * engine state so the current state reads at a glance without text.
+ * Hero control: a volumetric dome. The connected fill is a radial gradient
+ * (bright core, darkened rim) inside an accent ring; while connected a soft
+ * breathing halo pulses behind the dial so the tunnel reads as "alive".
+ * Idle keeps the same shape but flat and quiet. The dial tracks the engine
+ * state in colour the way the old PowerDial did.
  */
 @Composable
-private fun PowerDial(
+private fun PowerDome(
     state: BoxState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
     val connected = state is BoxState.Connected
     val busy = state is BoxState.Starting || state is BoxState.Stopping
-    val ringColor = when (state) {
+    val accent = when (state) {
         is BoxState.Connected -> MaterialTheme.colorScheme.primary
         is BoxState.Error -> MaterialTheme.colorScheme.error
         BoxState.Starting, BoxState.Stopping -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = when {
         connected -> stringResource(R.string.home_disconnect)
         busy -> stringResource(R.string.home_working)
         else -> stringResource(R.string.home_connect)
     }
-    Card(
-        onClick = { if (connected) onDisconnect() else onConnect() },
-        enabled = !busy,
-        shape = androidx.compose.foundation.shape.CircleShape,
-        modifier = Modifier.size(180.dp),
-        colors = CardDefaults.cardColors(containerColor = ringColor),
+    val status = when (state) {
+        is BoxState.Connected -> stringResource(R.string.home_status_connected)
+        is BoxState.Error -> stringResource(R.string.home_status_error, state.message)
+        BoxState.Starting -> stringResource(R.string.home_status_starting)
+        BoxState.Stopping -> stringResource(R.string.home_status_stopping)
+        else -> stringResource(R.string.home_status_idle)
+    }
+    // Dome fill colours are resolved outside the Canvas draw scope (composable
+    // reads are not allowed inside a draw lambda).
+    val idleFillTop = MaterialTheme.colorScheme.surfaceContainerHigh
+    val idleFillMid = MaterialTheme.colorScheme.surfaceVariant
+    val idleFillEdge = MaterialTheme.colorScheme.surface
+    val onAccent = if (connected) MaterialTheme.colorScheme.onPrimary
+    else MaterialTheme.colorScheme.onSurface
+
+    val glow = rememberInfiniteTransition(label = "glow")
+    val glowPhase by glow.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2400, easing = EaseOutCubic), RepeatMode.Reverse),
+        label = "phase",
+    )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = tween(120),
+        label = "dialScale",
+    )
+
+    Box(
+        modifier = Modifier
+            .size(230.dp)
+            .scale(scale)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+            ) { if (!busy) (if (connected) onDisconnect else onConnect)() },
+        contentAlignment = Alignment.Center,
     ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val dialRadius = size.minDimension * 0.31f
+            val ringRadius = dialRadius + size.minDimension * 0.035f
+            // Breathing halo behind the dial — only while connected.
+            if (connected) {
+                val haloRadius = dialRadius * (1.35f + 0.15f * glowPhase)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.28f * (1f - glowPhase * 0.4f)), Color.Transparent),
+                        center = center,
+                        radius = haloRadius,
+                    ),
+                    radius = haloRadius,
+                    center = center,
+                )
+            }
+            // Accent ring around the dome.
+            drawCircle(
+                brush = Brush.sweepGradient(
+                    listOf(accent.copy(alpha = 0.35f), accent, accent.copy(alpha = 0.35f)),
+                    center,
+                ),
+                radius = ringRadius,
+                center = center,
+                style = Stroke(width = size.minDimension * 0.010f, cap = StrokeCap.Round),
+            )
+            // The dome itself: the highlight sits toward the upper-left and
+            // fades into a deep tint at the rim — volumetric, not a flat disc.
+            val fillColors = when {
+                connected -> listOf(accent, accent.copy(alpha = 0.85f), accent.copy(alpha = 0.35f))
+                busy -> listOf(accent.copy(alpha = 0.55f), accent.copy(alpha = 0.25f), accent.copy(alpha = 0.08f))
+                else -> listOf(idleFillTop, idleFillMid, idleFillEdge)
+            }
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = fillColors,
+                    center = center - Offset(dialRadius * 0.25f, dialRadius * 0.30f),
+                    radius = dialRadius * 1.7f,
+                ),
+                radius = dialRadius,
+                center = center,
+            )
+        }
         Column(
-            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Icon(
                 Icons.Filled.PowerSettingsNew,
                 contentDescription = label,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(44.dp),
+                tint = onAccent,
             )
-            Spacer(Modifier.size(8.dp))
+            Spacer(Modifier.height(10.dp))
+            Text(status, style = MaterialTheme.typography.labelMedium, color = onAccent.copy(alpha = 0.75f))
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = onAccent,
             )
         }
     }
@@ -191,22 +262,12 @@ private fun StatusCard(
     state: BoxState,
     runtime: BoxRuntimeSnapshot,
 ) {
-    val statusLabel = when (state) {
-        BoxState.Idle -> stringResource(R.string.home_status_idle)
-        BoxState.Starting -> stringResource(R.string.home_status_starting)
-        is BoxState.Connected -> stringResource(R.string.home_status_connected)
-        BoxState.Stopping -> stringResource(R.string.home_status_stopping)
-        is BoxState.Error -> stringResource(R.string.home_status_error, state.message)
-    }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AssistChip(onClick = {}, label = { Text(statusLabel) })
-            }
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -224,12 +285,6 @@ private fun StatusCard(
                 MetricColumn(label = stringResource(R.string.home_goroutines), value = runtime.goroutines.toString())
                 MetricColumn(label = stringResource(R.string.home_memory), value = formatBytes(runtime.memoryBytes))
             }
-            if (state is BoxState.Connected) {
-                LinearProgressIndicator(
-                    progress = { 1f },
-                    modifier = Modifier.fillMaxWidth().height(4.dp),
-                )
-            }
         }
     }
 }
@@ -238,9 +293,13 @@ private fun StatusCard(
 private fun TrafficColumn(label: String, bytes: Long, total: Long) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(formatBytes(bytes), style = MaterialTheme.typography.titleMedium)
+        Text(formatBytes(bytes), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         if (total > 0) {
-            Text("Σ ${formatBytes(total)}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "Σ ${formatBytes(total)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -249,7 +308,7 @@ private fun TrafficColumn(label: String, bytes: Long, total: Long) {
 private fun MetricColumn(label: String, value: String) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleMedium)
+        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -258,14 +317,12 @@ private fun ClashModeRow(
     current: String,
     onChange: (String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ClashModes.forEach { mode ->
-            FilterChip(
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        ClashModes.forEachIndexed { index, mode ->
+            SegmentedButton(
                 selected = mode == current,
                 onClick = { onChange(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = ClashModes.size),
                 label = {
                     Text(
                         when (mode) {
@@ -282,7 +339,7 @@ private fun ClashModeRow(
 }
 
 private fun formatBytes(value: Long): String {
-    if (value < 1024) return "${value} B"
+    if (value < 1024) return "$value B"
     val units = arrayOf("KB", "MB", "GB", "TB")
     var v = value.toDouble() / 1024.0
     var u = 0

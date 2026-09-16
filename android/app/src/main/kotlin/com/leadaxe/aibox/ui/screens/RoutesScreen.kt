@@ -3,6 +3,9 @@ package com.leadaxe.aibox.ui.screens
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CallMissedOutgoing
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.Edit
@@ -25,6 +29,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,6 +55,8 @@ import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.BlockOutboundTag
 import com.leadaxe.aibox.app.DirectOutboundTag
+import com.leadaxe.aibox.app.FallbackRouteDirect
+import com.leadaxe.aibox.app.FallbackRouteProxy
 import com.leadaxe.aibox.app.ProxySelectorTag
 import com.leadaxe.aibox.app.RouteRule
 import com.leadaxe.aibox.app.isPresetInstalled
@@ -184,9 +193,10 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
         }
 
         // Built-in rules, in the order they run in the kernel: sniff →
-        // reject broken IPv6 → unknown traffic → hijack DNS. Each is a
-        // switch (or a target picker) editing one built-in behaviour; the
-        // compiled rule order matches this visual order.
+        // reject broken IPv6 → hijack DNS. Each is a switch editing one
+        // built-in behaviour; the compiled rule order matches this visual
+        // order. The fallback (final) rule gets its own card right after
+        // the user rules — it is the tail of that list, not a hidden built-in.
         item {
             SectionHeader(stringResource(R.string.routes_section_builtin))
         }
@@ -219,36 +229,6 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
         }
         item {
             CollapsibleSection(
-                title = stringResource(R.string.routes_unknown_traffic),
-                expanded = builtinUnknownExpanded,
-                onToggle = { builtinUnknownExpanded = !builtinUnknownExpanded },
-                subtitle = stringResource(R.string.routes_unknown_traffic_desc),
-            ) {
-                val outboundOptions = remember(state.outbounds, state.outboundGroups) {
-                    listOf("", DirectOutboundTag, BlockOutboundTag) +
-                        state.outboundGroups.filter { it.enabled }.map { it.tag } +
-                        state.outbounds.map { it.tag }
-                }
-                SingleChoiceChips(
-                    label = stringResource(R.string.routes_unknown_traffic_target),
-                    options = outboundOptions,
-                    selected = state.unknownTrafficOutbound,
-                    onSelect = { v -> store.update { it.copy(unknownTrafficOutbound = v) } },
-                    display = { tag ->
-                        when (tag) {
-                            "" -> stringResource(R.string.routes_unknown_traffic_proxy)
-                            DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
-                            BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
-                            else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
-                                ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
-                                ?: tag
-                        }
-                    },
-                )
-            }
-        }
-        item {
-            CollapsibleSection(
                 title = stringResource(R.string.routes_builtin_hijack_dns),
                 expanded = builtinHijackExpanded,
                 onToggle = { builtinHijackExpanded = !builtinHijackExpanded },
@@ -262,6 +242,28 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     onCheckedChange = { v -> store.update { it.copy(hijackDns = v) } },
                 )
             }
+        }
+
+        // Fallback rule: the tail of the rules list. Anything no rule above
+        // matched lands here. Direct = go straight out; Proxy = route to the
+        // main selector. (Finer targets — a specific node/group, or reject —
+        // remain available in Settings-level unknownTraffic control below.)
+        item {
+            FallbackRuleCard(
+                state = state,
+                mode = state.fallbackRouteMode,
+                finalOutbound = state.unknownTrafficOutbound,
+                onPickMode = { mode ->
+                    store.update {
+                        it.copy(
+                            fallbackRouteMode = mode,
+                            // A mode pick supersedes any custom final target.
+                            unknownTrafficOutbound = "",
+                        )
+                    }
+                },
+                onPickTarget = { tag -> store.update { it.copy(unknownTrafficOutbound = tag) } },
+            )
         }
 
         // Route check: type a domain / IP and see which rule fires. The
@@ -666,6 +668,104 @@ internal fun outboundDisplayLabel(tag: String, state: AppState): String {
  * when the native library is missing the section says so instead of
  * pretending to check.
  */
+/**
+ * The always-last rule card: fallback traffic goes direct or to the proxy
+ * selector. Rendered visually as the tail of the user rules list — matching
+ * the compiled order — instead of hiding the catch-all inside the built-ins.
+ */
+@Composable
+private fun FallbackRuleCard(
+    state: AppState,
+    mode: String,
+    finalOutbound: String,
+    onPickMode: (String) -> Unit,
+    onPickTarget: (String) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.CallMissedOutgoing,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    stringResource(R.string.routes_fallback_rule),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = when {
+                        finalOutbound == BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
+                        finalOutbound.isNotBlank() -> stringResource(R.string.routes_fallback_custom)
+                        mode == FallbackRouteDirect -> stringResource(R.string.dns_detour_direct)
+                        else -> stringResource(R.string.routes_unknown_traffic_proxy)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                stringResource(R.string.routes_fallback_rule_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                val modes = listOf(FallbackRouteProxy, FallbackRouteDirect)
+                modes.forEachIndexed { index, m ->
+                    SegmentedButton(
+                        selected = mode == m && finalOutbound.isBlank(),
+                        onClick = { onPickMode(m) },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                        label = {
+                            Text(
+                                if (m == FallbackRouteProxy) stringResource(R.string.routes_fallback_proxy)
+                                else stringResource(R.string.routes_fallback_direct)
+                            )
+                        },
+                    )
+                }
+            }
+            // Advanced: override the catch-all with a concrete node/group or
+            // reject. This is the original unknown-traffic picker, kept for
+            // the cases the two-way toggle cannot express.
+            var advanced by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { advanced = !advanced }) {
+                Text(
+                    if (advanced) stringResource(R.string.routes_fallback_hide_advanced)
+                    else stringResource(R.string.routes_fallback_show_advanced),
+                )
+            }
+            if (advanced) {
+                val outboundOptions = remember(state.outbounds, state.outboundGroups) {
+                    listOf("", DirectOutboundTag, BlockOutboundTag) +
+                        state.outboundGroups.filter { it.enabled }.map { it.tag } +
+                        state.outbounds.map { it.tag }
+                }
+                SingleChoiceChips(
+                    label = stringResource(R.string.routes_unknown_traffic_target),
+                    options = outboundOptions,
+                    selected = finalOutbound,
+                    onSelect = onPickTarget,
+                    display = { tag ->
+                        when (tag) {
+                            "" -> stringResource(R.string.routes_unknown_traffic_proxy)
+                            DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+                            BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
+                            else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                                ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                                ?: tag
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun RouteCheckSection(state: AppState) {
     val context = LocalContext.current

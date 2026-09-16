@@ -211,6 +211,8 @@
     <string name="dns_final_reject_desc">Every query not matched by an earlier rule is rejected — nothing leaks to any resolver. Use with explicit DNS rules for the domains you actually need.</string>
     <string name="dns_final_direct">Direct exit</string>
     <string name="dns_final_auto">Automatic</string>
+    <string name="dns_final_mode_default">Follow mode default</string>
+    <string name="dns_final_global_fallback">Fallback for modes without their own pick</string>
     <string name="dns_group_members">Member servers</string>
     <string name="dns_group_mode">Selection strategy</string>
     <string name="dns_group_stable">Stable</string>
@@ -422,6 +424,13 @@
     <string name="routes_fakeip_bypass">Fake-IP bypass rule</string>
     <string name="routes_fakeip_bypass_desc">Send packets addressed to the fake-IP range straight to direct — protects against apps caching fake addresses past the tunnel lifetime. Needs Fake-IP enabled.</string>
     <string name="routes_unknown_traffic">Unknown traffic (final) exit</string>
+    <string name="routes_fallback_rule">Fallback rule</string>
+    <string name="routes_fallback_rule_desc">The last rule of the list: traffic no rule above matched lands here.</string>
+    <string name="routes_fallback_proxy">Proxy</string>
+    <string name="routes_fallback_direct">Direct</string>
+    <string name="routes_fallback_custom">Custom target</string>
+    <string name="routes_fallback_show_advanced">Show advanced targets</string>
+    <string name="routes_fallback_hide_advanced">Hide advanced targets</string>
     <string name="routes_unknown_traffic_reject">Reject (block unknown traffic)</string>
     <string name="routes_unknown_traffic_proxy">Proxy (default)</string>
     <string name="routes_unknown_traffic_desc">Where connections go when no rule matched: the main proxy selector, a node/group, or direct.</string>

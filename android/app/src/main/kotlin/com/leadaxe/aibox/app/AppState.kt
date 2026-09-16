@@ -40,6 +40,14 @@ data class AppState(
      */
     val unknownTrafficOutbound: String = "",
     /**
+     * Fallback route mode rendered as the last rule of the rules list:
+     * "direct" keeps the built-in unknown-traffic exit (final) as-is;
+     * "proxy" forces a package-less catch-all proxy rule appended after
+     * every user rule. Kept in sync with [unknownTrafficOutbound] —
+     * choosing reject/block there still wins.
+     */
+    val fallbackRouteMode: String = "",
+    /**
      * Reject broken IPv6 (built-in): when the default interface has no
      * public IPv6 (2000::/3), reject all IPv6-destined connections instead
      * of letting them time out on a dead route (a logical AND rule:
@@ -84,6 +92,13 @@ data class AppState(
      * "兜底" choice in the DNS group UI.
      */
     val finalDnsServer: String = "",
+    /**
+     * Per-Clash-mode fallback resolver override (see [finalDnsServer] for
+     * the value grammar). Key = mode name (Rule/Global/Direct); when the
+     * active mode has an entry it wins over [finalDnsServer], so e.g.
+     * Global can resolve through the proxy exit while Rule stays automatic.
+     */
+    val finalDnsServerByMode: Map<String, String> = emptyMap(),
 
     // -------------------------------------------------------------- fake-ip
     /** Built-in fake-IP pool for the `dns.fakeip` server (see ConfigCompiler). */
@@ -311,6 +326,10 @@ const val DnsFinalReject = "final:reject"
 
 /** FakeIP scope values (see [AppState.fakeIpScope]). */
 const val FakeIpScopeAll = "all"
+
+/** [AppState.fallbackRouteMode]: rules-list fallback goes direct or proxy. */
+const val FallbackRouteDirect = "direct"
+const val FallbackRouteProxy = "proxy"
 const val FakeIpScopeProxyOnly = "proxyOnly"
 const val FakeIpScopeDirectOnly = "directOnly"
 

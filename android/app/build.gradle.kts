@@ -11,6 +11,12 @@ android {
     namespace = "com.leadaxe.aibox"
     compileSdk = 36
 
+    // ConfigCompiler (covered by unit tests) logs through android.util.Log;
+    // stub it so tests don't hit "not mocked".
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     // Release signing: sourced from android/key.properties when present
     // (CI writes it from the ANDROID_KEYSTORE_* repo secrets, matching the
     // Flutter-side setup), otherwise release builds fall back to the debug

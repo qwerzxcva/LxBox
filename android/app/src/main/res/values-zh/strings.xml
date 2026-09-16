@@ -209,6 +209,8 @@
     <string name="dns_final_reject_desc">未被前面规则命中的查询一律拒绝 — 不会泄漏到任何解析器。请配合显式 DNS 规则覆盖你实际需要的域名。</string>
     <string name="dns_final_direct">直连出口</string>
     <string name="dns_final_auto">自动</string>
+    <string name="dns_final_mode_default">跟随全局</string>
+    <string name="dns_final_global_fallback">未单独设置的模式使用此兜底</string>
     <string name="dns_group_members">成员服务器</string>
     <string name="dns_group_mode">选择策略</string>
     <string name="dns_group_stable">稳定（粘滞）</string>
@@ -420,6 +422,13 @@
     <string name="routes_fakeip_bypass">Fake-IP 绕过规则</string>
     <string name="routes_fakeip_bypass_desc">目标是 fake-IP 池的包直接直连 — 防止应用缓存了过期 fake 地址导致回环。需开启 Fake-IP。</string>
     <string name="routes_unknown_traffic">未知流量（final）出口</string>
+    <string name="routes_fallback_rule">兜底规则</string>
+    <string name="routes_fallback_rule_desc">规则列表的最后一条：未被上面任何规则命中的流量都落到这里。</string>
+    <string name="routes_fallback_proxy">代理</string>
+    <string name="routes_fallback_direct">直连</string>
+    <string name="routes_fallback_custom">自定义目标</string>
+    <string name="routes_fallback_show_advanced">展开高级目标</string>
+    <string name="routes_fallback_hide_advanced">收起高级目标</string>
     <string name="routes_unknown_traffic_reject">拒绝（阻断未知流量）</string>
     <string name="routes_unknown_traffic_proxy">代理（默认）</string>
     <string name="routes_unknown_traffic_desc">未命中任何规则的连接走向：主代理选择器、某个节点/分组，或直连。</string>

@@ -4,24 +4,21 @@ import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.BlockOutboundTag
 import com.leadaxe.aibox.app.ClashModeDirect
 import com.leadaxe.aibox.app.ClashModeGlobal
+import com.leadaxe.aibox.app.ClashModeRule
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsOutboundTag
 import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalReject
 import com.leadaxe.aibox.app.DnsFinalProxy
+import com.leadaxe.aibox.app.DnsFinalReject
 import com.leadaxe.aibox.app.DnsRule
-import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalReject
-import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionReject
-import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalReject
-import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.FakeIpScopeDirectOnly
 import com.leadaxe.aibox.app.FakeIpScopeProxyOnly
 import com.leadaxe.aibox.app.FakeIpServerTag
+import com.leadaxe.aibox.app.FallbackRouteDirect
+import com.leadaxe.aibox.app.FallbackRouteProxy
 import com.leadaxe.aibox.app.LbStrategyRoundRobin
 import com.leadaxe.aibox.app.MuxProtocolH2mux
 import com.leadaxe.aibox.app.OutboundGroup
@@ -197,7 +194,7 @@ object ConfigCompiler {
         // Built-in final shortcuts: a local resolver pinned to the proxy
         // exit or the direct path. `local` type dials through the detour's
         // network, so the OS resolver's queries follow the chosen exit.
-        when (state.finalDnsServer) {
+        when (effectiveFinalDns(state)) {
             DnsFinalProxy -> usableServers += DnsServerState(
                 id = "final-proxy",
                 name = "Final (proxy)",
@@ -223,7 +220,7 @@ object ConfigCompiler {
         // The built-in intercept shortcut: every residual query is
         // rejected. Handled as "no final server + trailing reject", which
         // reuses the fail-closed mechanism below.
-        val interceptFinal = state.finalDnsServer == DnsFinalReject
+        val interceptFinal = effectiveFinalDns(state) == DnsFinalReject
         val finalServer = if (interceptFinal) "" else pickFinalServer(state, usableServers)
         val rules = compileDnsRules(state, finalServer)
         if (rules.isNotEmpty()) {
@@ -601,7 +598,7 @@ object ConfigCompiler {
      * rule gauntlet and should be resolved, not faked.
      */
     private fun pickFinalServer(state: AppState, usableServers: List<DnsServerState>): String {
-        val explicit = state.finalDnsServer
+        val explicit = effectiveFinalDns(state)
         if (explicit == DnsFinalReject) return FakeIpServerTag // unreachable; intercept handled above
         if (explicit.isNotBlank() && usableServers.any { it.tag == explicit }) {
             return explicit
@@ -610,9 +607,9 @@ object ConfigCompiler {
         // over the local network, via a synthesized local resolver pinned
         // to that detour (appended to the servers list by the caller).
         if (explicit == DnsFinalProxy || explicit == DnsFinalDirect) {
-            // The synthesized shadow server (appended above) carries the
-            // matching tag: dns-final-proxy / dns-final-direct.
-            return "dns-" + explicit.removePrefix("final:")
+            // The synthesized shadow server (appended above) has id
+            // final-proxy / final-direct; DnsServerState.tag = "dns-$id".
+            return if (explicit == DnsFinalProxy) "dns-final-proxy" else "dns-final-direct"
         }
         return usableServers.firstOrNull { it.type != "local" }?.tag
             ?: usableServers.firstOrNull()?.tag
@@ -623,6 +620,16 @@ object ConfigCompiler {
      * Resolver handed to `route.default_domain_resolver`. Must be a concrete
      * server (local / udp / tls / …): fakeip cannot resolve names.
      */
+    /**
+     * The fallback resolver for the *active* Clash mode: the mode map wins
+     * over the global choice, so Global can resolve through the proxy exit
+     * while Rule stays automatic.
+     */
+    private fun effectiveFinalDns(state: AppState): String =
+        state.finalDnsServerByMode[state.clashMode]
+            ?.takeIf { it.isNotBlank() }
+            ?: state.finalDnsServer
+
     private fun pickDefaultResolver(state: AppState): String? {
         val liveOutboundTags = buildSet {
             add(DirectOutboundTag)
@@ -1048,6 +1055,25 @@ object ConfigCompiler {
             add(buildJsonObject {
                 put("port", 53)
                 put("action", "hijack-dns")
+            })
+        }
+        // Fallback rule: the tail of the rule-mode table — after the
+        // sniff/hijack action rows, before the clash-mode shortcuts (so
+        // Global/Direct still bypass it). Pinned by the user as proxy or
+        // direct; reject/block on unknownTrafficOutbound is stricter and
+        // wins via route.final without an extra rule.
+        when {
+            state.fallbackRouteMode == FallbackRouteProxy &&
+                state.unknownTrafficOutbound.isBlank() -> add(buildJsonObject {
+                put("clash_mode", ClashModeRule)
+                put("action", "route")
+                put("outbound", ProxySelectorTag)
+            })
+            state.fallbackRouteMode == FallbackRouteDirect &&
+                state.unknownTrafficOutbound.isBlank() -> add(buildJsonObject {
+                put("clash_mode", ClashModeRule)
+                put("action", "route")
+                put("outbound", DirectOutboundTag)
             })
         }
         // Clash-mode shortcuts (Global / Direct bypass the managed rules).

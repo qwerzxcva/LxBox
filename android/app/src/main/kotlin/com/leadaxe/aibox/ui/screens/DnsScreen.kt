@@ -2,6 +2,8 @@ package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
@@ -58,6 +60,10 @@ import com.leadaxe.aibox.app.DnsRuleActionRoute
 import com.leadaxe.aibox.app.DnsFinalDirect
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
+import com.leadaxe.aibox.app.ClashModeDirect
+import com.leadaxe.aibox.app.ClashModeGlobal
+import com.leadaxe.aibox.app.ClashModeRule
+import com.leadaxe.aibox.app.ClashModes
 import com.leadaxe.aibox.app.DnsFinalDirect
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActions
@@ -68,6 +74,7 @@ import com.leadaxe.aibox.app.ProxySelectorTag
 import java.util.UUID
 
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as AIBoxApp
@@ -254,15 +261,71 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     )
                     // Final resolver: intercept (block all residual
                     // queries), a built-in shortcut (proxy exit / direct
-                    // exit), or a specific server. Intercept hides the
-                    // server choice — there is nothing to pick.
+                    // exit), or a specific server. Split per Clash mode:
+                    // Rule / Global / Direct each pin their own fallback, so
+                    // e.g. Global can resolve through the proxy exit while
+                    // Rule follows the rules' servers. "Follow mode default"
+                    // (empty) means the mode has no override; the global
+                    // row below is the fallback of last resort. Intercept
+                    // hides the server choice — there is nothing to pick.
                     val DnsFinalReject = "final:reject"
                     val finalOptions = remember(state.dnsServers) {
                         listOf("", DnsFinalProxy, DnsFinalDirect, DnsFinalReject) +
                             state.dnsServers.map { it.tag }
                     }
+                    Text(
+                        stringResource(R.string.dns_final_server),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    ClashModes.forEach { mode ->
+                        val modeValue = state.finalDnsServerByMode[mode].orEmpty()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = when (mode) {
+                                    ClashModeRule -> stringResource(R.string.home_mode_rule)
+                                    ClashModeGlobal -> stringResource(R.string.home_mode_global)
+                                    ClashModeDirect -> stringResource(R.string.home_mode_direct)
+                                    else -> mode
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(0.28f),
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier.weight(0.72f),
+                            ) {
+                                finalOptions.forEach { option ->
+                                    FilterChip(
+                                        selected = option == modeValue,
+                                        onClick = {
+                                            store.update { st ->
+                                                val map = st.finalDnsServerByMode.toMutableMap()
+                                                if (option.isBlank()) map.remove(mode) else map[mode] = option
+                                                st.copy(finalDnsServerByMode = map)
+                                            }
+                                        },
+                                        label = {
+                                            Text(
+                                                when (option) {
+                                                    "" -> stringResource(R.string.dns_final_mode_default)
+                                                    DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
+                                                    DnsFinalDirect -> stringResource(R.string.dns_final_direct)
+                                                    DnsFinalReject -> stringResource(R.string.dns_final_reject)
+                                                    else -> state.dnsServers.firstOrNull { s -> s.tag == option }?.name?.ifBlank { option }
+                                                        ?: option
+                                                },
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    // Global fallback: used by modes without their own pick.
                     SingleChoiceChips(
-                        label = stringResource(R.string.dns_final_server),
+                        label = stringResource(R.string.dns_final_global_fallback),
                         options = finalOptions,
                         selected = state.finalDnsServer,
                         onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },

@@ -167,7 +167,12 @@ internal fun sanitizeAppStateReferences(state: AppState): AppState {
         }
     }
 
-    val finalDnsServer = if (state.finalDnsServer.isNotBlank() &&
+    // "final:proxy/direct/reject" are built-in shortcuts, not server tags —
+    // they survive sanitisation untouched.
+    val finalDnsShortcut = state.finalDnsServer in listOf(DnsFinalProxy, DnsFinalDirect, DnsFinalReject)
+    val finalDnsServer = if (finalDnsShortcut) {
+        state.finalDnsServer
+    } else if (state.finalDnsServer.isNotBlank() &&
         state.dnsServers.none { it.tag == state.finalDnsServer } ||
         (state.finalDnsServer.isNotBlank() &&
             dnsServers.none { it.enabled && it.tag == state.finalDnsServer })
@@ -176,6 +181,14 @@ internal fun sanitizeAppStateReferences(state: AppState): AppState {
         ""
     } else {
         state.finalDnsServer
+    }
+
+    val finalDnsServerByMode = state.finalDnsServerByMode.filterValues { v ->
+        v.isBlank() || v in listOf(DnsFinalProxy, DnsFinalDirect, DnsFinalReject) ||
+            dnsServers.any { it.enabled && it.tag == v }
+    }.let {
+        if (it.size != state.finalDnsServerByMode.size) changed = true
+        it
     }
 
     val outboundGroups = state.outboundGroups.mapNotNull { group ->
@@ -208,6 +221,7 @@ internal fun sanitizeAppStateReferences(state: AppState): AppState {
         state.copy(
             dnsServers = dnsServers,
             finalDnsServer = finalDnsServer,
+            finalDnsServerByMode = finalDnsServerByMode,
             outboundGroups = outboundGroups,
             selectedOutbound = selectedOutbound,
         )
