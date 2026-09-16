@@ -248,10 +248,14 @@ fun DnsScreen() {
                         onSelect = { v -> store.update { it.copy(dnsStrategy = v) } },
                         display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
                     )
-                    // Final resolver: a specific server, or a built-in
-                    // shortcut (proxy chain / direct) without pinning one.
+                    // Final resolver: intercept (block all residual
+                    // queries), a built-in shortcut (proxy exit / direct
+                    // exit), or a specific server. Intercept hides the
+                    // server choice — there is nothing to pick.
+                    val DnsFinalReject = "final:reject"
                     val finalOptions = remember(state.dnsServers) {
-                        listOf("", DnsFinalProxy, DnsFinalDirect) + state.dnsServers.map { it.tag }
+                        listOf("", DnsFinalProxy, DnsFinalDirect, DnsFinalReject) +
+                            state.dnsServers.map { it.tag }
                     }
                     SingleChoiceChips(
                         label = stringResource(R.string.dns_final_server),
@@ -263,10 +267,18 @@ fun DnsScreen() {
                                 "" -> stringResource(R.string.dns_final_auto)
                                 DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
                                 DnsFinalDirect -> stringResource(R.string.dns_final_direct)
+                                DnsFinalReject -> stringResource(R.string.dns_final_reject)
                                 else -> state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
                             }
                         },
                     )
+                    if (state.finalDnsServer == DnsFinalReject) {
+                        Text(
+                            stringResource(R.string.dns_final_reject_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     SwitchRow(
                         label = stringResource(R.string.dns_independent_cache),
                         checked = state.dnsIndependentCache,
@@ -355,6 +367,28 @@ private fun FakeIpRow(state: AppState, onChange: (AppState.() -> AppState) -> Un
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Scope: which traffic gets fake addresses. The auto
+                    // exclusion list is built by the compiler from the
+                    // route rules targeting the opposite exit.
+                    SingleChoiceChips(
+                        label = stringResource(R.string.fakeip_scope),
+                        options = listOf(
+                            com.leadaxe.aibox.app.FakeIpScopeAll,
+                            com.leadaxe.aibox.app.FakeIpScopeDirectOnly,
+                            com.leadaxe.aibox.app.FakeIpScopeProxyOnly,
+                        ),
+                        selected = state.fakeIpScope,
+                        onSelect = { v -> onChange { copy(fakeIpScope = v) } },
+                        display = {
+                            when (it) {
+                                com.leadaxe.aibox.app.FakeIpScopeDirectOnly ->
+                                    stringResource(R.string.fakeip_scope_direct_only)
+                                com.leadaxe.aibox.app.FakeIpScopeProxyOnly ->
+                                    stringResource(R.string.fakeip_scope_proxy_only)
+                                else -> stringResource(R.string.fakeip_scope_all)
+                            }
+                        },
+                    )
                     StringField(
                         label = stringResource(R.string.fakeip_inet4_range),
                         value = state.fakeIpInet4Range,
@@ -384,6 +418,12 @@ private fun FakeIpRow(state: AppState, onChange: (AppState.() -> AppState) -> Un
                         values = state.fakeIpFilter,
                         onValuesChange = { v -> onChange { copy(fakeIpFilter = v) } },
                         placeholder = stringResource(R.string.fakeip_filter_hint),
+                        supporting = stringResource(
+                            if (state.fakeIpScope == com.leadaxe.aibox.app.FakeIpScopeAll)
+                                R.string.fakeip_filter_hint
+                            else
+                                R.string.fakeip_filter_scope_hint,
+                        ),
                     )
                     if (state.fakeIpFilter.isNotEmpty()) {
                         SwitchRow(

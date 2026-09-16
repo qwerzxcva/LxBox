@@ -207,6 +207,8 @@
     <string name="dns_global_strategy">Global strategy</string>
     <string name="dns_final_server">Fallback resolver</string>
     <string name="dns_final_proxy">Proxy exit</string>
+    <string name="dns_final_reject">Intercept (block residual queries)</string>
+    <string name="dns_final_reject_desc">Every query not matched by an earlier rule is rejected — nothing leaks to any resolver. Use with explicit DNS rules for the domains you actually need.</string>
     <string name="dns_final_direct">Direct exit</string>
     <string name="dns_final_auto">Automatic</string>
     <string name="dns_group_members">Member servers</string>
@@ -224,6 +226,11 @@
     <!-- fakeip -->
     <string name="fakeip_title">Fake IP</string>
     <string name="fakeip_disabled">Disabled — tap the pencil to configure</string>
+    <string name="fakeip_scope">Scope</string>
+    <string name="fakeip_scope_all">All traffic</string>
+    <string name="fakeip_scope_direct_only">Direct only</string>
+    <string name="fakeip_scope_proxy_only">Proxy only</string>
+    <string name="fakeip_filter_scope_hint">The scope already auto-excludes the opposite exit\'s domains; this list adds your own entries on top.</string>
     <string name="fakeip_desc">Answer matching domains with synthetic addresses so routing can work before real DNS resolves.</string>
     <string name="fakeip_enable">Enable Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 range</string>

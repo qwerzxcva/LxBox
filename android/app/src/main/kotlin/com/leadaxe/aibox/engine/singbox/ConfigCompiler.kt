@@ -7,15 +7,19 @@ import com.leadaxe.aibox.app.ClashModeGlobal
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsOutboundTag
 import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalReject
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRule
 import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalReject
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionReject
 import com.leadaxe.aibox.app.DnsFinalDirect
+import com.leadaxe.aibox.app.DnsFinalReject
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
 import com.leadaxe.aibox.app.DnsServerState
+import com.leadaxe.aibox.app.FakeIpScopeDirectOnly
 import com.leadaxe.aibox.app.FakeIpScopeProxyOnly
 import com.leadaxe.aibox.app.FakeIpServerTag
 import com.leadaxe.aibox.app.LbStrategyRoundRobin
@@ -216,18 +220,26 @@ object ConfigCompiler {
                 add(compileFakeIpServer(state))
             }
         }
-        val finalServer = pickFinalServer(state, usableServers)
+        // The built-in intercept shortcut: every residual query is
+        // rejected. Handled as "no final server + trailing reject", which
+        // reuses the fail-closed mechanism below.
+        val interceptFinal = state.finalDnsServer == DnsFinalReject
+        val finalServer = if (interceptFinal) "" else pickFinalServer(state, usableServers)
         val rules = compileDnsRules(state, finalServer)
         if (rules.isNotEmpty()) {
             putJsonArray("rules") { rules.forEach(::add) }
         }
-        // Fail-closed last line: when servers were dropped, append an
-        // unconditional reject so a query that survives every rule fails
-        // loudly instead of leaking to the first (possibly system) server.
-        if (usableServers.size < state.dnsServers.count { it.enabled }) {
+        // Fail-closed last line: when servers were dropped, or the user
+        // chose intercept, append an unconditional reject so a query that
+        // survives every rule fails loudly instead of leaking to the first
+        // (possibly system) server.
+        if (interceptFinal || usableServers.size < state.dnsServers.count { it.enabled }) {
             putJsonArray("rules") {
                 add(buildJsonObject { put("action", "reject") })
             }
+        }
+        if (!interceptFinal) {
+            put("final", finalServer)
         }
         // Global family policy: the explicit DNS strategy wins; otherwise
         // the IPv6 policy applies (with a runtime downgrade to IPv4 when the
@@ -336,18 +348,22 @@ object ConfigCompiler {
     }
 
     /**
-     * Domain matchers (suffix/keyword/regex forms, as dns-rule values) of
-     * every enabled route rule that routes to a direct exit — used by the
-     * proxyOnly fake-IP scope to build its exclusion list.
+     * Domain matchers (suffix/domain/keyword forms, as dns-rule values) of
+     * every enabled route rule routed to [target] — used by the fake-IP
+     * scope to build its auto exclusion list. Nested sub-rules count when
+     * ANY branch targets the exit (a logical OR fires if one branch does).
      */
-    private fun directBoundDomainMatchers(rules: List<RouteRule>): List<String> = buildList {
+    private fun scopedBoundDomainMatchers(
+        rules: List<RouteRule>,
+        target: String,
+    ): List<String> = buildList {
         fun visit(rule: RouteRule) {
             if (!rule.enabled) return
-            val isDirect = rule.kind == RouteRule.KindInline && (
-                (rule.outbound == DirectOutboundTag && rule.action == RouteRule.RuleActionRoute) ||
-                    rule.rules.any { it.outbound == DirectOutboundTag }
+            val isTarget = rule.kind == RouteRule.KindInline && (
+                (rule.outbound == target && rule.action == RouteRule.RuleActionRoute) ||
+                    rule.rules.any { it.outbound == target }
                 )
-            if (isDirect) {
+            if (isTarget) {
                 rule.domainSuffix.forEach(::add)
                 rule.domain.forEach(::add)
                 rule.domainKeyword.forEach(::add)
@@ -357,27 +373,73 @@ object ConfigCompiler {
         rules.forEach(::visit)
     }
 
+    private fun directBoundDomainMatchers(rules: List<RouteRule>): List<String> =
+        scopedBoundDomainMatchers(rules, DirectOutboundTag)
+
+    private fun proxyBoundDomainMatchers(
+        rules: List<RouteRule>,
+        liveNodeTags: Set<String>,
+        liveGroupTags: Set<String>,
+    ): List<String> {
+        // Proxy-bound = anything route-bound that is NOT direct: the main
+        // selector, any node, any enabled group.
+        return buildList {
+            fun visit(rule: RouteRule) {
+                if (!rule.enabled) return
+                val isProxy = rule.kind == RouteRule.KindInline &&
+                    rule.action == RouteRule.RuleActionRoute &&
+                    rule.outbound != DirectOutboundTag &&
+                    (rule.outbound == ProxySelectorTag ||
+                        rule.outbound in liveGroupTags ||
+                        rule.outbound in liveNodeTags)
+                if (isProxy) {
+                    rule.domainSuffix.forEach(::add)
+                    rule.domain.forEach(::add)
+                    rule.domainKeyword.forEach(::add)
+                }
+                rule.rules.forEach { child ->
+                    // Nested branches of a logical rule: count them when the
+                    // branch itself is proxy-bound.
+                    if (child.outbound.isNotBlank() && child.outbound != DirectOutboundTag &&
+                        child.action == RouteRule.RuleActionRoute
+                    ) {
+                        child.domainSuffix.forEach(::add)
+                        child.domain.forEach(::add)
+                        child.domainKeyword.forEach(::add)
+                    }
+                    visit(child)
+                }
+            }
+            rules.forEach(::visit)
+        }
+    }
+
     private fun compileDnsRules(state: AppState, finalServer: String): List<JsonObject> = buildList {
         // Fake-IP rules run first: when the pool is on, lookups that should
         // be faked also need the "rest" routed through the normal chain, or
         // every domain ends up on the fake range and rule matching breaks.
         if (state.enableFakeIp) {
-            // proxyOnly scope: direct-bound domains (from the route rules)
-            // must resolve to real addresses — a fake IP on a direct dial
-            // is unroutable. These always form a blacklist, independent of
-            // the user's whitelist/blacklist choice for [fakeIpFilter].
-            val directExclusions = if (state.fakeIpScope == FakeIpScopeProxyOnly) {
-                directBoundDomainMatchers(state.routeRules).distinct()
-            } else {
-                emptyList()
-            }
+            // Scope: domains routed to the *opposite* exit of the chosen
+            // scope must resolve to real addresses. proxyOnly excludes
+            // direct-bound matchers; directOnly excludes proxy-bound ones.
+            // The auto list always forms a blacklist, independent of the
+            // user's whitelist/blacklist choice for [fakeIpFilter].
+            val autoExclusions = when (state.fakeIpScope) {
+                FakeIpScopeProxyOnly -> directBoundDomainMatchers(state.routeRules)
+                FakeIpScopeDirectOnly -> proxyBoundDomainMatchers(
+                    state.routeRules,
+                    liveNodeTags = state.outbounds.map { it.tag }.toSet(),
+                    liveGroupTags = state.outboundGroups.filter { it.enabled }.map { it.tag }.toSet(),
+                )
+                else -> emptyList()
+            }.distinct()
             val userFilter = state.fakeIpFilter.map { it.trim() }.filter { it.isNotEmpty() }
 
-            if (state.fakeIpFilterExclude || directExclusions.isNotEmpty()) {
+            if (state.fakeIpFilterExclude || autoExclusions.isNotEmpty()) {
                 // Blacklist pass first: everything listed (user exclusions +
-                // direct-bound domains under proxyOnly) resolves through the
-                // normal chain; the catch-all then fakes the rest.
-                val exclusions = (userFilter + directExclusions).distinct()
+                // scope exclusions) resolves through the normal chain; the
+                // catch-all then fakes the rest.
+                val exclusions = (userFilter + autoExclusions).distinct()
                 if (exclusions.isNotEmpty()) {
                     add(buildJsonObject {
                         putJsonArray("domain_suffix") { exclusions.forEach(::add) }
@@ -528,6 +590,7 @@ object ConfigCompiler {
      */
     private fun pickFinalServer(state: AppState, usableServers: List<DnsServerState>): String {
         val explicit = state.finalDnsServer
+        if (explicit == DnsFinalReject) return FakeIpServerTag // unreachable; intercept handled above
         if (explicit.isNotBlank() && usableServers.any { it.tag == explicit }) {
             return explicit
         }

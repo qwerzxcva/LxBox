@@ -88,12 +88,17 @@ data class AppState(
      */
     val fakeIpFilter: List<String> = emptyList(),
     /**
-     * Fake-IP scope (user-facing choice):
+     * Fake-IP scope (user-facing choice, three values):
      *  - [FakeIpScopeAll] — every lookup is faked (the sing-box default).
      *  - [FakeIpScopeProxyOnly] — only domains that route rules send to a
-     *    proxy get fake addresses; direct-bound domains resolve normally.
-     *    Compiled as an auto-generated exclusion list built from the
-     *    direct-target route rules, merged with [fakeIpFilter].
+     *    proxy get fake addresses; direct-bound domains resolve normally
+     *    (auto exclusion list from the direct-target route rules).
+     *  - [FakeIpScopeDirectOnly] — the inverse: only direct-bound domains
+     *    get fake addresses, everything headed for a proxy resolves
+     *    normally (proxy-bound matchers become the exclusion list).
+     *
+     * The user's [fakeIpFilter] list always merges on top of whichever
+     * auto list the scope generates.
      */
     val fakeIpScope: String = FakeIpScopeAll,
     /**
@@ -288,10 +293,12 @@ const val FakeIpServerTag = "dns-fakeip"
  */
 const val DnsFinalProxy = "final:proxy"
 const val DnsFinalDirect = "final:direct"
+const val DnsFinalReject = "final:reject"
 
 /** FakeIP scope values (see [AppState.fakeIpScope]). */
 const val FakeIpScopeAll = "all"
 const val FakeIpScopeProxyOnly = "proxyOnly"
+const val FakeIpScopeDirectOnly = "directOnly"
 
 /** Languages the UI can be switched to; "" means "follow system". */
 val LanguageOptions = listOf("", "en", "zh")

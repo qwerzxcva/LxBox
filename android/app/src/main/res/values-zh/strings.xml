@@ -205,6 +205,8 @@
     <string name="dns_global_strategy">全局策略</string>
     <string name="dns_final_server">兜底解析服务器</string>
     <string name="dns_final_proxy">代理出口</string>
+    <string name="dns_final_reject">拦截（阻断残余查询）</string>
+    <string name="dns_final_reject_desc">未被前面规则命中的查询一律拒绝 — 不会泄漏到任何解析器。请配合显式 DNS 规则覆盖你实际需要的域名。</string>
     <string name="dns_final_direct">直连出口</string>
     <string name="dns_final_auto">自动</string>
     <string name="dns_group_members">成员服务器</string>
@@ -222,6 +224,11 @@
     <!-- fakeip -->
     <string name="fakeip_title">Fake IP（虚拟 IP）</string>
     <string name="fakeip_disabled">未启用 — 点铅笔图标配置</string>
+    <string name="fakeip_scope">作用范围</string>
+    <string name="fakeip_scope_all">全部流量</string>
+    <string name="fakeip_scope_direct_only">仅直连</string>
+    <string name="fakeip_scope_proxy_only">仅代理</string>
+    <string name="fakeip_filter_scope_hint">作用范围已自动排除对侧出口的域名；此列表是额外叠加的条目。</string>
     <string name="fakeip_desc">对匹配的域名返回合成地址，让路由规则在真实 DNS 解析前即可生效。</string>
     <string name="fakeip_enable">启用 Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 地址池</string>
