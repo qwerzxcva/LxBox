@@ -225,6 +225,26 @@ fun SettingsScreen() {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // QUIC compatibility (experimental): for devices where the
+                // kernel's QUIC stack misbehaves. Off by default — quic-go
+                // defaults are the right choice for most devices.
+                Text(
+                    stringResource(R.string.settings_quic_compat),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                SwitchRow(
+                    label = stringResource(R.string.settings_quic_disable_gso),
+                    supporting = stringResource(R.string.settings_quic_disable_gso_desc),
+                    checked = state.quicDisableGso,
+                    onCheckedChange = { v -> store.update { it.copy(quicDisableGso = v) } },
+                )
+                SwitchRow(
+                    label = stringResource(R.string.settings_quic_disable_ecn),
+                    supporting = stringResource(R.string.settings_quic_disable_ecn_desc),
+                    checked = state.quicDisableEcn,
+                    onCheckedChange = { v -> store.update { it.copy(quicDisableEcn = v) } },
+                )
                 SwitchRow(
                     label = stringResource(R.string.settings_ntp),
                     supporting = stringResource(R.string.settings_ntp_desc),

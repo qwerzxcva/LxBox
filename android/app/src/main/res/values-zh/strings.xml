@@ -363,6 +363,11 @@
     <string name="settings_tls_fragment_record">记录分割（快）</string>
     <string name="settings_tls_fragment_packet">包分割（强）</string>
     <string name="settings_tls_fragment_desc">把 TLS ClientHello 切分，让中间盒无法正则匹配 SNI。记录分割开销小优先使用；包分割更强但更慢——仅在被墙网络开启。</string>
+    <string name="settings_quic_compat">QUIC 兼容性（实验性）</string>
+    <string name="settings_quic_disable_gso">禁用 QUIC GSO</string>
+    <string name="settings_quic_disable_gso_desc">关闭 QUIC 通用分段卸载。修复部分芯片/内核组合上 QUIC 卡顿或高延迟的问题。对新连接生效。</string>
+    <string name="settings_quic_disable_ecn">禁用 QUIC ECN</string>
+    <string name="settings_quic_disable_ecn_desc">关闭显式拥塞通知。修复运营商 NAT 丢弃 ECN 标记包导致的 QUIC 卡顿。对新连接生效。</string>
     <string name="settings_ntp">时钟同步（NTP）</string>
     <string name="settings_ntp_desc">Reality 与 shadowsocks-2022 都会拒绝超出 ±30 秒时钟窗口的握手；内核每 30 分钟经 SNTP 同步一次，避免「节点突然失效」。</string>
     <string name="settings_section_sniffer">嗅探</string>

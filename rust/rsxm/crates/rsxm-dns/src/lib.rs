@@ -11,8 +11,9 @@
 //!    maps the address back to the name for dialing;
 //!  - **TTL cache with optimistic serving**: an expired entry is handed out
 //!    immediately while a refresh happens in the background ("过期缓存先用
-//!    再后台刷新"); bounded LRU so a busy phone can never grow the map
-//!    without limit;
+//!    再后台刷新"); bounded ARC (Adaptive Replacement Cache) so a busy phone
+//!    can never grow the map without limit, and a burst of one-off cold
+//!    names cannot flush the hot working set;
 //!  - **negative caching**: short-lived NXDOMAIN entries kill the
 //!    app-retry storms that re-ask for a name known not to exist;
 //!  - **hosts**: static name→address overrides answered locally;
@@ -23,10 +24,12 @@
 //! answers and asks it what to do. Policy (what to cache, what to fake,
 //! which upstream wins) stays separated from I/O (owned by the runtime).
 
+pub mod arc;
 pub mod module;
 
+use arc::ArcCache;
 use regex::RegexBuilder;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 pub use module::DnsModule;
@@ -205,10 +208,9 @@ pub struct DnsEngine {
     fake: FakeIpConfig,
     router: DnsRouter,
     hosts: Vec<(String, IpAddr)>,
-    cache: HashMap<CacheKey, CacheEntry>,
-    /// LRU access order (most recently used at the back).
-    order: VecDeque<CacheKey>,
-    cache_capacity: usize,
+    /// Bounded ARC cache (scan-resistant; a cold-name burst can't flush the
+    /// hot working set the way a plain LRU allows).
+    cache: ArcCache,
     /// name/family → expiry of a cached NXDOMAIN.
     negative: HashMap<CacheKey, i64>,
     negative_ttl_ms: i64,
@@ -239,9 +241,7 @@ impl DnsEngine {
                 .into_iter()
                 .map(|(name, ip)| (name.to_ascii_lowercase(), ip))
                 .collect(),
-            cache: HashMap::new(),
-            order: VecDeque::new(),
-            cache_capacity: cache_capacity.clamp(16, 1_048_576),
+            cache: ArcCache::new(cache_capacity.clamp(16, 1_048_576)),
             negative: HashMap::new(),
             negative_ttl_ms: 30_000,
             fake_reverse: HashMap::new(),
@@ -317,9 +317,15 @@ impl DnsEngine {
             }
         });
         if let Some((address, stale)) = cached {
-            self.touch(&key);
+            self.cache.note_hit(&key);
             return Decision::AnswerFromCache { address, stale };
         }
+
+        // Miss: still feed the ARC ghost feedback. A re-request for a name
+        // evicted in the last round shifts the T1/T2 target before the
+        // answer is refetched and re-stored, so repeated demand wins the
+        // next eviction round (ARC's scan-resistance feedback loop).
+        self.cache.note_hit(&key);
 
         // DNS rules choose the upstream (or reject) before the fake pool.
         if let Some(action) = self.router.select(&lname, qtype, package) {
@@ -342,27 +348,12 @@ impl DnsEngine {
         Decision::QueryUpstream
     }
 
-    fn touch(&mut self, key: &CacheKey) {
-        self.order.retain(|k| k != key);
-        self.order.push_back(key.clone());
-    }
-
-    fn evict_if_needed(&mut self) {
-        while self.cache.len() > self.cache_capacity {
-            let Some(victim) = self.order.pop_front() else {
-                break;
-            };
-            // A front entry may have been re-touched without this stale
-            // queue occurrence being removed (cannot happen with touch(),
-            // but keep the guard cheap): only evict a still-present key.
-            if self.cache.contains_key(&victim) {
-                self.cache.remove(&victim);
-            }
-        }
-        let neg_cap = (self.cache_capacity / 8).max(64);
+    /// Bounds the negative map (ArcCache evicts the positive cache itself).
+    fn trim_negative(&mut self) {
+        let neg_cap = (self.cache.capacity() / 8).max(64);
         if self.negative.len() > neg_cap {
-            // Drop arbitrary entries beyond cap; negatives are tiny and
-            // self-expiring, so no LRU bookkeeping is worth it here.
+            // Negatives are tiny and self-expiring; drop arbitrary overflow
+            // rather than paying for LRU bookkeeping on NXDOMAIN entries.
             let extras = self.negative.len() - neg_cap;
             let to_remove: Vec<CacheKey> = self.negative.keys().take(extras).cloned().collect();
             for key in to_remove {
@@ -372,7 +363,7 @@ impl DnsEngine {
     }
 
     /// Stores an upstream answer (TTL in milliseconds) and clears any
-    /// negative entry for the name.
+    /// negative entry for the name. ARC eviction happens inside `insert`.
     pub fn store(&mut self, name: &str, family: Family, address: IpAddr, ttl_ms: i64, now_ms: i64) {
         let key = (name.to_ascii_lowercase(), family);
         self.cache.insert(
@@ -384,15 +375,13 @@ impl DnsEngine {
             },
         );
         self.negative.remove(&key);
-        self.touch(&key);
-        self.evict_if_needed();
     }
 
     /// Records a negative answer (NXDOMAIN) for the name.
     pub fn store_negative(&mut self, name: &str, family: Family, now_ms: i64) {
         let key = (name.to_ascii_lowercase(), family);
         self.negative.insert(key, now_ms + self.negative_ttl_ms);
-        self.evict_if_needed();
+        self.trim_negative();
     }
 
     /// Allocates a fake address for a name (idempotent).
@@ -724,9 +713,9 @@ mod tests {
     }
 
     #[test]
-    fn cache_respects_lru_capacity() {
-        // The policy clamps capacity to a 16-entry floor; exercise the LRU
-        // contract right at that floor.
+    fn cache_respects_arc_capacity() {
+        // The policy clamps capacity to a 16-entry floor; exercise the ARC
+        // discipline right at that floor.
         let mut engine = DnsEngine::with_policy(
             FakeIpConfig::default(),
             DnsRouter::default(),
@@ -742,13 +731,25 @@ mod tests {
                 0,
             );
         }
-        // Re-touch h0 so it becomes most-recent; the next insert must evict
-        // h1 (least recently used), never h0.
+        // Re-touch h0: it promotes T1 → T2 (the working set). With the ARC
+        // target p=0, the first capacity event reclassifies T2's lone entry
+        // as a B2 *ghost* rather than dropping it outright, keeping the
+        // cache bounded at 16.
         assert!(matches!(
             engine.decide("h0.test", Family::V4, None, 0),
             Decision::AnswerFromCache { stale: false, .. }
         ));
         engine.store("overflow.test", Family::V4, v4("2.0.0.1"), 60_000, 0);
+        assert_eq!(engine.cache_len(), 16);
+        // h0 now needs a refetch; decide() feeds the B2 ghost hit, adapting
+        // the ARC target.
+        assert_eq!(
+            engine.decide("h0.test", Family::V4, None, 0),
+            Decision::QueryUpstream
+        );
+        // Re-store the re-requested hot name; a cold one-timer (h1) leaves
+        // instead — repeated demand is protected on this round.
+        engine.store("h0.test", Family::V4, v4("1.0.0.0"), 60_000, 0);
         assert_eq!(engine.cache_len(), 16);
         assert!(matches!(
             engine.decide("h0.test", Family::V4, None, 0),
