@@ -323,31 +323,6 @@ fun SettingsScreen() {
         }
 
         item {
-            SettingsSection(stringResource(R.string.settings_section_sniffer)) {
-                SwitchRow(
-                    label = stringResource(R.string.settings_enable_sniffer),
-                    supporting = stringResource(R.string.settings_enable_sniffer_desc),
-                    checked = state.enableSniffer,
-                    onCheckedChange = { v -> store.update { it.copy(enableSniffer = v) } },
-                )
-                MultiChoiceChips(
-                    label = stringResource(R.string.settings_sniffer_protocols),
-                    options = SnifferProtocolOptions,
-                    selected = state.snifferProtocols,
-                    onToggle = { proto ->
-                        store.update { st ->
-                            val next = if (proto in st.snifferProtocols)
-                                st.snifferProtocols - proto
-                            else
-                                st.snifferProtocols + proto
-                            st.copy(snifferProtocols = next)
-                        }
-                    },
-                )
-            }
-        }
-
-        item {
             SettingsSection(stringResource(R.string.settings_section_backup)) {
                 Text(
                     stringResource(R.string.settings_backup_desc),

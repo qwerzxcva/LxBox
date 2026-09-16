@@ -43,6 +43,8 @@ internal object RulePlanner {
     /** Execution buckets, in evaluation order. */
     enum class Phase(val rank: Int) {
         Package(0),
+        // keyword, ip_cidr and domain_regex share a rank: the user-specified
+        // merge order treats them as one strength tier.
         DomainKeyword(1),
         DomainSuffix(2),
         DomainExact(3),
@@ -64,9 +66,11 @@ internal object RulePlanner {
 
     private fun collect(rule: RouteRule, into: Flags) {
         into.package_ = into.package_ || rule.packageName.isNotEmpty()
-        into.keyword = into.keyword || rule.domainKeyword.isNotEmpty()
+        // keyword/ip_cidr/domain_regex share one strength tier (user spec).
+        into.keyword = into.keyword || rule.domainKeyword.isNotEmpty() ||
+            rule.ipCidr.isNotEmpty() || rule.domainRegex.isNotEmpty()
         into.suffix = into.suffix || rule.domainSuffix.isNotEmpty() ||
-            rule.domainRegex.isNotEmpty() || rule.ruleSet.isNotEmpty()
+            rule.ruleSet.isNotEmpty()
         into.exact = into.exact || rule.domain.isNotEmpty()
         rule.rules.forEach { collect(it, into) }
     }

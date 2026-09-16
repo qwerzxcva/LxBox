@@ -40,6 +40,13 @@ data class AppState(
      */
     val unknownTrafficOutbound: String = "",
     /**
+     * Reject broken IPv6 (built-in): when the default interface has no
+     * public IPv6 (2000::/3), reject all IPv6-destined connections instead
+     * of letting them time out on a dead route (a logical AND rule:
+     * ip_version=6 AND NOT default_interface_address 2000::/3, no_drop).
+     */
+    val rejectBrokenIpv6: Boolean = false,
+    /**
      * Lightweight TUN mode: forward the VPN interface through hev-socks5-
      * tunnel into a loopback SOCKS5 server instead of the full sing-box
      * engine. Skips the rule engine — every connection goes to the node
@@ -112,6 +119,13 @@ data class AppState(
     val fakeIpInet6Range: String = "",
     /** TTL (seconds) for fake-IP answers; 0 = engine default. */
     val fakeIpTtl: Int = 0,
+    /**
+     * Block HTTPS/SVCB records (RFC 9460) while fake-IP is on: an empty
+     * NOERROR is answered for HTTPS-type queries so apps fall back to
+     * plain A/AAAA, and the HTTPS blobs never leak to the fallback DNS
+     * (which cannot resolve fake-IP domains usefully).
+     */
+    val fakeIpBlockHttps: Boolean = false,
 
     // ------------------------------------------------------------- sniffer
     val enableSniffer: Boolean = true,

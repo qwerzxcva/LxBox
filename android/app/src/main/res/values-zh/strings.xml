@@ -229,6 +229,8 @@
     <string name="fakeip_scope_direct_only">仅直连</string>
     <string name="fakeip_scope_proxy_only">仅代理</string>
     <string name="fakeip_filter_scope_hint">作用范围已自动排除对侧出口的域名；此列表是额外叠加的条目。</string>
+    <string name="fakeip_block_https">拦截 HTTPS 记录</string>
+    <string name="fakeip_block_https_desc">对 HTTPS/SVCB 查询回复空 NOERROR（RFC 9460），让应用回落到普通 A/AAAA — 否则这些查询会泄漏给兜底 DNS，而它无法有效解析 fake-IP 域名。</string>
     <string name="fakeip_desc">对匹配的域名返回合成地址，让路由规则在真实 DNS 解析前即可生效。</string>
     <string name="fakeip_enable">启用 Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 地址池</string>
@@ -403,6 +405,18 @@
     <string name="routes_sync_dns_none">跟随默认</string>
     <string name="routes_sync_dns_na">纯 IP 规则：不创建 DNS 规则（IP 规则直接匹配解析后的地址）。</string>
     <string name="routes_section_builtin">内置规则</string>
+    <string name="routes_builtin_sniff">嗅探</string>
+    <string name="routes_builtin_sniff_desc">从连接中提取域名，让域名规则可以匹配。运行于所有其它内置规则之前。</string>
+    <string name="routes_builtin_reject_ipv6">拦截不可用 IPv6</string>
+    <string name="routes_builtin_reject_ipv6_desc">当前网络没有公网 IPv6（2000::/3）时拦截所有 IPv6 连接 — 死路由流量快速失败，而不是挂起直到超时。</string>
+    <string name="routes_builtin_reject_ipv6_enable">启用</string>
+    <string name="routes_builtin_reject_ipv6_enable_desc">隧道运行期间生效；规则为逻辑 AND（IPv6 且默认接口无公网 IPv6），no_drop 快速失败。</string>
+    <string name="routes_unknown_traffic_target">未知流量去向</string>
+    <string name="routes_builtin_hijack_dns">劫持 DNS</string>
+    <string name="routes_builtin_hijack_dns_enable">启用</string>
+    <string name="routes_builtin_hijack_dns_desc">拦截明文的 53 端口查询，交给本页的 DNS 配置处理。</string>
+    <string name="routes_builtin_on">开</string>
+    <string name="routes_builtin_off">关</string>
     <string name="routes_fakeip_bypass">Fake-IP 绕过规则</string>
     <string name="routes_fakeip_bypass_desc">目标是 fake-IP 池的包直接直连 — 防止应用缓存了过期 fake 地址导致回环。需开启 Fake-IP。</string>
     <string name="routes_unknown_traffic">未知流量（final）出口</string>

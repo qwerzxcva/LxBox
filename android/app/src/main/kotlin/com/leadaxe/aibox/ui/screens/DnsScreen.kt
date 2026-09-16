@@ -443,6 +443,12 @@ private fun FakeIpRow(state: AppState, onChange: (AppState.() -> AppState) -> Un
                         checked = state.fakeIpBypass,
                         onCheckedChange = { v -> onChange { copy(fakeIpBypass = v) } },
                     )
+                    SwitchRow(
+                        label = stringResource(R.string.fakeip_block_https),
+                        supporting = stringResource(R.string.fakeip_block_https_desc),
+                        checked = state.fakeIpBlockHttps,
+                        onCheckedChange = { v -> onChange { copy(fakeIpBlockHttps = v) } },
+                    )
                 }
             }
         }

@@ -53,11 +53,13 @@ class RulePlannerTest {
         assertEquals(listOf("kw", "suffix", "exact"), result.map { it.id })
     }
 
-    @Test fun `address rules sort last`() {
+    @Test fun `cidr rules rank with the keyword tier`() {
+        // User spec: keyword = ip_cidr = domain_regex share one strength
+        // tier, above suffix and exact. Same-tier keeps the user's order.
         val ip = rule(id = "ip", cidrs = listOf("10.0.0.0/8"), outbound = "d")
         val dom = rule(id = "dom", suffixes = listOf("a.com"), outbound = "p")
         val result = RulePlanner.prepare(listOf(ip, dom))
-        assertEquals(listOf("dom", "ip"), result.map { it.id })
+        assertEquals(listOf("ip", "dom"), result.map { it.id })
     }
 
     @Test fun `order inside a phase follows the user's arrangement`() {

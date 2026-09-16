@@ -458,6 +458,18 @@ object ConfigCompiler {
                 // domains excluded by rule ordering.
                 add(buildJsonObject { put("server", FakeIpServerTag) })
             }
+            // Block HTTPS/SVCB records (user opt-in, fake-IP only): an
+            // empty predefined NOERROR for HTTPS-type queries makes apps
+            // fall back to plain A/AAAA — the fake-IP pool cannot answer
+            // HTTPS records usefully, and forwarding them would leak the
+            // query to the fallback DNS.
+            if (state.fakeIpBlockHttps) {
+                add(buildJsonObject {
+                    putJsonArray("query_type") { add("HTTPS"); add("SVCB") }
+                    put("action", "predefined")
+                    put("rcode", "NOERROR")
+                })
+            }
         }
         // Route-rule derived DNS rules are materialised as JSON dnsRules at
         // save time (RoutesScreen), so they appear in the DNS tab exactly
@@ -985,6 +997,25 @@ object ConfigCompiler {
             put("action", "route")
             put("outbound", DirectOutboundTag)
         })
+        // Built-in: reject broken IPv6 (user opt-in). A logical AND rule —
+        // IPv6-destined AND the default interface has NO public IPv6
+        // (2000::/3) — rejected with no_drop so dead-route traffic fails
+        // fast instead of hanging until timeout.
+        if (state.rejectBrokenIpv6) {
+            add(buildJsonObject {
+                put("type", "logical")
+                put("mode", "and")
+                putJsonArray("rules") {
+                    add(buildJsonObject { put("ip_version", 6) })
+                    add(buildJsonObject {
+                        putJsonArray("default_interface_address") { add("2000::/3") }
+                        put("invert", true)
+                    })
+                }
+                put("action", "reject")
+                put("no_drop", true)
+            })
+        }
         // User rules go through the planner: package rules first, then
         // name-based, then address-based — with redundant entries (keyword /
         // suffix / exact-domain / CIDR, earlier rule > later rule) already

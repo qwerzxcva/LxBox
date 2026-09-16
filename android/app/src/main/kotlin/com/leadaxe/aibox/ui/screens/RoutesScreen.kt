@@ -66,6 +66,10 @@ import kotlinx.serialization.json.putJsonArray
 
 @Composable
 fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
+    var builtinSniffExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var builtinIpv6Expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var builtinUnknownExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var builtinHijackExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
     val state by store.state.collectAsState()
@@ -179,39 +183,84 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
             )
         }
 
+        // Built-in rules, in the order they run in the kernel: sniff →
+        // reject broken IPv6 → unknown traffic → hijack DNS. Each is a
+        // switch (or a target picker) editing one built-in behaviour; the
+        // compiled rule order matches this visual order.
         item {
             SectionHeader(stringResource(R.string.routes_section_builtin))
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val outboundOptions = remember(state.outbounds, state.outboundGroups) {
-                        listOf("", DirectOutboundTag, BlockOutboundTag) +
-                            state.outboundGroups.filter { it.enabled }.map { it.tag } +
-                            state.outbounds.map { it.tag }
-                    }
-                    SingleChoiceChips(
-                        label = stringResource(R.string.routes_unknown_traffic),
-                        options = outboundOptions,
-                        selected = state.unknownTrafficOutbound,
-                        onSelect = { v -> store.update { it.copy(unknownTrafficOutbound = v) } },
-                        display = { tag ->
-                            when (tag) {
-                                "" -> stringResource(R.string.routes_unknown_traffic_proxy)
-                                DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
-                                BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
-                                else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
-                                    ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
-                                    ?: tag
-                            }
-                        },
-                    )
-                    Text(
-                        stringResource(R.string.routes_unknown_traffic_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            CollapsibleSection(
+                title = stringResource(R.string.routes_builtin_sniff),
+                expanded = builtinSniffExpanded,
+                onToggle = { builtinSniffExpanded = !builtinSniffExpanded },
+                subtitle = if (state.enableSniffer)
+                    state.snifferProtocols.joinToString("/").ifBlank { stringResource(R.string.routes_builtin_on) }
+                else stringResource(R.string.routes_builtin_off),
+            ) {
+                SnifferSettingsContent(state = state, onChange = { reducer -> store.update(reducer) })
+            }
+        }
+        item {
+            CollapsibleSection(
+                title = stringResource(R.string.routes_builtin_reject_ipv6),
+                expanded = builtinIpv6Expanded,
+                onToggle = { builtinIpv6Expanded = !builtinIpv6Expanded },
+                subtitle = stringResource(R.string.routes_builtin_reject_ipv6_desc),
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.routes_builtin_reject_ipv6_enable),
+                    supporting = stringResource(R.string.routes_builtin_reject_ipv6_enable_desc),
+                    checked = state.rejectBrokenIpv6,
+                    onCheckedChange = { v -> store.update { it.copy(rejectBrokenIpv6 = v) } },
+                )
+            }
+        }
+        item {
+            CollapsibleSection(
+                title = stringResource(R.string.routes_unknown_traffic),
+                expanded = builtinUnknownExpanded,
+                onToggle = { builtinUnknownExpanded = !builtinUnknownExpanded },
+                subtitle = stringResource(R.string.routes_unknown_traffic_desc),
+            ) {
+                val outboundOptions = remember(state.outbounds, state.outboundGroups) {
+                    listOf("", DirectOutboundTag, BlockOutboundTag) +
+                        state.outboundGroups.filter { it.enabled }.map { it.tag } +
+                        state.outbounds.map { it.tag }
                 }
+                SingleChoiceChips(
+                    label = stringResource(R.string.routes_unknown_traffic_target),
+                    options = outboundOptions,
+                    selected = state.unknownTrafficOutbound,
+                    onSelect = { v -> store.update { it.copy(unknownTrafficOutbound = v) } },
+                    display = { tag ->
+                        when (tag) {
+                            "" -> stringResource(R.string.routes_unknown_traffic_proxy)
+                            DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+                            BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
+                            else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                                ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
+                                ?: tag
+                        }
+                    },
+                )
+            }
+        }
+        item {
+            CollapsibleSection(
+                title = stringResource(R.string.routes_builtin_hijack_dns),
+                expanded = builtinHijackExpanded,
+                onToggle = { builtinHijackExpanded = !builtinHijackExpanded },
+                subtitle = if (state.hijackDns) stringResource(R.string.routes_builtin_on)
+                else stringResource(R.string.routes_builtin_off),
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.routes_builtin_hijack_dns_enable),
+                    supporting = stringResource(R.string.routes_builtin_hijack_dns_desc),
+                    checked = state.hijackDns,
+                    onCheckedChange = { v -> store.update { it.copy(hijackDns = v) } },
+                )
             }
         }
 
