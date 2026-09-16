@@ -103,7 +103,6 @@
     <string name="groups_members">Members</string>
     <string name="groups_probe_url">Probe URL</string>
     <string name="groups_interval">Probe interval</string>
-    <string name="groups_interval_hint">e.g. 3m</string>
     <string name="groups_tolerance">Latency tolerance (ms)</string>
     <string name="groups_mode">Balance mode</string>
     <string name="groups_mode_least">Lowest latency</string>
@@ -420,10 +419,32 @@
     <string name="node_edit_secret">UUID / password</string>
     <string name="node_edit_sni">TLS SNI</string>
     <string name="node_edit_sni_hint">Server name the TLS handshake presents; usually the masked domain.</string>
+    <string name="node_edit_pq">Post-quantum key exchange</string>
+    <string name="node_edit_pq_hint">Keeps the X25519MLKEM768 share in the REALITY handshake. Only for newer servers — older ones reject it and the node dies.</string>
     <string name="node_edit_advanced">Advanced override (JSON)</string>
     <string name="node_edit_override">Override JSON</string>
     <string name="node_edit_override_hint">Deep-merged over the node config at compile time — any sing-box outbound key works (transport, reality, flow, …).</string>
     <string name="node_edit_survival_note">Edits are kept when the subscription refreshes: your changes overwrite the freshly served values for the same node.</string>
+
+    <!-- health probing / keepalive -->
+    <string name="probe_section">Node health probe</string>
+    <string name="probe_every_minutes">every %1$d min</string>
+    <string name="probe_off_short">Off — probes run on manual refresh only</string>
+    <string name="probe_interval">Probe interval</string>
+    <string name="probe_5m">5 min</string>
+    <string name="probe_15m">15 min</string>
+    <string name="probe_30m">30 min</string>
+    <string name="probe_60m">hourly</string>
+    <string name="probe_interval_desc">Periodically probes every group so delays stay fresh and auto groups re-select when a node degrades. Frequent probes cost battery and traffic — pick a value that matches how often your nodes actually change.</string>
+    <string name="probe_timeout">Probe timeout (ms)</string>
+    <string name="probe_timeout_desc">How long a single probe waits before reporting a failure. Shorter = faster results, more false negatives on slow nodes.</string>
+    <string name="probe_keepalive">TCP keep-alive idle (s)</string>
+    <string name="probe_keepalive_default">system default</string>
+    <string name="probe_keepalive_desc">Idle seconds before a keep-alive probe goes out on outbound connections. Longer saves battery; shorter detects dead peers sooner. Applied to every outbound unless a node sets its own.</string>
+    <string name="settings_mux_risk">Can reduce latency, but a mux connection carries all streams — if it drops, every connection on it drops together.</string>
+    <string name="groups_interval_hint">How often the group re-probes its members while active. Values above the idle timeout below are raised automatically (the kernel refuses to start otherwise).</string>
+    <string name="groups_idle_timeout">Idle timeout</string>
+    <string name="groups_idle_timeout_hint">How long an idle group stops probing itself. Leave empty for the engine default (30m).</string>
     <string name="common_delete">Delete</string>
     <string name="common_add">Add</string>
     <string name="common_edit">Edit</string>

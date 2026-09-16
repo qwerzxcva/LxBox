@@ -101,7 +101,6 @@
     <string name="groups_members">成员节点</string>
     <string name="groups_probe_url">测速地址</string>
     <string name="groups_interval">测速间隔</string>
-    <string name="groups_interval_hint">例如 3m</string>
     <string name="groups_tolerance">延迟容差（毫秒）</string>
     <string name="groups_mode">均衡模式</string>
     <string name="groups_mode_least">最低延迟</string>
@@ -418,10 +417,32 @@
     <string name="node_edit_secret">UUID / 密码</string>
     <string name="node_edit_sni">TLS SNI</string>
     <string name="node_edit_sni_hint">TLS 握手出示的服务器名，通常是伪装域名。</string>
+    <string name="node_edit_pq">后量子密钥交换</string>
+    <string name="node_edit_pq_hint">在 REALITY 握手中保留 X25519MLKEM768。仅新服务器支持——旧服务器会拒绝导致节点失效。</string>
     <string name="node_edit_advanced">高级覆盖（JSON）</string>
     <string name="node_edit_override">覆盖 JSON</string>
     <string name="node_edit_override_hint">编译时深度合并进节点配置 — 任何 sing-box 出站键都可用（transport、reality、flow 等）。</string>
     <string name="node_edit_survival_note">订阅刷新时会保留你的修改：对同一节点的更改将覆盖新下发的值。</string>
+
+    <!-- health probing / keepalive -->
+    <string name="probe_section">节点健康检测</string>
+    <string name="probe_every_minutes">每 %1$d 分钟</string>
+    <string name="probe_off_short">关闭 — 仅手动测速</string>
+    <string name="probe_interval">检测周期</string>
+    <string name="probe_5m">5 分钟</string>
+    <string name="probe_15m">15 分钟</string>
+    <string name="probe_30m">30 分钟</string>
+    <string name="probe_60m">每小时</string>
+    <string name="probe_interval_desc">定时对所有组执行延迟检测，保持延迟数据新鲜、自动组在节点劣化时切换。检测越频繁耗电耗流越多 — 请按节点实际变化频率选择。</string>
+    <string name="probe_timeout">测速超时（毫秒）</string>
+    <string name="probe_timeout_desc">单次测速等待多久后判定失败。越短出结果越快，但慢节点更容易误报失败。</string>
+    <string name="probe_keepalive">TCP keep-alive 空闲（秒）</string>
+    <string name="probe_keepalive_default">系统默认</string>
+    <string name="probe_keepalive_desc">出站连接空闲多少秒后发送 keep-alive 探测。越长越省电，越短越快发现死连接。对所有出站生效，节点自带值优先。</string>
+    <string name="settings_mux_risk">可降低延迟，但一条 mux 连接承载所有流 — 连接断开时，其上的所有连接同时断开。</string>
+    <string name="groups_interval_hint">组活跃时重测成员的周期。大于下方空闲超时的值会被自动抬高（否则内核拒绝启动）。</string>
+    <string name="groups_idle_timeout">空闲超时</string>
+    <string name="groups_idle_timeout_hint">空闲组停止自测的时长。留空 = 内核默认（30 分钟）。</string>
     <string name="common_delete">删除</string>
     <string name="common_add">添加</string>
     <string name="common_edit">编辑</string>

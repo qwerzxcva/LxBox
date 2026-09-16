@@ -507,6 +507,8 @@ object ConfigCompiler {
                 applyTlsFragment(state, parsed)
                 // Multiplexing: one carrying connection for many streams.
                 applyMultiplex(state, parsed)
+                // TCP keep-alive idle seconds (0 = kernel default).
+                applyKeepAlive(state, parsed)
             }))
         }
         // User-configured groups, after their constituent nodes.
@@ -562,6 +564,13 @@ object ConfigCompiler {
                     }
                     put("interval", interval)
                     if (group.unifiedDelay) put("urltest_unified_delay", true)
+                    // Idle timeout: how long an idle group stops probing
+                    // itself. The kernel rejects interval > idle_timeout at
+                    // group start; the post step also raises it as a safety
+                    // net, and here we honour an explicit user value.
+                    if (group.idleTimeout.isNotBlank()) {
+                        put("idle_timeout", group.idleTimeout)
+                    }
                     val tolerance = if (group.tolerance > 0) {
                         group.tolerance
                     } else if (fallback) {
@@ -584,6 +593,18 @@ object ConfigCompiler {
                 }
             }
         }
+
+    /**
+     * TCP keep-alive idle time, in seconds, on the outbound dialer. The
+     * kernel default keeps the OS default; a user value trades battery
+     * (each probe wakes the radio) against dead-peer detection latency.
+     */
+    private fun MutableMap<String, JsonElement>.applyKeepAlive(state: AppState, node: JsonObject) {
+        val idleSeconds = state.tcpKeepAliveIdleSeconds
+        if (idleSeconds <= 0) return
+        if ("tcp_keep_alive" in node) return // node keeps its own value
+        put("tcp_keep_alive", JsonPrimitive("${idleSeconds}s"))
+    }
 
     /**
      * Deep-merges the user's override JSON over a node's config: objects

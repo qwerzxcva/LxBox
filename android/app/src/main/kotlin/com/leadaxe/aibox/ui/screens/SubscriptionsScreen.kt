@@ -77,6 +77,7 @@ fun SubscriptionsScreen() {
     // primary content), the raw lists stay closed until asked for.
     var groupsExpanded by remember { mutableStateOf(true) }
     var muxExpanded by remember { mutableStateOf(false) }
+    var probeExpanded by remember { mutableStateOf(false) }
     var nodesExpanded by remember { mutableStateOf(false) }
     var sourcesExpanded by remember { mutableStateOf(false) }
     var foldersExpanded by remember { mutableStateOf(false) }
@@ -202,6 +203,22 @@ fun SubscriptionsScreen() {
                     subtitle = if (state.muxEnabled) state.muxProtocol else stringResource(R.string.settings_mux_disabled_short),
                 ) {
                     MuxSettingsContent(state = state, onChange = { reducer -> store.update(reducer) })
+                }
+            }
+
+            // ----- node health probing (leastPing-style scheduled url-test)
+            item {
+                CollapsibleSection(
+                    title = stringResource(R.string.probe_section),
+                    expanded = probeExpanded,
+                    onToggle = { probeExpanded = !probeExpanded },
+                    subtitle = if (state.healthCheckIntervalMinutes > 0) {
+                        stringResource(R.string.probe_every_minutes, state.healthCheckIntervalMinutes)
+                    } else {
+                        stringResource(R.string.probe_off_short)
+                    },
+                ) {
+                    HealthProbeSettingsContent(state = state, onChange = { reducer -> store.update(reducer) })
                 }
             }
 
@@ -1106,6 +1123,7 @@ private fun GroupEditor(
     var members by remember { mutableStateOf(initial?.members ?: emptyList()) }
     var url by remember { mutableStateOf(initial?.url.orEmpty()) }
     var interval by remember { mutableStateOf(initial?.interval.orEmpty()) }
+    var idleTimeout by remember { mutableStateOf(initial?.idleTimeout.orEmpty()) }
     var tolerance by remember { mutableStateOf((initial?.tolerance ?: 0).toString()) }
     var unifiedDelay by remember { mutableStateOf(initial?.unifiedDelay ?: false) }
     var mode by remember { mutableStateOf(initial?.mode ?: com.leadaxe.aibox.app.OutboundGroup.ModeLeastTest) }
@@ -1185,6 +1203,14 @@ private fun GroupEditor(
                         value = interval,
                         onValueChange = { interval = it },
                         placeholder = com.leadaxe.aibox.app.defaultUrlTestInterval(),
+                        supporting = stringResource(R.string.groups_interval_hint),
+                    )
+                    StringField(
+                        label = stringResource(R.string.groups_idle_timeout),
+                        value = idleTimeout,
+                        onValueChange = { idleTimeout = it },
+                        placeholder = "30m",
+                        supporting = stringResource(R.string.groups_idle_timeout_hint),
                     )
                     StringField(
                         label = stringResource(R.string.groups_tolerance),
@@ -1257,6 +1283,7 @@ private fun GroupEditor(
                             members = members,
                             url = url,
                             interval = interval,
+                            idleTimeout = idleTimeout,
                             tolerance = tolerance.toIntOrNull() ?: 0,
                             unifiedDelay = unifiedDelay,
                             mode = mode,

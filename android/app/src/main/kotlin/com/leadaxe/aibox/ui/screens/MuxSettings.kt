@@ -33,6 +33,13 @@ fun MuxSettingsContent(
             checked = state.muxEnabled,
             onCheckedChange = { v -> onChange { copy(muxEnabled = v) } },
         )
+        if (state.muxEnabled) {
+            Text(
+                stringResource(R.string.settings_mux_risk),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
         if (!state.muxEnabled) return@Column
         SingleChoiceChips(
             label = stringResource(R.string.settings_mux_protocol),

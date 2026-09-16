@@ -252,6 +252,10 @@ type OutboundECHOptions struct {
 type OutboundUTLSOptions struct {
 	Enabled     bool   `json:"enabled,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty" enum:"chrome_psk,chrome_psk_shuffle,chrome_padding_psk_shuffle,chrome_pq,chrome_pq_psk,chrome,firefox,edge,safari,360,qq,ios,android,random,randomized"`
+	// AIBox: keep the X25519MLKEM768 post-quantum key share in the
+	// REALITY ClientHello. Default off for compatibility with older
+	// Xray/REALITY servers that reject the hybrid group.
+	PQEnabled bool `json:"pq_enabled,omitempty"`
 }
 
 type OutboundRealityOptions struct {

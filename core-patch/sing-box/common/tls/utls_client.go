@@ -43,6 +43,9 @@ type UTLSClientConfig struct {
 	recordFragment        bool
 	spoof                 string
 	spoofMethod           tlsspoof.Method
+	// AIBox: keep X25519MLKEM768 in the REALITY ClientHello (post-quantum
+	// key exchange). Off by default — older REALITY servers reject it.
+	pqEnabled bool
 }
 
 func (c *UTLSClientConfig) ServerName() string {
@@ -121,6 +124,7 @@ func (c *UTLSClientConfig) Clone() Config {
 		recordFragment:        c.recordFragment,
 		spoof:                 c.spoof,
 		spoofMethod:           c.spoofMethod,
+		pqEnabled:             c.pqEnabled,
 	}
 	cloned.SetServerName(cloned.serverName)
 	return cloned
@@ -376,6 +380,7 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
 		recordFragment:        options.RecordFragment,
 		spoof:                 spoof,
 		spoofMethod:           spoofMethod,
+		pqEnabled:             options.UTLS.PQEnabled,
 	}
 	config.SetServerName(serverName)
 	if options.ECH != nil && options.ECH.Enabled {

@@ -19,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -81,9 +82,14 @@ class AIVpnService : VpnService() {
                         // The kernel's URLTest RPC is fire-and-forget; the
                         // delay arrives on the outbounds stream. Await it
                         // here so the UI's "measuring" state always resolves
-                        // to either a number or an error.
+                        // to either a number or an error. Timeout is the
+                        // user's speedTestTimeoutMs (default 5s).
                         val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            engine.pingOutboundAwaiting(nodeTag)
+                            engine.pingOutboundAwaiting(
+                                nodeTag,
+                                timeoutMillis = store.current.speedTestTimeoutMs
+                                    .coerceIn(1_000, 30_000).toLong(),
+                            )
                         }
                         result.fold(
                             onSuccess = { reply.putExtra(VpnIpc.EXTRA_PING_DELAY, it) },
@@ -257,6 +263,11 @@ class AIVpnService : VpnService() {
         }
         engine.start(state)
         networkMonitor.start()
+        // Scheduled health probe: a url-test pass over every group each
+        // healthCheckIntervalMinutes while the tunnel is up (leastPing-style
+        // observatory, interval user-chosen). The kernel's URLTest result
+        // stream feeds the delay columns and auto-group re-selection.
+        scheduleHealthProbe(state)
         // Refresh stale rule sets in the background after the box is up;
         // we don't gate the connection on the fetch — `compileRuleSets`
         // already falls back to the remote URL when the local cache is
@@ -266,6 +277,28 @@ class AIVpnService : VpnService() {
             runCatching { SubscriptionFetcher(this@AIVpnService).refreshStaleRuleSets(state.ruleSets) }
         }
         observeState()
+    }
+
+    private var healthProbeJob: kotlinx.coroutines.Job? = null
+
+    private fun scheduleHealthProbe(state: AppState) {
+        healthProbeJob?.cancel()
+        val intervalMinutes = state.healthCheckIntervalMinutes
+        if (intervalMinutes <= 0) return
+        healthProbeJob = scope.launch {
+            while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+                kotlinx.coroutines.delay(intervalMinutes * 60_000L)
+                val current = store.current
+                val url = current.speedTestUrl
+                val groups = current.outboundGroups.filter { it.enabled }
+                for (group in groups) {
+                    runCatching { engine.pingOutbound(group.tag, url) }
+                }
+                // Sequential per group: the kernel fires the probe for the
+                // whole group; members' delays arrive on the outbounds
+                // stream and re-selection happens kernel-side.
+            }
+        }
     }
 
     internal data class ParseResult(val address: String, val prefix: Int) {
@@ -323,6 +356,8 @@ class AIVpnService : VpnService() {
     }
 
     private fun handleDisconnect() {
+        healthProbeJob?.cancel()
+        healthProbeJob = null
         if (HevTun.isRunning()) HevTun.stop()
         networkMonitor.stop()
         engine.stop()

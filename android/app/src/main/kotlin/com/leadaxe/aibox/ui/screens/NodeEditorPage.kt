@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.OutboundProfile
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.UUID
@@ -69,7 +70,17 @@ fun NodeEditorPage(
         )
     }
     var advancedJson by remember { mutableStateOf(initial.override) }
+    var pqEnabled by remember {
+        mutableStateOf(
+            ((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
+                ?.get("utls") as? kotlinx.serialization.json.JsonObject)
+                ?.get("pq_enabled")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull } == true,
+        )
+    }
     var error by remember { mutableStateOf<String?>(null) }
+    val realityOn = ((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
+        ?.get("reality") as? kotlinx.serialization.json.JsonObject)
+        ?.get("enabled")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull } == true
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -97,6 +108,8 @@ fun NodeEditorPage(
                     secret = secret,
                     sni = sni,
                     advancedJson = advancedJson,
+                    pqEnabled = pqEnabled,
+                    realityOn = realityOn,
                 )
                 when (built) {
                     is OverrideBuild.Invalid -> error = built.reason
@@ -162,6 +175,17 @@ fun NodeEditorPage(
                         placeholder = "example.com",
                         supporting = stringResource(R.string.node_edit_sni_hint),
                     )
+                    // REALITY post-quantum switch: keeps X25519MLKEM768 in
+                    // the ClientHello. Only shown for reality nodes; the
+                    // kernel strips the group unless this is on.
+                    if (realityOn) {
+                        SwitchRow(
+                            label = stringResource(R.string.node_edit_pq),
+                            supporting = stringResource(R.string.node_edit_pq_hint),
+                            checked = pqEnabled,
+                            onCheckedChange = { pqEnabled = it },
+                        )
+                    }
                 }
             }
 
@@ -226,6 +250,8 @@ private fun buildOverride(
     secret: String,
     sni: String,
     advancedJson: String,
+    pqEnabled: Boolean,
+    realityOn: Boolean,
 ): OverrideBuild {
     fun field(key: String): String =
         (base?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
@@ -248,6 +274,24 @@ private fun buildOverride(
             put("enabled", true)
             put("server_name", sni.trim())
         }
+    }
+    if (realityOn) {
+        // pq_enabled lives under tls.utls; keep any existing utls override
+        // from the advanced JSON and layer our key on top.
+        val tlsOverride = (mutable["tls"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
+        val existingTls = (base?.get("tls") as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
+        val existingUtls = (existingTls["utls"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
+        existingUtls["enabled"] = kotlinx.serialization.json.JsonPrimitive(true)
+        if (pqEnabled) {
+            existingUtls["pq_enabled"] = kotlinx.serialization.json.JsonPrimitive(true)
+        } else {
+            existingUtls.remove("pq_enabled")
+        }
+        tlsOverride["utls"] = kotlinx.serialization.json.JsonObject(existingUtls)
+        mutable["tls"] = kotlinx.serialization.json.JsonObject(tlsOverride)
     }
     var merged = kotlinx.serialization.json.JsonObject(mutable)
     if (advancedJson.isNotBlank()) {

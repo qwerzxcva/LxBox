@@ -159,6 +159,23 @@ data class AppState(
     val muxBrutalEnabled: Boolean = false,
     val muxBrutalUpMbps: Int = 0,
     val muxBrutalDownMbps: Int = 0,
+
+    // ------------------------------------------------- keepalive & probing
+    /**
+     * TCP keep-alive idle time for outbound connections, seconds; 0 = the
+     * kernel default. Longer values cut needless keep-alive wake-ups on
+     * idle links; shorter ones detect dead peers sooner.
+     */
+    val tcpKeepAliveIdleSeconds: Int = 0,
+    /**
+     * Node health probing: run a url-test pass over every group each
+     * [healthCheckIntervalMinutes] minutes while the tunnel is up, so the
+     * delay column stays fresh and auto groups re-select on degradation.
+     * 0 = off (probes happen only on manual refresh).
+     */
+    val healthCheckIntervalMinutes: Int = 0,
+    /** Per-probe timeout for the manual/health checks, milliseconds. */
+    val speedTestTimeoutMs: Int = 5_000,
     /** Persist rule-set / fake-IP caches to disk (experimental.cache_file). */
     val enableCacheFile: Boolean = true,
     /**
@@ -489,6 +506,13 @@ data class OutboundGroup(
     val url: String = "",
     /** Probe interval, e.g. "3m". Empty = engine default (3m). */
     val interval: String = "",
+    /**
+     * Idle timeout, e.g. "30m" — how long an idle group stops probing
+     * itself. The kernel rejects `interval > idle_timeout` at group start;
+     * the compiler raises this automatically when needed (post step).
+     * Empty = engine default (30m).
+     */
+    val idleTimeout: String = "",
     /** Latency tolerance in ms (url-test); 0 = engine default (50). */
     val tolerance: Int = 0,
     /** LX extension: "least_test" (default) or "round_robin". */
@@ -541,6 +565,15 @@ val UpdateIntervalOptions: List<Pair<Int, Int>> = listOf(
     12 to R.string.subs_interval_12h,
     24 to R.string.subs_interval_24h,
     72 to R.string.subs_interval_72h,
+)
+
+/** Node health probe interval presets: minutes → label resource. */
+val ProbeIntervalOptions: List<Pair<Int, Int>> = listOf(
+    0 to R.string.subs_interval_off,
+    5 to R.string.probe_5m,
+    15 to R.string.probe_15m,
+    30 to R.string.probe_30m,
+    60 to R.string.probe_60m,
 )
 
 fun defaultStickyHash(): List<String> = listOf("process", "domain")
