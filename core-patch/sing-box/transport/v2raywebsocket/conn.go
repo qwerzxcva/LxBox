@@ -26,11 +26,21 @@ type WebsocketConn struct {
 	reader         *wsutil.Reader
 	controlHandler wsutil.FrameHandlerFunc
 	remoteAddr     net.Addr
+
+	// AIBox: application-level keepalive. CDNs and middleboxes drop idle
+	// WebSocket connections silently; a periodic ping frame keeps the path
+	// alive and detects a dead peer. Zero interval disables the timer.
+	pingInterval time.Duration
+	stopPing     chan struct{}
 }
 
 func NewConn(conn net.Conn, remoteAddr net.Addr, state ws.State) *WebsocketConn {
+	return NewConnWithPingInterval(conn, remoteAddr, state, 0)
+}
+
+func NewConnWithPingInterval(conn net.Conn, remoteAddr net.Addr, state ws.State, pingInterval time.Duration) *WebsocketConn {
 	controlHandler := wsutil.ControlFrameHandler(conn, state)
-	return &WebsocketConn{
+	c := &WebsocketConn{
 		Conn:  conn,
 		state: state,
 		reader: &wsutil.Reader{
@@ -42,6 +52,38 @@ func NewConn(conn net.Conn, remoteAddr net.Addr, state ws.State) *WebsocketConn 
 		controlHandler: controlHandler,
 		remoteAddr:     remoteAddr,
 		Writer:         NewWriter(conn, state),
+		pingInterval:   pingInterval,
+		stopPing:       make(chan struct{}),
+	}
+	if pingInterval > 0 && state == ws.StateClientSide {
+		go c.pingLoop()
+	}
+	return c
+}
+
+// pingLoop writes a client-masked ping frame every interval. The next
+// wsutil.Reader Read on this connection handles the server's pong via the
+// control handler; a dead path surfaces as a write error here, which closes
+// the connection and surfaces the failure to the routing layer.
+func (c *WebsocketConn) pingLoop() {
+	ticker := time.NewTicker(c.pingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.stopPing:
+			return
+		case <-ticker.C:
+			c.Conn.SetWriteDeadline(time.Now().Add(C.TCPTimeout))
+			frame := ws.NewPingFrame(nil)
+			if c.state == ws.StateClientSide {
+				frame = ws.MaskFrameInPlace(frame)
+			}
+			if err := ws.WriteFrame(c.Conn, frame); err != nil {
+				c.Conn.Close()
+				return
+			}
+			c.Conn.SetWriteDeadline(time.Time{})
+		}
 	}
 }
 

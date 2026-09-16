@@ -205,6 +205,20 @@ data class AppState(
     /** "" = follow system, otherwise a BCP-47-ish tag: "en", "zh". */
     val language: String = "",
     val speedTestUrl: String = "https://cp.cloudflare.com/generate_204",
+
+    // ------------------------------------------------------------ autostart
+    /**
+     * Boot autostart (user opt-in): re-establish the tunnel after a reboot
+     * or app update when it was running before. The VPN consent grant is
+     * persisted by the system, so no activity is needed.
+     */
+    val bootAutoStart: Boolean = false,
+    /**
+     * Mirrors "the tunnel is connected" so [BootReceiver] can tell a reboot
+     * that killed an active tunnel from one where the user had switched off.
+     * Written by the VPN service on state transitions.
+     */
+    val vpnWasRunning: Boolean = false,
 )
 
 const val ClashModeRule = "Rule"

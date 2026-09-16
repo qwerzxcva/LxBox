@@ -77,6 +77,12 @@ fun NodeEditorPage(
                 ?.get("pq_enabled")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.booleanOrNull } == true,
         )
     }
+    var wsPingInterval by remember {
+        mutableStateOf(
+            (((base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.get("ping_interval")
+                as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()),
+        )
+    }
     var error by remember { mutableStateOf<String?>(null) }
     val realityOn = ((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
         ?.get("reality") as? kotlinx.serialization.json.JsonObject)
@@ -110,6 +116,7 @@ fun NodeEditorPage(
                     advancedJson = advancedJson,
                     pqEnabled = pqEnabled,
                     realityOn = realityOn,
+                    wsPingInterval = wsPingInterval,
                 )
                 when (built) {
                     is OverrideBuild.Invalid -> error = built.reason
@@ -175,6 +182,17 @@ fun NodeEditorPage(
                         placeholder = "example.com",
                         supporting = stringResource(R.string.node_edit_sni_hint),
                     )
+                    val isWs = ((base?.get("transport") as? kotlinx.serialization.json.JsonObject)
+                        ?.get("type") as? kotlinx.serialization.json.JsonPrimitive)?.content == "ws"
+                    if (isWs) {
+                        StringField(
+                            label = stringResource(R.string.node_edit_ws_ping),
+                            value = wsPingInterval,
+                            onValueChange = { wsPingInterval = it },
+                            placeholder = "off",
+                            supporting = stringResource(R.string.node_edit_ws_ping_hint),
+                        )
+                    }
                     // REALITY post-quantum switch: keeps X25519MLKEM768 in
                     // the ClientHello. Only shown for reality nodes; the
                     // kernel strips the group unless this is on.
@@ -252,6 +270,7 @@ private fun buildOverride(
     advancedJson: String,
     pqEnabled: Boolean,
     realityOn: Boolean,
+    wsPingInterval: String,
 ): OverrideBuild {
     fun field(key: String): String =
         (base?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
@@ -274,6 +293,12 @@ private fun buildOverride(
             put("enabled", true)
             put("server_name", sni.trim())
         }
+    }
+    if (wsPingInterval.isNotBlank()) {
+        val existingTransport = (base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
+        existingTransport["ping_interval"] = kotlinx.serialization.json.JsonPrimitive(wsPingInterval.trim())
+        mutable["transport"] = kotlinx.serialization.json.JsonObject(existingTransport)
     }
     if (realityOn) {
         // pq_enabled lives under tls.utls; keep any existing utls override

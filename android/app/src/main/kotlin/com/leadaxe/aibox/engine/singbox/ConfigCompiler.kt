@@ -159,17 +159,41 @@ object ConfigCompiler {
     // ------------------------------------------------------------------ dns
 
     private fun compileDns(state: AppState, ruleSetDir: File): JsonObject = buildJsonObject {
+        // Fail-closed (upstream §443): a DNS server whose detour points at an
+        // outbound that does not exist makes the kernel fail at start
+        // ("outbound detour not found"). Instead of dying, drop the server
+        // and let the sanitiser below redirect whatever pointed at it —
+        // queries must never silently fall to the system resolver behind a
+        // censored network.
+        val liveOutboundTags = buildSet {
+            add(DirectOutboundTag)
+            add(ProxySelectorTag)
+            state.outbounds.forEach { add(it.tag) }
+            state.outboundGroups.filter { it.enabled }.forEach { add(it.tag) }
+        }
+        val usableServers = state.dnsServers.filter { server ->
+            server.enabled && (server.detour.isBlank() || server.detour in liveOutboundTags)
+        }
         putJsonArray("servers") {
-            state.dnsServers.filter { it.enabled }.forEach { server ->
+            usableServers.forEach { server ->
                 add(compileDnsServer(server))
             }
             if (state.enableFakeIp) {
                 add(compileFakeIpServer(state))
             }
         }
-        val rules = compileDnsRules(state)
+        val finalServer = pickFinalServer(state, usableServers)
+        val rules = compileDnsRules(state, finalServer)
         if (rules.isNotEmpty()) {
             putJsonArray("rules") { rules.forEach(::add) }
+        }
+        // Fail-closed last line: when servers were dropped, append an
+        // unconditional reject so a query that survives every rule fails
+        // loudly instead of leaking to the first (possibly system) server.
+        if (usableServers.size < state.dnsServers.count { it.enabled }) {
+            putJsonArray("rules") {
+                add(buildJsonObject { put("action", "reject") })
+            }
         }
         // Global family policy: the explicit DNS strategy wins; otherwise
         // the IPv6 policy applies (with a runtime downgrade to IPv4 when the
@@ -185,7 +209,7 @@ object ConfigCompiler {
         }
         if (globalStrategy.isNotBlank()) put("strategy", globalStrategy)
         if (state.dnsClientSubnet.isNotBlank()) put("client_subnet", state.dnsClientSubnet)
-        put("final", pickFinalServer(state))
+        put("final", finalServer)
         put("independent_cache", state.dnsIndependentCache)
         if (state.dnsCacheCapacity > 0) put("cache_capacity", state.dnsCacheCapacity)
     }
@@ -243,7 +267,7 @@ object ConfigCompiler {
         }
     }
 
-    private fun compileDnsRules(state: AppState): List<JsonObject> = buildList {
+    private fun compileDnsRules(state: AppState, finalServer: String): List<JsonObject> = buildList {
         // Fake-IP rules run first: when the pool is on, lookups that should
         // be faked also need the "rest" routed through the normal chain, or
         // every domain ends up on the fake range and rule matching breaks.
@@ -258,7 +282,7 @@ object ConfigCompiler {
                 // the normal chain; everything else is faked.
                 add(buildJsonObject {
                     putJsonArray("domain_suffix") { filter.forEach(::add) }
-                    put("server", pickFinalServer(state))
+                    put("server", finalServer)
                 })
                 add(buildJsonObject { put("server", FakeIpServerTag) })
             } else {
@@ -398,13 +422,13 @@ object ConfigCompiler {
      * skipping fakeip — queries that reach `final` have already run the
      * rule gauntlet and should be resolved, not faked.
      */
-    private fun pickFinalServer(state: AppState): String {
+    private fun pickFinalServer(state: AppState, usableServers: List<DnsServerState>): String {
         val explicit = state.finalDnsServer
-        if (explicit.isNotBlank() && state.dnsServers.any { it.enabled && it.tag == explicit }) {
+        if (explicit.isNotBlank() && usableServers.any { it.tag == explicit }) {
             return explicit
         }
-        return state.dnsServers.firstOrNull { it.enabled && it.type != "local" }?.tag
-            ?: state.dnsServers.firstOrNull { it.enabled }?.tag
+        return usableServers.firstOrNull { it.type != "local" }?.tag
+            ?: usableServers.firstOrNull()?.tag
             ?: FakeIpServerTag
     }
 
@@ -412,9 +436,20 @@ object ConfigCompiler {
      * Resolver handed to `route.default_domain_resolver`. Must be a concrete
      * server (local / udp / tls / …): fakeip cannot resolve names.
      */
-    private fun pickDefaultResolver(state: AppState): String? =
-        state.dnsServers.firstOrNull { it.enabled && it.type != "local" }?.tag
-            ?: state.dnsServers.firstOrNull { it.enabled }?.tag
+    private fun pickDefaultResolver(state: AppState): String? {
+        val liveOutboundTags = buildSet {
+            add(DirectOutboundTag)
+            add(ProxySelectorTag)
+            state.outbounds.forEach { add(it.tag) }
+            state.outboundGroups.filter { it.enabled }.forEach { add(it.tag) }
+        }
+        // A resolver whose detour dangles cannot serve its own lookups.
+        val usable = state.dnsServers.filter {
+            it.enabled && (it.detour.isBlank() || it.detour in liveOutboundTags)
+        }
+        return usable.firstOrNull { it.type != "local" }?.tag
+            ?: usable.firstOrNull()?.tag
+    }
 
     // ------------------------------------------------------------------ tun
 

@@ -394,6 +394,12 @@ class AIVpnService : VpnService() {
         stateJob = scope.launch {
             engine.state.collect { st ->
                 broadcastState(st)
+                // Persist the "tunnel was up" flag so BootReceiver can tell
+                // a reboot that killed an active tunnel from a clean stop.
+                val wasRunning = st is BoxState.Connected
+                if (store.current.vpnWasRunning != wasRunning) {
+                    store.update { it.copy(vpnWasRunning = wasRunning) }
+                }
                 when (st) {
                     is BoxState.Connected -> updateNotificationConnected()
                     is BoxState.Error -> {

@@ -96,6 +96,9 @@ type V2RayWebsocketOptions struct {
 	Headers             badoption.HTTPHeader `json:"headers,omitempty"`
 	MaxEarlyData        uint32               `json:"max_early_data,omitempty"`
 	EarlyDataHeaderName string               `json:"early_data_header_name,omitempty"`
+	// AIBox: application-level keepalive. CDNs drop idle WebSocket
+	// connections silently; a periodic ping frame keeps the path alive.
+	PingInterval badoption.Duration `json:"ping_interval,omitempty"`
 }
 
 type V2RayQUICOptions struct{}

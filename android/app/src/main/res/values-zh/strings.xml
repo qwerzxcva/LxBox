@@ -236,6 +236,15 @@
     <string name="settings_battery_app_settings">打开系统应用设置</string>
     <string name="settings_battery_manual_hint">如果弹窗未出现：设置 → 应用 → AIBox → 电池 → 不受限制。</string>
     <string name="settings_battery_tunnel_policy">隧道省电策略</string>
+    <string name="settings_boot_autostart">开机自启</string>
+    <string name="settings_boot_autostart_desc">重启或更新后自动恢复隧道（之前在运行时）。</string>
+    <string name="settings_section_backup">备份与恢复</string>
+    <string name="settings_backup_desc">导出全部配置（节点/订阅/组/路由/DNS）到文件；导入可在新安装上恢复。包含订阅链接。</string>
+    <string name="settings_backup_export">导出</string>
+    <string name="settings_backup_import">导入</string>
+    <string name="settings_backup_exported">备份已导出。</string>
+    <string name="settings_backup_restored">备份已恢复。</string>
+    <string name="settings_backup_failed">备份操作失败。</string>
     <string name="settings_battery_tunnel_policy_desc">熄屏时暂停隧道并关闭空闲连接；进入 Doze 深暂停（彻底停内核定时器），下次唤醒重置网络以恢复推送。网络切换（Wi-Fi ↔ 蜂窝）自动关闭半死连接并重载配置。</string>
     <string name="settings_section_mux">多路复用（mux）</string>
     <string name="settings_mux_enable">启用多路复用</string>
@@ -419,6 +428,8 @@
     <string name="node_edit_sni_hint">TLS 握手出示的服务器名，通常是伪装域名。</string>
     <string name="node_edit_pq">后量子密钥交换</string>
     <string name="node_edit_pq_hint">在 REALITY 握手中保留 X25519MLKEM768。仅新服务器支持——旧服务器会拒绝导致节点失效。</string>
+    <string name="node_edit_ws_ping">WS ping 周期（秒）</string>
+    <string name="node_edit_ws_ping_hint">每 N 秒发送 WebSocket ping，防止 CDN 掐断空闲连接。留空 = 关闭。</string>
     <string name="node_edit_advanced">高级覆盖（JSON）</string>
     <string name="node_edit_override">覆盖 JSON</string>
     <string name="node_edit_override_hint">编译时深度合并进节点配置 — 任何 sing-box 出站键都可用（transport、reality、flow 等）。</string>

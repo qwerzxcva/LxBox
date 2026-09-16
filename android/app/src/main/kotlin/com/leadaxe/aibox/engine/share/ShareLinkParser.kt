@@ -204,6 +204,8 @@ object ShareLinkParser {
                     }
                     e["ws-opts.max-early-data"]?.toIntOrNull()?.let { put("max_early_data", it) }
                     e["ws-opts.early-data-header-name"]?.let { put("early_data_header_name", it) }
+                    // AIBox kernel extension: keepalive ping interval.
+                    e["ws-opts.ping-interval"]?.takeIf { it.isNotBlank() }?.let { put("ping_interval", it) }
                 })
                 "grpc" -> put("transport", buildJsonObject {
                     put("type", "grpc")

@@ -58,6 +58,48 @@ fun SettingsScreen() {
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
     val state by store.state.collectAsState()
 
+    // Backup / restore via SAF: no storage permission needed, the user
+    // picks the file. Export writes the full AppState JSON; import merges
+    // a backup file back (schema-validated, unknown keys ignored).
+    var backupMessage by remember { mutableStateOf("") }
+    var backupError by remember { mutableStateOf(false) }
+    val backupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uri = result.data?.data
+        if (uri == null) {
+            backupMessage = ""
+            return@rememberLauncherForActivityResult
+        }
+        backupError = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(store.exportJson().toByteArray(Charsets.UTF_8))
+            } ?: throw IllegalStateException("cannot open file")
+        }.isFailure
+        backupMessage = context.getString(
+            if (backupError) R.string.settings_backup_failed else R.string.settings_backup_exported,
+        )
+    }
+    val restoreLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uri = result.data?.data
+        if (uri == null) {
+            backupMessage = ""
+            return@rememberLauncherForActivityResult
+        }
+        val outcome = runCatching {
+            val text = context.contentResolver.openInputStream(uri)?.use { input ->
+                input.bufferedReader(Charsets.UTF_8).readText()
+            } ?: throw IllegalStateException("cannot open file")
+            store.importJson(text)
+        }.getOrElse { it.message ?: "import failed" }
+        backupError = outcome != "ok"
+        backupMessage = context.getString(
+            if (backupError) R.string.settings_backup_failed else R.string.settings_backup_restored,
+        ) + if (backupError) " ($outcome)" else ""
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
         contentPadding = PaddingValues(vertical = 16.dp),
@@ -278,6 +320,55 @@ fun SettingsScreen() {
         }
 
         item {
+            SettingsSection(stringResource(R.string.settings_section_backup)) {
+                Text(
+                    stringResource(R.string.settings_backup_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = {
+                        backupLauncher.launch(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                                    type = "application/json"
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TITLE,
+                                        "aibox-backup-${android.text.format.DateFormat.format("yyyyMMdd-HHmm", System.currentTimeMillis())}.json",
+                                    )
+                                },
+                                null,
+                            ),
+                        )
+                    }) {
+                        Text(stringResource(R.string.settings_backup_export))
+                    }
+                    FilledTonalButton(onClick = {
+                        restoreLauncher.launch(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+                                    addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                                    type = "application/json"
+                                },
+                                null,
+                            ),
+                        )
+                    }) {
+                        Text(stringResource(R.string.settings_backup_import))
+                    }
+                }
+                if (backupMessage.isNotBlank()) {
+                    Text(
+                        backupMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (backupError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+
+        item {
             SettingsSection(stringResource(R.string.settings_section_logging)) {
                 SingleChoiceChips(
                     label = stringResource(R.string.settings_log_level),
@@ -415,6 +506,15 @@ private fun BatterySection(store: com.leadaxe.aibox.app.AppStateStore) {
         stringResource(R.string.settings_battery_tunnel_policy_desc),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    // Boot autostart: opt-in. The VPN consent grant persists, so the tunnel
+    // can come back without any user interaction after a reboot.
+    SwitchRow(
+        label = stringResource(R.string.settings_boot_autostart),
+        supporting = stringResource(R.string.settings_boot_autostart_desc),
+        checked = store.current.bootAutoStart,
+        onCheckedChange = { v -> store.update { it.copy(bootAutoStart = v) } },
     )
 }
 

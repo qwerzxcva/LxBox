@@ -1,3 +1,4 @@
 package libbox
 
-// Stub: original linknamed os.checkPidfdOnce which newer Go removed.
+// Stub: the original file linknamed os.checkPidfdOnce, which newer
+// Go toolchains no longer export. pidfd is not required here.

@@ -238,6 +238,15 @@
     <string name="settings_battery_app_settings">Open app system settings</string>
     <string name="settings_battery_manual_hint">If the dialog does not appear: Settings → Apps → AIBox → Battery → Unrestricted.</string>
     <string name="settings_battery_tunnel_policy">Tunnel power policy</string>
+    <string name="settings_boot_autostart">Start on boot</string>
+    <string name="settings_boot_autostart_desc">Re-establish the tunnel automatically after a reboot or app update, when it was running before.</string>
+    <string name="settings_section_backup">Backup &amp; restore</string>
+    <string name="settings_backup_desc">Export everything (nodes, subscriptions, groups, routes, DNS) to a file; import restores it on another install. Subscription URLs are included.</string>
+    <string name="settings_backup_export">Export</string>
+    <string name="settings_backup_import">Import</string>
+    <string name="settings_backup_exported">Backup exported.</string>
+    <string name="settings_backup_restored">Backup restored.</string>
+    <string name="settings_backup_failed">Backup operation failed.</string>
     <string name="settings_battery_tunnel_policy_desc">Screen off pauses the tunnel and closes idle connections. Doze deep-suspend stops the kernel timers entirely; the next wake resets the network so pushes arrive fresh. Network switches (Wi-Fi ↔ cellular) close half-dead sockets and reload the config automatically.</string>
     <string name="settings_section_mux">Multiplex (mux)</string>
     <string name="settings_mux_enable">Enable multiplexing</string>
@@ -421,6 +430,8 @@
     <string name="node_edit_sni_hint">Server name the TLS handshake presents; usually the masked domain.</string>
     <string name="node_edit_pq">Post-quantum key exchange</string>
     <string name="node_edit_pq_hint">Keeps the X25519MLKEM768 share in the REALITY handshake. Only for newer servers — older ones reject it and the node dies.</string>
+    <string name="node_edit_ws_ping">WS ping interval (s)</string>
+    <string name="node_edit_ws_ping_hint">Sends a WebSocket ping every N seconds to keep the connection alive behind CDNs that drop idle streams. Empty = off.</string>
     <string name="node_edit_advanced">Advanced override (JSON)</string>
     <string name="node_edit_override">Override JSON</string>
     <string name="node_edit_override_hint">Deep-merged over the node config at compile time — any sing-box outbound key works (transport, reality, flow, …).</string>

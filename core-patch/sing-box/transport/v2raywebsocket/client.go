@@ -31,6 +31,7 @@ type Client struct {
 	headers             http.Header
 	maxEarlyData        uint32
 	earlyDataHeaderName string
+	pingInterval        time.Duration
 }
 
 func NewClient(ctx context.Context, dialer N.Dialer, serverAddr M.Socksaddr, options option.V2RayWebsocketOptions, tlsConfig tls.Config) (adapter.V2RayClientTransport, error) {
@@ -70,6 +71,7 @@ func NewClient(ctx context.Context, dialer N.Dialer, serverAddr M.Socksaddr, opt
 		headers,
 		options.MaxEarlyData,
 		options.EarlyDataHeaderName,
+		time.Duration(options.PingInterval),
 	}, nil
 }
 
@@ -116,7 +118,7 @@ func (c *Client) upgrade(conn net.Conn, requestURL *url.URL, headers http.Header
 		}
 		conn = bufio.NewCachedConn(conn, buffer)
 	}
-	return NewConn(conn, nil, ws.StateClientSide), nil
+	return NewConnWithPingInterval(conn, nil, ws.StateClientSide, c.pingInterval), nil
 }
 
 func (c *Client) Close() error {
