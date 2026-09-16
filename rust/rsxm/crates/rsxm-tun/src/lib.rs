@@ -12,7 +12,7 @@
 //! the runtime crate. Keeping it a separate micro-kernel means a future
 //! swap to a native Rust stack is a module replacement, not a rewrite.
 
-use rsxm_core::{Health, Module};
+use rsxm_core::Health;
 
 /// Configuration for the tun engine.
 #[derive(Debug, Clone)]
@@ -127,6 +127,7 @@ impl rsxm_core::Module for TunModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rsxm_core::Module;
 
     #[test]
     fn lifecycle_tracks_health() {

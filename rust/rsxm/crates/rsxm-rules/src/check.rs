@@ -603,11 +603,15 @@ mod tests {
             }]"#,
         );
         assert_eq!(c.check(&query("mtalk.google.com")).outbound.as_deref(), Some("direct"));
-        let mut q = CheckQuery::default();
-        q.port = Some(5229);
+        let q = CheckQuery {
+            port: Some(5229),
+            ..Default::default()
+        };
         assert_eq!(c.check(&q).outbound.as_deref(), Some("direct"));
-        let mut q = CheckQuery::default();
-        q.port = Some(5231);
+        let q = CheckQuery {
+            port: Some(5231),
+            ..Default::default()
+        };
         assert_eq!(c.check(&q).rule_index, None);
     }
 
@@ -643,11 +647,15 @@ mod tests {
     #[test]
     fn private_addresses_satisfy_ip_is_private() {
         let c = checker(r#"[{"ip_is_private":true,"outbound":"direct"}]"#);
-        let mut q = CheckQuery::default();
-        q.destination_ip = Some("192.168.1.1".parse().unwrap());
+        let q = CheckQuery {
+            destination_ip: Some("192.168.1.1".parse().unwrap()),
+            ..Default::default()
+        };
         assert_eq!(c.check(&q).outbound.as_deref(), Some("direct"));
-        let mut q = CheckQuery::default();
-        q.destination_ip = Some("1.1.1.1".parse().unwrap());
+        let q = CheckQuery {
+            destination_ip: Some("1.1.1.1".parse().unwrap()),
+            ..Default::default()
+        };
         assert_eq!(c.check(&q).rule_index, None);
     }
 

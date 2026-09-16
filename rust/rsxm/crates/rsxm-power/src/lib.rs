@@ -262,7 +262,6 @@ mod tests {
 
     #[test]
     fn screen_on_resets_to_active() {
-        let mut now = 1000i64;
         let now = Arc::new(std::sync::Mutex::new(1000i64));
         let now_c = now.clone();
         let m = module(Arc::new(move || *now_c.lock().unwrap()));

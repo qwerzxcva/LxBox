@@ -126,7 +126,7 @@ impl CipherState {
         payload.push(content_type); // RFC 8446 §5.2: real type rides inside
         let wire_len = payload.len() + RECORD_TAG_LEN;
         let aad = [CONTENT_APP_DATA, 0x03, 0x03, (wire_len >> 8) as u8, wire_len as u8];
-        let mut buf = match self.suite {
+        let buf = match self.suite {
             Suite::Aes128GcmSha256 => {
                 let cipher = Aes128Gcm::new_from_slice(&self.key).expect("key");
                 cipher
@@ -164,10 +164,10 @@ impl CipherState {
     /// Decrypts one record payload in place; returns (real content type,
     /// plaintext). `payload` spans the record body (after the 5-byte header);
     /// `header` is that 5-byte header (the AEAD AAD).
-    pub fn open_record<'a>(
+    pub fn open_record(
         &mut self,
         header: &[u8; RECORD_HEADER_LEN],
-        payload: &'a [u8],
+        payload: &[u8],
     ) -> Result<(u8, Vec<u8>), String> {
         if payload.len() < RECORD_TAG_LEN + 1 {
             return Err("record too short".into());
@@ -175,7 +175,7 @@ impl CipherState {
         let (body, tag) = payload.split_at(payload.len() - RECORD_TAG_LEN);
         let nonce = self.nonce();
         let mut buf = body.to_vec();
-        let _decrypted_len = match self.suite {
+        match self.suite {
             Suite::Aes128GcmSha256 => {
                 let cipher = Aes128Gcm::new_from_slice(&self.key).expect("key");
                 cipher
@@ -233,11 +233,7 @@ impl KeySchedule {
         self.current.clone().expect("handshake secrets derived")
     }
 
-    pub(crate) fn hkdf_extract_for_test(&self, ikm: &[u8]) -> Vec<u8> {
-        self.hkdf_extract(ikm)
-    }
-
-    fn hkdf_extract(&self, ikm: &[u8]) -> Vec<u8> {
+    pub(crate) fn hkdf_extract(&self, ikm: &[u8]) -> Vec<u8> {
         let hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(&self.salt), ikm);
         // Only used with SHA-384 suites too — rebuild per suite below.
         let _ = hk;
@@ -364,7 +360,7 @@ mod tests {
         let mut ks = KeySchedule::new(Suite::Aes128GcmSha256);
         // early secret
         let zero = vec![0u8; 32];
-        let early = ks.hkdf_extract_for_test(&zero);
+        let early = ks.hkdf_extract(&zero);
         assert_eq!(
             hex_to_vec("33ad0a1c607ec03b09e6cd9893680ce210adf300aa1f2660e1b22e10f170f92a"),
             early
@@ -378,7 +374,7 @@ mod tests {
         );
         // handshake secret = Extract(derived, shared)
         ks.salt = derived;
-        let hs = ks.hkdf_extract_for_test(&shared);
+        let hs = ks.hkdf_extract(&shared);
         assert_eq!(
             hex_to_vec("1dc826e93606aa6fdc0aadc12f741b01046aa6b99f691ed221a9f0ca043fbeac"),
             hs

@@ -468,7 +468,6 @@ dependencies = [
  "ed25519-dalek",
  "hkdf",
  "hmac",
- "rsxm-core",
  "sha2",
 ]
 

@@ -11,9 +11,9 @@
 //! 3. `session_id[4..8]` = unix time (seconds)
 //! 4. `session_id[8..16]` = short_id
 //! 5. auth_key = ECDHE(ephemeral_x25519, reality_public_key)
-//!             then HKDF-SHA256(ikm=auth_key, salt=random[0..20], info="REALITY")
+//!    then HKDF-SHA256(ikm=auth_key, salt=random[0..20], info="REALITY")
 //! 6. `session_id[0..16]` = AES-128-GCM-Seal(key=auth_key,
-//!        nonce=random[20..32], plaintext=session_id[0..16], aad=raw ClientHello)
+//!    nonce=random[20..32], plaintext=session_id[0..16], aad=raw ClientHello)
 
 use curve25519_dalek::MontgomeryPoint;
 
@@ -314,20 +314,6 @@ fn read_tlv_tagged(buf: &[u8]) -> Option<(u8, &[u8], &[u8])> {
     Some((tag, &buf[hdr..hdr + content_len], &buf[hdr + content_len..]))
 }
 
-fn content_len_of(whole_with_header: &[u8]) -> usize {
-    let len_byte = whole_with_header[1] as usize;
-    if len_byte & 0x80 == 0 {
-        len_byte
-    } else {
-        let n = len_byte & 0x7f;
-        let mut len = 0usize;
-        for b in &whole_with_header[2..2 + n] {
-            len = (len << 8) | *b as usize;
-        }
-        len
-    }
-}
-
 /// Extracts the raw signature bytes (the contents of the outer BIT STRING of
 /// the Certificate's signature field) from a DER certificate.
 fn extract_cert_signature(der: &[u8]) -> Option<Vec<u8>> {
@@ -370,31 +356,6 @@ fn extract_ed25519_public(der: &[u8]) -> Option<[u8; 32]> {
     let mut key = [0u8; 32];
     key.copy_from_slice(&bitstring[1..]);
     Some(key)
-}
-
-/// Reads one DER TLV; returns (contents-with-header, rest).
-fn read_tlv(buf: &[u8]) -> Option<(&[u8], &[u8])> {
-    if buf.len() < 2 {
-        return None;
-    }
-    let len_byte = buf[1] as usize;
-    let (hdr, content_len) = if len_byte & 0x80 == 0 {
-        (2, len_byte)
-    } else {
-        let n = len_byte & 0x7f;
-        if buf.len() < 2 + n {
-            return None;
-        }
-        let mut len = 0usize;
-        for b in &buf[2..2 + n] {
-            len = (len << 8) | *b as usize;
-        }
-        (2 + n, len)
-    };
-    if buf.len() < hdr + content_len {
-        return None;
-    }
-    Some((&buf[..hdr + content_len], &buf[hdr + content_len..]))
 }
 
 use crate::tls13::Suite;

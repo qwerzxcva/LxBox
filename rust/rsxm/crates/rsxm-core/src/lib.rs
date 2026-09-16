@@ -359,7 +359,7 @@ mod tests {
         // Compile-time intent check: the scheduler has no rule-table field.
         // (Enforced by the absence of `install_rules`.)
         let s = Scheduler::new();
-        assert!(s.is_shutting_down() == false);
+        assert!(!s.is_shutting_down());
     }
 
     #[test]
