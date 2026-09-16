@@ -4,7 +4,9 @@ members = [
     "aibox-core",
     "rsxm/crates/rsxm-core",
     "rsxm/crates/rsxm-rules",
+    "rsxm/crates/rsxm-config",
     "rsxm/crates/rsxm-dns",
+    "rsxm/crates/rsxm-dialer",
     "rsxm/crates/rsxm-tun",
     "rsxm/crates/rsxm-agent",
 ]

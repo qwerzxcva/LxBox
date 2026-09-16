@@ -40,42 +40,65 @@ impl Default for TunConfig {
 
 /// The tun micro-kernel handle.
 pub struct TunModule {
-    config: TunConfig,
+    config: std::sync::RwLock<TunConfig>,
     running: std::sync::atomic::AtomicBool,
 }
 
 impl TunModule {
     pub fn new(config: TunConfig) -> Self {
         Self {
-            config,
+            config: std::sync::RwLock::new(config),
             running: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
-    pub fn config(&self) -> &TunConfig {
-        &self.config
+    pub fn config(&self) -> std::sync::RwLockReadGuard<'_, TunConfig> {
+        self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Renders the engine configuration as YAML for the native layer.
     pub fn render_engine_config(&self) -> String {
+        let cfg = self.config.read().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut yaml = String::new();
         yaml.push_str("tunnel:\n");
-        yaml.push_str(&format!("  mtu: {}\n", self.config.mtu));
-        yaml.push_str(&format!("  ipv4: {}\n", self.config.ipv4));
-        if let Some(v6) = &self.config.ipv6 {
+        yaml.push_str(&format!("  mtu: {}\n", cfg.mtu));
+        yaml.push_str(&format!("  ipv4: {}\n", cfg.ipv4));
+        if let Some(v6) = &cfg.ipv6 {
             yaml.push_str(&format!("  ipv6: '{v6}'\n"));
         }
         yaml.push_str(&format!(
             "  icmp: '{}'\n",
-            if self.config.icmp { "reply" } else { "off" }
+            if cfg.icmp { "reply" } else { "off" }
         ));
         yaml
     }
 }
 
-impl Module for TunModule {
+impl rsxm_core::Module for TunModule {
     fn name(&self) -> &'static str {
         "tun"
+    }
+
+    /// TUN 参数归本微内核所有：切片里有什么就更新什么，中央内核不读内容。
+    fn configure(&self, slice: Option<&rsxm_core::ConfigSlice>) -> Result<(), String> {
+        let Some(slice) = slice else {
+            return Ok(());
+        };
+        let value = slice.value.as_object().ok_or("tun slice must be object")?;
+        let mut cfg = self
+            .config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(mtu) = value.get("tunMtu").and_then(|v| v.as_u64()) {
+            cfg.mtu = mtu as u32;
+        }
+        if let Some(v4) = value.get("tunInet4Address").and_then(|v| v.as_str()) {
+            cfg.ipv4 = v4.to_string();
+        }
+        if let Some(v6) = value.get("tunInet6Address").and_then(|v| v.as_str()) {
+            cfg.ipv6 = Some(v6.to_string());
+        }
+        Ok(())
     }
 
     fn start(&self) -> Result<(), String> {

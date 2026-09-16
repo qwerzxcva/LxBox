@@ -14,7 +14,8 @@
 //!                                          replay the *compiled* sing-box
 //!                                          rule table (route-check engine)
 
-use rsxm_core::{Health, Query, Rule, Scheduler};
+use rsxm_core::{ConfigEnvelope, Health, Query, Scheduler};
+use rsxm_rules::{Rule, RuleTable};
 use rsxm_tun::{TunConfig, TunModule};
 use std::sync::Arc;
 
@@ -103,24 +104,41 @@ fn main() {
     let mut scheduler = Scheduler::new();
     scheduler.register(Arc::new(TunModule::new(TunConfig::default())));
 
-    // Load rules if given; a missing file is fine for the health check mode.
-    let rules: Vec<Rule> = match &rules_path {
+    // The rules file (AppState-shaped) is split by rsxm-config; the envelope
+    // is distributed to the modules — the scheduler itself never reads it.
+    let envelope: ConfigEnvelope = match &rules_path {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(text) => match serde_json::from_str(&text) {
-                Ok(parsed) => parsed,
+            Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(doc) => {
+                    // A bare rules array is wrapped so the splitter sees it.
+                    let doc = if doc.is_array() {
+                        serde_json::json!({ "routeRules": doc })
+                    } else {
+                        doc
+                    };
+                    rsxm_config::split(&doc)
+                }
                 Err(err) => {
-                    eprintln!("rules parse error: {err}");
+                    eprintln!("config parse error: {err}");
                     std::process::exit(1);
                 }
             },
             Err(err) => {
-                eprintln!("cannot read rules file: {err}");
+                eprintln!("cannot read config file: {err}");
                 std::process::exit(1);
             }
         },
-        None => Vec::new(),
+        None => ConfigEnvelope::default(),
     };
-    scheduler.install_rules(rules);
+    let table = envelope
+        .for_module("rsxm-rules")
+        .and_then(|slice| {
+            let rules: Vec<Rule> =
+                serde_json::from_value(slice.value.get("rules")?.clone()).ok()?;
+            Some(RuleTable::build(rules))
+        })
+        .unwrap_or_default();
+    scheduler.distribute(envelope);
 
     let report = scheduler.start_all();
     for (name, result) in &report {
@@ -138,7 +156,7 @@ fn main() {
             destination_ip: route_ip.and_then(|s| s.parse().ok()),
             ..Default::default()
         };
-        match scheduler.route(&query) {
+        match table.match_query(&query) {
             Some(m) => println!("route {domain} -> {:?} (rule {})", m.target, m.rule_id),
             None => println!("route {domain} -> no match"),
         }

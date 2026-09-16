@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 rsxm-core = { path = "../rsxm-core" }
+rsxm-config = { path = "../rsxm-config" }
 rsxm-rules = { path = "../rsxm-rules" }
 rsxm-tun = { path = "../rsxm-tun" }
 serde_json = "1"
