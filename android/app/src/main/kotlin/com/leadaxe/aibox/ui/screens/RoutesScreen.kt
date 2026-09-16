@@ -65,7 +65,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
 @Composable
-fun RoutesScreen() {
+fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
     val state by store.state.collectAsState()
@@ -74,6 +74,12 @@ fun RoutesScreen() {
     // silently drops the user back out of the form mid-edit.
     var editing: RouteRule? by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(null) }
     var creating by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // Lock horizontal pager swiping while an editor is open: a drag inside
+    // a text field must never switch tabs.
+    androidx.compose.runtime.DisposableEffect(creating, editing) {
+        onEditorLock(creating || editing != null)
+        onDispose { onEditorLock(false) }
+    }
     var editingRuleSet: com.leadaxe.aibox.app.RuleSetResource? by remember { mutableStateOf(null) }
 
     // Second-level page: the editor replaces the list while open, and the

@@ -68,7 +68,7 @@ import com.leadaxe.aibox.app.ProxySelectorTag
 import java.util.UUID
 
 @Composable
-fun DnsScreen() {
+fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as AIBoxApp
     val store = remember { app.appStateStore }
@@ -82,6 +82,10 @@ fun DnsScreen() {
     var creatingServer by remember { mutableStateOf(false) }
     var editingRule: DnsRule? by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(null) }
     var creatingRule by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.DisposableEffect(creatingRule, editingRule) {
+        onEditorLock(creatingRule || editingRule != null)
+        onDispose { onEditorLock(false) }
+    }
 
     // Rule editor as a second-level page (replaces the list while open).
     // The dialog version clipped long forms and could not scroll properly.

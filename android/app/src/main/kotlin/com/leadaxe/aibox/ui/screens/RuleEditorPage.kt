@@ -278,45 +278,51 @@ fun RuleEditorPage(
                                     supporting = stringResource(R.string.routes_override_hint),
                                 )
                             }
-                            // ECS / client subnet is a rule-level decision,
-                            // not tied to the resolve action: any rule can
-                            // carry a client_subnet for its DNS linkage.
-                            StringField(
-                                label = stringResource(R.string.routes_client_subnet),
-                                value = clientSubnet,
-                                onValueChange = { clientSubnet = it },
-                                placeholder = "1.2.3.0/24",
-                                supporting = stringResource(R.string.hint_client_subnet),
-                            )
-                            // DNS linkage: creating a DNS rule alongside this
-                            // route rule. The created rule shows in the DNS
-                            // tab as JSON (it is derived, not hand-edited).
-                            val dnsOptions = remember(state.dnsServers) {
-                                listOf("") + state.dnsServers.filter { it.enabled }.map { it.tag }
-                            }
-                            SingleChoiceChips(
-                                label = stringResource(R.string.routes_sync_dns_server),
-                                options = dnsOptions,
-                                selected = syncDnsServer,
-                                onSelect = { syncDnsServer = it },
-                                display = { tag ->
-                                    if (tag.isEmpty()) stringResource(R.string.routes_sync_dns_none)
-                                    else state.dnsServers.firstOrNull { s -> s.tag == tag }
-                                        ?.name?.ifBlank { tag } ?: tag
-                                },
-                            )
-                            if (syncDnsServer.isNotBlank()) {
-                                Text(
-                                    stringResource(R.string.routes_sync_dns_json_hint),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
                             SwitchRow(
                                 label = stringResource(R.string.routes_enabled),
                                 checked = enabled,
                                 onCheckedChange = { enabled = it },
                             )
+                            // Reject carries no DNS semantics: there is no
+                            // resolution to shape and no query to steer, so
+                            // the ECS and DNS-linkage fields would be dead
+                            // weight — hide them entirely.
+                            if (action != RouteRule.RuleActionReject) {
+                                // ECS / client subnet is a rule-level
+                                // decision: any non-reject rule can carry a
+                                // client_subnet for its DNS linkage.
+                                StringField(
+                                    label = stringResource(R.string.routes_client_subnet),
+                                    value = clientSubnet,
+                                    onValueChange = { clientSubnet = it },
+                                    placeholder = "1.2.3.0/24",
+                                    supporting = stringResource(R.string.hint_client_subnet),
+                                )
+                                // DNS linkage: creating a DNS rule alongside
+                                // this route rule. The created rule shows in
+                                // the DNS tab as JSON (derived, not edited).
+                                val dnsOptions = remember(state.dnsServers) {
+                                    listOf("") + state.dnsServers.filter { it.enabled }.map { it.tag }
+                                }
+                                SingleChoiceChips(
+                                    label = stringResource(R.string.routes_sync_dns_server),
+                                    options = dnsOptions,
+                                    selected = syncDnsServer,
+                                    onSelect = { syncDnsServer = it },
+                                    display = { tag ->
+                                        if (tag.isEmpty()) stringResource(R.string.routes_sync_dns_none)
+                                        else state.dnsServers.firstOrNull { s -> s.tag == tag }
+                                            ?.name?.ifBlank { tag } ?: tag
+                                    },
+                                )
+                                if (syncDnsServer.isNotBlank()) {
+                                    Text(
+                                        stringResource(R.string.routes_sync_dns_json_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                             // ----- per-rule address family
                             SingleChoiceChips(
                                 label = stringResource(R.string.routes_ip_family),

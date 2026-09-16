@@ -46,15 +46,19 @@ import com.leadaxe.aibox.R
 fun LxBottomBar(
     selected: Destination,
     onSelect: (Destination) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        shadowElevation = 12.dp,
-        tonalElevation = 2.dp,
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(32.dp),
+        // Frosted look: a much more translucent surface lets the scrolled
+        // content bleed through (the "light-through" read), with a soft
+        // shadow keeping the bar legible over any background.
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+        shadowElevation = 16.dp,
+        tonalElevation = 0.dp,
     ) {
         Row(
             modifier = Modifier
