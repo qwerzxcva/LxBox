@@ -9,6 +9,7 @@ import com.leadaxe.aibox.app.DnsRule
 import com.leadaxe.aibox.app.DnsRuleActionReject
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
 import com.leadaxe.aibox.app.DnsServerState
+import com.leadaxe.aibox.app.FakeIpScopeProxyOnly
 import com.leadaxe.aibox.app.FakeIpServerTag
 import com.leadaxe.aibox.app.LbStrategyRoundRobin
 import com.leadaxe.aibox.app.MuxProtocolH2mux
@@ -297,12 +298,43 @@ object ConfigCompiler {
         }
     }
 
+    /**
+     * Domain matchers (suffix/keyword/regex forms, as dns-rule values) of
+     * every enabled route rule that routes to a direct exit — used by the
+     * proxyOnly fake-IP scope to build its exclusion list.
+     */
+    private fun directBoundDomainMatchers(rules: List<RouteRule>): List<String> = buildList {
+        fun visit(rule: RouteRule) {
+            if (!rule.enabled) return
+            val isDirect = rule.kind == RouteRule.KindInline && (
+                (rule.outbound == DirectOutboundTag && rule.action == RouteRule.RuleActionRoute) ||
+                    rule.rules.any { it.outbound == DirectOutboundTag }
+                )
+            if (isDirect) {
+                rule.domainSuffix.forEach(::add)
+                rule.domain.forEach(::add)
+                rule.domainKeyword.forEach(::add)
+            }
+            rule.rules.forEach(::visit)
+        }
+        rules.forEach(::visit)
+    }
+
     private fun compileDnsRules(state: AppState, finalServer: String): List<JsonObject> = buildList {
         // Fake-IP rules run first: when the pool is on, lookups that should
         // be faked also need the "rest" routed through the normal chain, or
         // every domain ends up on the fake range and rule matching breaks.
         if (state.enableFakeIp) {
-            val filter = state.fakeIpFilter.map { it.trim() }.filter { it.isNotEmpty() }
+            // Scope: proxyOnly merges the user's filter with the domain
+            // matchers of every direct-bound route rule — direct-bound
+            // domains must resolve to real addresses, or the direct dial
+            // would carry a fake IP no local network can route.
+            val filter = buildList {
+                state.fakeIpFilter.map { it.trim() }.filterTo(this) { it.isNotEmpty() }
+                if (state.fakeIpScope == FakeIpScopeProxyOnly) {
+                    directBoundDomainMatchers(state.routeRules).forEach(::add)
+                }
+            }.distinct()
             if (filter.isEmpty()) {
                 // Everything is faked; `final` still resolves for the
                 // domains excluded by rule ordering.

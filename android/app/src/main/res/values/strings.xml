@@ -378,6 +378,12 @@
     <string name="subs_ech_config_hint">Leave empty to auto-fetch from the node DNS HTTPS record</string>
     <string name="subs_edit">Edit subscription</string>
     <string name="dns_response_rcode">Response rcode</string>
+    <string name="dns_rule_action">Action</string>
+    <string name="dns_rule_action_route">Route to server</string>
+    <string name="dns_rule_action_reject">Reject (block query)</string>
+    <string name="dns_rule_action_route_options">Route options only</string>
+    <string name="dns_clash_mode">Apply in modes</string>
+    <string name="dns_json_rule_notice">This rule was created from a route rule (JSON form). Edit its matchers from the route rule, or the JSON body below.</string>
     <string name="dns_response_rcode_hint">Match DNS responses by return code, e.g. NOERROR, NXDOMAIN, SERVFAIL.</string>
     <string name="routes_sync_dns_desc">lxbox-style: the compiler derives a DNS rule from the domain matchers of this rule — nothing is copied into the DNS rule list.</string>
     <string name="routes_sync_dns_server">DNS resolution for this rule</string>

@@ -376,6 +376,12 @@
     <string name="subs_ech_config_hint">留空 = 从节点的 DNS HTTPS 记录自动获取</string>
     <string name="subs_edit">编辑订阅</string>
     <string name="dns_response_rcode">响应码匹配（rcode）</string>
+    <string name="dns_rule_action">动作</string>
+    <string name="dns_rule_action_route">转发到服务器</string>
+    <string name="dns_rule_action_reject">拒绝（阻断查询）</string>
+    <string name="dns_rule_action_route_options">仅设置路由选项</string>
+    <string name="dns_clash_mode">生效模式</string>
+    <string name="dns_json_rule_notice">此规则由路由规则创建（JSON 形式）。请在路由规则中编辑匹配条件，或直接查看下方 JSON。</string>
     <string name="dns_response_rcode_hint">按 DNS 应答码匹配，如 NOERROR、NXDOMAIN、SERVFAIL。</string>
     <string name="routes_sync_dns_desc">lxbox 式联动：编译时按此规则的域名条件自动生成 DNS 规则 — 不会往 DNS 规则列表里复制条目。</string>
     <string name="routes_sync_dns_server">本规则的 DNS 解析</string>

@@ -366,8 +366,14 @@ internal fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedWith
     onMove: (Int, Int) -> Unit,
     itemContent: @Composable (Int, T) -> Unit,
 ) {
+    // Duplicate-content rows (two identical rules) must not collide on the
+    // LazyColumn key — that throws and takes the whole screen down. The
+    // index suffix disambiguates while keeping keys stable enough for the
+    // drag-reorder animation within a single composition pass.
+    val keyUses = HashMap<Any, Int>()
     items.forEachIndexed { index, value ->
-        item(key = "route-${value.hashCode()}") {
+        val occurrence = keyUses.merge(value.hashCode(), 1, Int::plus) ?: 0
+        item(key = "route-$index-${value.hashCode()}-$occurrence") {
             DragDropRow(
                 index = index,
                 itemsCount = items.size,

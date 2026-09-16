@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
@@ -46,6 +47,10 @@ import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsDetourDirect
 import com.leadaxe.aibox.app.DnsDetourProxy
 import com.leadaxe.aibox.app.DnsRule
+import com.leadaxe.aibox.app.DnsRuleActionReject
+import com.leadaxe.aibox.app.DnsRuleActionRoute
+import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
+import com.leadaxe.aibox.app.DnsRuleActions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.DnsServerTypes
 import com.leadaxe.aibox.app.DnsStrategies
@@ -706,6 +711,7 @@ private fun DnsRuleEditorPage(
     var clashMode by remember { mutableStateOf(initial?.clashMode ?: emptyList()) }
     var responseRcode by remember { mutableStateOf(initial?.responseRcode ?: emptyList()) }
     var server by remember { mutableStateOf(initial?.server.orEmpty()) }
+    var action by remember { mutableStateOf(initial?.action ?: DnsRuleActionRoute) }
     var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
     var invert by remember { mutableStateOf(initial?.invert ?: false) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
@@ -740,6 +746,7 @@ private fun DnsRuleEditorPage(
                         packageName = packageName,
                         clashMode = clashMode,
                         responseRcode = responseRcode,
+                        action = action,
                         server = server,
                         clientSubnet = clientSubnet,
                         invert = invert,
@@ -757,6 +764,28 @@ private fun DnsRuleEditorPage(
                 .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // JSON-kind rules (the route-sync "sync-…" rules) carry their
+            // matchers in the JSON body: showing the inline matchers here
+            // would be a lie — saving them would strip the body. Edit them
+            // as JSON or from the route rule that created them.
+            if (initial?.kind == DnsRule.KindJson) {
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(R.string.dns_json_rule_notice),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                        StringField(
+                            label = stringResource(R.string.routes_json_body),
+                            value = initial.json,
+                            onValueChange = { },
+                            minLines = 4,
+                            maxLines = 12,
+                        )
+                    }
+                }
+            }
             StringField(
                 label = stringResource(R.string.dns_name),
                 value = name,
@@ -789,53 +818,73 @@ private fun DnsRuleEditorPage(
                 onValuesChange = { queryType = it },
                 placeholder = "A, AAAA, HTTPS, SVCB…",
             )
-            ListField(
-                label = stringResource(R.string.dns_response_rcode),
-                values = responseRcode,
-                onValuesChange = { responseRcode = it },
-                placeholder = "NOERROR, NXDOMAIN, SERVFAIL",
-                supporting = stringResource(R.string.dns_response_rcode_hint),
-            )
+            if (action == DnsRuleActionReject) {
+                // Response-code matching is a reject-rule concern: which
+                // upstream answers should be swallowed.
+                ListField(
+                    label = stringResource(R.string.dns_response_rcode),
+                    values = responseRcode,
+                    onValuesChange = { responseRcode = it },
+                    placeholder = "NOERROR, NXDOMAIN, SERVFAIL",
+                    supporting = stringResource(R.string.dns_response_rcode_hint),
+                )
+            }
             ListField(
                 label = stringResource(R.string.routes_field_package),
                 values = packageName,
                 onValuesChange = { packageName = it },
             )
             MultiChoiceChips(
-                label = stringResource(R.string.routes_logical_mode),
+                label = stringResource(R.string.dns_clash_mode),
                 options = com.leadaxe.aibox.app.ClashModes,
                 selected = clashMode,
                 onToggle = { m ->
                     clashMode = if (m in clashMode) clashMode - m else clashMode + m
                 },
             )
+            // Action: route (to a server) / reject (block the query) /
+            // route-options (attach strategy options without terminating).
+            // The fields below follow the action: reject needs no target
+            // server, and the response-code matcher only applies to reject.
             SingleChoiceChips(
-                label = stringResource(R.string.dns_target_server),
-                options = listOf("") + state.dnsServers.map { it.tag },
-                selected = server,
-                onSelect = { server = it },
+                label = stringResource(R.string.dns_rule_action),
+                options = DnsRuleActions,
+                selected = action,
+                onSelect = { action = it },
                 display = {
-                    if (it.isEmpty()) stringResource(R.string.dns_target_system)
-                    else state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                    when (it) {
+                        DnsRuleActionReject -> stringResource(R.string.dns_rule_action_reject)
+                        DnsRuleActionRouteOptions -> stringResource(R.string.dns_rule_action_route_options)
+                        else -> stringResource(R.string.dns_rule_action_route)
+                    }
                 },
             )
+            if (action != DnsRuleActionReject) {
+                SingleChoiceChips(
+                    label = stringResource(R.string.dns_target_server),
+                    options = listOf("") + state.dnsServers.map { it.tag },
+                    selected = server,
+                    onSelect = { server = it },
+                    display = {
+                        if (it.isEmpty()) stringResource(R.string.dns_target_system)
+                        else state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
+                    },
+                )
+            }
             SwitchRow(
                 label = stringResource(R.string.routes_invert),
                 checked = invert,
                 onCheckedChange = { invert = it },
             )
-            StringField(
-                label = stringResource(R.string.routes_client_subnet),
-                value = clientSubnet,
-                onValueChange = { clientSubnet = it },
-                placeholder = "1.2.3.0/24",
-                supporting = stringResource(R.string.hint_client_subnet),
-            )
-            SwitchRow(
-                label = stringResource(R.string.routes_enabled),
-                checked = enabled,
-                onCheckedChange = { enabled = it },
-            )
+            if (action != DnsRuleActionReject) {
+                StringField(
+                    label = stringResource(R.string.routes_client_subnet),
+                    value = clientSubnet,
+                    onValueChange = { clientSubnet = it },
+                    placeholder = "1.2.3.0/24",
+                    supporting = stringResource(R.string.hint_client_subnet),
+                )
+            }
         }
     }
 }
