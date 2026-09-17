@@ -2,6 +2,7 @@ package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -75,6 +76,8 @@ import kotlinx.serialization.json.putJsonArray
 
 @Composable
 fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
+    var rulesExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+    var builtinSectionExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var builtinSniffExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var builtinIpv6Expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var builtinUnknownExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
@@ -151,19 +154,35 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
             }
         }
         item {
-            Column {
-                SectionHeader(stringResource(R.string.routes_section_rules, state.routeRules.size))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    SectionHeader(stringResource(R.string.routes_section_rules, state.routeRules.size))
+                    Text(
+                        stringResource(R.string.routes_exec_order_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
+                    )
+                }
                 Text(
-                    stringResource(R.string.routes_exec_order_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
+                    stringResource(
+                        if (rulesExpanded) R.string.common_collapse else R.string.common_expand,
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .clickable { rulesExpanded = !rulesExpanded },
                 )
             }
         }
 
         itemsIndexedWithActions(
-            items = state.routeRules,
+            items = if (rulesExpanded) state.routeRules else emptyList<RouteRule>(),
             onMove = { from, to ->
                 store.update { st ->
                     val list = st.routeRules.toMutableList()
@@ -198,7 +217,23 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
         // order. The fallback (final) rule gets its own card right after
         // the user rules — it is the tail of that list, not a hidden built-in.
         item {
-            SectionHeader(stringResource(R.string.routes_section_builtin))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SectionHeader(stringResource(R.string.routes_section_builtin))
+                Text(
+                    stringResource(
+                        if (builtinSectionExpanded) R.string.common_collapse else R.string.common_expand,
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .clickable { builtinSectionExpanded = !builtinSectionExpanded },
+                )
+            }
         }
         item {
             CollapsibleSection(
@@ -542,6 +577,11 @@ private fun RuleCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
+    SwipeToDeleteRow(
+        item = rule,
+        key = rule.id,
+        onDelete = onDelete,
+    ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             // One line per rule, Karing-style: a compact matcher summary on
@@ -562,11 +602,9 @@ private fun RuleCard(
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
                 }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
-                }
             }
         }
+    }
     }
 }
 

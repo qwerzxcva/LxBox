@@ -77,6 +77,7 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     // Server create/edit are inline expanding forms (no popup dialog):
     // showAddForm renders a fresh form card under the section header;
     // editingServerId swaps that server's card for the form in place.
+    var serversExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     var editingServerId by rememberSaveable { mutableStateOf<String?>(null) }
     var showAddForm by rememberSaveable { mutableStateOf(false) }
     // Collapsed-by-default advanced DNS sections.
@@ -126,7 +127,23 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     ) {
         // Title first, then the add action: the page reads as "DNS servers
         // — add one — the list", not "an action floating above a title".
-        item { SectionHeader(stringResource(R.string.dns_section_servers, state.dnsServers.size)) }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SectionHeader(stringResource(R.string.dns_section_servers, state.dnsServers.size))
+                Text(
+                    stringResource(if (serversExpanded) R.string.common_collapse else R.string.common_expand),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .clickable { serversExpanded = !serversExpanded },
+                )
+            }
+        }
         // Add server: an inline expanding form, not a popup. The trigger is
         // a quiet dashed-style row; tapping it unfolds the full editor card
         // in the list where the new entry will live.
@@ -149,7 +166,7 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 })
             }
         }
-        items(state.dnsServers, key = { it.id }) { srv ->
+        if (serversExpanded) items(state.dnsServers, key = { it.id }) { srv ->
             if (editingServerId == srv.id) {
                 DnsServerFormCard(
                     title = stringResource(R.string.dns_edit_server),
