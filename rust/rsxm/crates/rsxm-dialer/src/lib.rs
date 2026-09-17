@@ -9,11 +9,15 @@
 pub mod fingerprints;
 pub mod hello;
 pub mod module;
+pub mod shadowsocks;
 pub mod tls13;
+pub mod trojan;
 pub mod vless;
 
 pub use fingerprints::{build_table as build_fingerprint_table, known_names as known_fingerprint_names, lookup as lookup_fingerprint};
 pub use module::{DialerModule, OutboundInfo};
+pub use shadowsocks::{SocksAddr, Ss2022Config, SsConfigError, SsMethod, SsSession, decrypt, encrypt, hkdf_derive, hmac_sha256};
+pub use trojan::{TrojanConfig, TrojanError, recv_response, send_greeting};
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
