@@ -1,6 +1,7 @@
 package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,22 +124,6 @@ fun RuleEditorPage(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(
-                    enabled = !(kind == RouteRule.KindJson && jsonProblem != null),
-                    onClick = {
-                        onSave(
-                            compose(
-                                initial = initial,
-                                name = name, kind = kind, action = action, outbound = outbound,
-                                syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
-                                overrideAddress = overrideAddress,
-                                enabled = enabled, jsonBody = jsonBody,
-                                ipFamily = ipFamily, ipPreference = ipPreference,
-                                branches = branches,
-                            ),
-                        )
-                    },
-                ) { Text(stringResource(R.string.common_save)) }
             }
 
             Column(
@@ -237,8 +222,19 @@ fun RuleEditorPage(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            // Action + combine + invert on one row, English
-                            // tokens as the user asked ("or" "and" "invert").
+                            // Action + outbound live in a collapsed section
+                            // (the current action is the subtitle).
+                            var actionExpanded by remember { mutableStateOf(false) }
+                            CollapsibleSection(
+                                title = stringResource(R.string.routes_action),
+                                expanded = actionExpanded,
+                                onToggle = { actionExpanded = !actionExpanded },
+                                subtitle = when (action) {
+                                    RouteRule.RuleActionReject -> stringResource(R.string.routes_action_reject)
+                                    RouteRule.RuleActionResolve -> stringResource(R.string.routes_action_resolve)
+                                    else -> stringResource(R.string.routes_action_route)
+                                },
+                            ) {
                             SingleChoiceChips(
                                 label = stringResource(R.string.routes_action),
                                 options = listOf(
@@ -261,13 +257,37 @@ fun RuleEditorPage(
                                         state.outboundGroups.filter { it.enabled }.map { it.tag } +
                                         state.outbounds.map { it.tag }
                                 }
-                                SingleChoiceChips(
-                                    label = stringResource(R.string.routes_outbound),
-                                    options = outboundOptions,
-                                    selected = outbound,
-                                    onSelect = { outbound = it },
-                                    display = { outboundDisplayLabel(it, state) },
-                                )
+                                // karing-style: rows with a tick on the
+                                // selected outbound (scannable with many nodes).
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        stringResource(R.string.routes_outbound),
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                    outboundOptions.forEach { option ->
+                                        val selected = option == outbound
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { outbound = option }
+                                                .padding(vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                outboundDisplayLabel(option, state),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            if (selected) {
+                                                Icon(
+                                                    Icons.Outlined.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 // Destination override: rewrite where matched
                                 // connections go (host, host:port, or bare port).
                                 StringField(
@@ -278,11 +298,29 @@ fun RuleEditorPage(
                                     supporting = stringResource(R.string.routes_override_hint),
                                 )
                             }
+                            }
                             SwitchRow(
                                 label = stringResource(R.string.routes_enabled),
                                 checked = enabled,
                                 onCheckedChange = { enabled = it },
                             )
+                            Button(
+                                enabled = !(kind == RouteRule.KindJson && jsonProblem != null),
+                                onClick = {
+                                    onSave(
+                                        compose(
+                                            initial = initial,
+                                            name = name, kind = kind, action = action, outbound = outbound,
+                                            syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
+                                            overrideAddress = overrideAddress,
+                                            enabled = enabled, jsonBody = jsonBody,
+                                            ipFamily = ipFamily, ipPreference = ipPreference,
+                                            branches = branches,
+                                        ),
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(R.string.common_save)) }
                             // Reject carries no DNS semantics: there is no
                             // resolution to shape and no query to steer, so
                             // the ECS and DNS-linkage fields would be dead

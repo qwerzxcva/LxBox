@@ -31,6 +31,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -71,7 +72,7 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     val fetcher = remember { SubscriptionFetcher(context) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var addDialog by remember { mutableStateOf(false) }
+    var showAddForm by remember { mutableStateOf(false) }
     var addDialogFolderId by remember { mutableStateOf<String?>(null) }
     var pasteDialog by remember { mutableStateOf(false) }
     var creatingFolder by remember { mutableStateOf(false) }
@@ -126,8 +127,11 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
             // its own add affordance, so this row stays short.
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = { addDialog = true }) {
-                        Icon(Icons.Outlined.Add, contentDescription = null)
+                    FilledTonalButton(onClick = { showAddForm = !showAddForm }) {
+                        Icon(
+                            if (showAddForm) Icons.Outlined.ExpandLess else Icons.Outlined.Add,
+                            contentDescription = null,
+                        )
                         Text(stringResource(R.string.subs_add))
                     }
                     FilledTonalButton(onClick = {
@@ -373,7 +377,7 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                                     // folder: a folder card is where a user
                                     // naturally wants to put a new source.
                                     addDialogFolderId = folder.id
-                                    addDialog = true
+                                    showAddForm = true
                                 }) {
                                     Icon(
                                         Icons.Outlined.Add,
@@ -405,12 +409,12 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
         ) { Snackbar(snackbarData = it) }
     }
 
-    if (addDialog) {
-        AddSubscriptionDialog(
+    if (showAddForm) {
+        AddSubscriptionFormCard(
             state = state,
             presetGroupId = addDialogFolderId,
             onDismiss = {
-                addDialog = false
+                showAddForm = false
                 addDialogFolderId = null
             },
             onAdd = { sub ->
@@ -468,7 +472,7 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                             )
                         }
                 }
-                addDialog = false
+                showAddForm = false
             },
         )
     }
@@ -953,7 +957,7 @@ private fun PingBadge(state: PingState?) {
 }
 
 @Composable
-private fun AddSubscriptionDialog(
+private fun AddSubscriptionFormCard(
     state: com.leadaxe.aibox.app.AppState,
     presetGroupId: String? = null,
     onDismiss: () -> Unit,
@@ -981,10 +985,19 @@ private fun AddSubscriptionDialog(
         state.dnsServers.filter { it.type == "https" || it.type == "h3" }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.subs_add)) },
-        text = {
+        // Inline expanding form card: no dialog. The outer LazyColumn owns
+    // scrolling; this is a plain card at the top of the list.
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                stringResource(R.string.subs_add),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
             FormBody {
                 StringField(
                     label = stringResource(R.string.subs_name_optional),
@@ -1127,40 +1140,47 @@ private fun AddSubscriptionDialog(
                         },
                     )
                 }
+                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.subs_cancel))
+                }
+                Button(
+                    onClick = {
+                        onAdd(
+                            com.leadaxe.aibox.app.Subscription(
+                                id = UUID.randomUUID().toString(),
+                                name = name,
+                                url = url,
+                                groupId = groupId,
+                                fetchVia = fetchVia,
+                                dnsServer = resolver,
+                                customDnsServer = customResolver,
+                                routeBySuffix = routeBySuffix,
+                                deduplicate = deduplicate,
+                                userAgent = userAgent,
+                                tlsFingerprint = tlsFingerprint,
+                                maskHwid = maskHwid,
+                                enableEch = enableEch,
+                                echQueryServerName = echQueryServerName,
+                                echConfig = echConfig,
+                                updateIntervalHours = updateInterval,
+                            ),
+                        )
+                    },
+                    enabled = url.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(stringResource(R.string.subs_add_action))
+                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onAdd(
-                        com.leadaxe.aibox.app.Subscription(
-                            id = UUID.randomUUID().toString(),
-                            // Blank name = the panel's profile-title fills it
-                            // in on the first successful fetch.
-                            name = name,
-                            url = url,
-                            groupId = groupId,
-                            fetchVia = fetchVia,
-                            dnsServer = resolver,
-                            customDnsServer = customResolver,
-                            routeBySuffix = routeBySuffix,
-                            deduplicate = deduplicate,
-                            userAgent = userAgent,
-                            tlsFingerprint = tlsFingerprint,
-                            maskHwid = maskHwid,
-                            enableEch = enableEch,
-                            echQueryServerName = echQueryServerName,
-                            echConfig = echConfig,
-                            updateIntervalHours = updateInterval,
-                        ),
-                    )
-                },
-                enabled = url.isNotBlank(),
-            ) { Text(stringResource(R.string.subs_add_action)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.subs_cancel)) } },
-    )
+        }
+    }
 }
+
 
 @Composable
 private fun PasteLinkDialog(
