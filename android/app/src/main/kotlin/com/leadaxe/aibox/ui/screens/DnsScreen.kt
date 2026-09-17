@@ -518,6 +518,11 @@ private fun DnsServerCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
+    SwipeToDeleteRow(
+        item = server,
+        key = server.id,
+        onDelete = onDelete,
+    ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.outlinedCardColors(),
@@ -546,6 +551,8 @@ private fun DnsServerCard(
             }
         }
     }
+    }
+
 }
 
 /** Human label for one final-resolver option (shortcut, server tag, auto). */

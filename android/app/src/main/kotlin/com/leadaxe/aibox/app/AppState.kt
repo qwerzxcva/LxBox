@@ -387,7 +387,11 @@ val MuxProtocols = listOf(MuxProtocolH2mux, MuxProtocolSmux, MuxProtocolYamux)
  * the request through the direct outbound; everything else maps to the
  * sing-box server type of the same name.
  */
-val DnsServerTypes = listOf("local", "direct", "hosts", "udp", "tcp", "tls", "https", "quic", "h3", "group")
+// local/direct are compiler-synthesized (final:proxy / final:direct
+// shortcuts) and never user-selectable; hosts is a local table, not a
+// network server, but stays here because its entries are configured
+// per-server in the form card.
+val DnsServerTypes = listOf("hosts", "udp", "tcp", "tls", "https", "quic", "h3", "group")
 
 /**
  * DNS hosts entries for the `hosts` transport: domain → IP (one per line
