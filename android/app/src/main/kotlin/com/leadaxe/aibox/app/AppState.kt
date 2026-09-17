@@ -34,19 +34,29 @@ data class AppState(
      */
     val fakeIpBypass: Boolean = true,
     /**
-     * Where "unknown traffic" goes — connections that matched no user rule
-     * and are not DNS. Empty = the main proxy selector (sing-box `final`).
-     * Set to a node/group tag or "direct" to steer the fallback.
+     * Unknown traffic — connections whose owning app cannot be identified
+     * (background / foreign processes, e.g. tethering or root daemons).
+     * This is lxbox's "unknown traffic" rule: it is NOT the rule fallback.
+     * Empty = let them bypass the VPN (direct) so they are not silently
+     * proxied; set to a tag or "proxy"/"block" to steer them explicitly.
      */
     val unknownTrafficOutbound: String = "",
     /**
-     * Fallback route mode rendered as the last rule of the rules list:
-     * "direct" keeps the built-in unknown-traffic exit (final) as-is;
-     * "proxy" forces a package-less catch-all proxy rule appended after
-     * every user rule. Kept in sync with [unknownTrafficOutbound] —
-     * choosing reject/block there still wins.
+     * Fallback rule — the last rule of the routing table, applied to traffic
+     * that matched NO rule above. Kept strictly separate from
+     * [unknownTrafficOutbound] which keys off app attribution.
+     * "direct" (default) → the direct outbound; "proxy" → the proxy exit.
      */
-    val fallbackRouteMode: String = "",
+    val fallbackRouteMode: String = "direct",
+
+    /**
+     * Load balancing for the single built-in proxy exit group (the outbound
+     * group editor is gone): strategy, top-N (use the N fastest nodes
+     * concurrently), and the sticky-session TTL.
+     */
+    val lbStrategy: String = "round-robin",
+    val lbTopN: Int = 1,
+    val lbTtl: String = "",
     /**
      * Reject broken IPv6 (built-in): when the default interface has no
      * public IPv6 (2000::/3), reject all IPv6-destined connections instead
@@ -341,6 +351,7 @@ const val ColorModeLight = 1
 const val ColorModeDark = 2
 
 const val ProxySelectorTag = "proxy"
+const val LoadBalanceTag = "lb"
 const val DirectOutboundTag = "direct"
 const val BlockOutboundTag = "block"
 const val DnsOutboundTag = "dns-out"
@@ -729,8 +740,16 @@ data class OutboundGroup(
      * not a load-balance group.
      */
     val lbStrategy: String = "",
-    /** Load-balance TTL for sticky sessions, e.g. "1h". Empty = engine default. */
+    /**
+     * Load-balance TTL for sticky sessions, e.g. "1h". Empty = engine default.
+     */
     val lbTtl: String = "",
+    /**
+     * Top-N load balancing: use the N fastest nodes simultaneously (by the
+     * kernel's urltest ordering). 0 or 1 = single fastest node. This is the
+     * "允许同时使用 n 个节点" behaviour: N nodes serve traffic concurrently.
+     */
+    val lbTopN: Int = 0,
 ) {
     val tag: String get() = "group-$id"
 

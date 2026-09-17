@@ -67,16 +67,16 @@ class ConfigCompilerFallbackTest {
         // Proxy fallback: an explicit catch-all proxy rule closes the table.
         val proxy = compile(AppState(fallbackRouteMode = FallbackRouteProxy))
         val last = fallbackRuleOf(proxy)!!
-        assertEquals("proxy", last["outbound"]!!.jsonPrimitive.content)
+        assertEquals("lb", last["outbound"]!!.jsonPrimitive.content)
         assertEquals(ClashModeRule, last["clash_mode"]!!.jsonPrimitive.content)
 
         // Direct fallback: same position, direct outbound.
         val direct = compile(AppState(fallbackRouteMode = FallbackRouteDirect))
         assertEquals("direct", fallbackRuleOf(direct)!!["outbound"]!!.jsonPrimitive.content)
 
-        // No fallback mode: no explicit catch-all rule.
+        // Default: fallback = direct, so a catch-all direct rule exists.
         val none = compile(AppState())
-        assertNull(fallbackRuleOf(none))
+        assertEquals("direct", fallbackRuleOf(none)!!["outbound"]!!.jsonPrimitive.content)
     }
 
     @Test

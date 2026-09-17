@@ -486,6 +486,11 @@ fun SettingsScreen() {
             }
         }
 
+        // Load balancing (moved here from the removed outbound-group
+        // editor): the single built-in exit group uses these settings.
+        item {
+            LoadBalanceSection(store = store)
+        }
         item {
             BatterySection(store = store)
         }
@@ -660,4 +665,54 @@ private fun SettingsSection(
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+/**
+ * Load balancing for the single built-in proxy exit group: strategy, top-N
+ * (use the N fastest nodes simultaneously), and sticky-session TTL.
+ */
+@Composable
+private fun LoadBalanceSection(store: com.leadaxe.aibox.app.AppStateStore) {
+    val state by store.state.collectAsState()
+    SettingsSection(stringResource(R.string.settings_lb_section)) {
+        SingleChoiceChips(
+            label = stringResource(R.string.groups_lb_strategy),
+            options = com.leadaxe.aibox.app.LbStrategies,
+            selected = state.lbStrategy,
+            onSelect = { v -> store.update { it.copy(lbStrategy = v) } },
+            display = {
+                when (it) {
+                    com.leadaxe.aibox.app.LbStrategyConsistentHashing -> stringResource(R.string.groups_lb_hashing)
+                    com.leadaxe.aibox.app.LbStrategyStickySessions -> stringResource(R.string.groups_lb_sticky)
+                    else -> stringResource(R.string.groups_lb_round_robin)
+                }
+            },
+        )
+        // Top-N: how many of the fastest nodes serve traffic at once.
+        Text(
+            stringResource(R.string.settings_lb_top_n, state.lbTopN.takeIf { it > 0 } ?: 0),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(1, 2, 3, 4, 8).forEach { n ->
+                FilterChip(
+                    selected = state.lbTopN == n,
+                    onClick = { store.update { it.copy(lbTopN = n) } },
+                    label = { Text(n.toString()) },
+                )
+            }
+        }
+        Text(
+            stringResource(R.string.settings_lb_top_n_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        StringField(
+            label = stringResource(R.string.settings_lb_ttl),
+            value = state.lbTtl,
+            onValueChange = { v -> store.update { it.copy(lbTtl = v) } },
+            placeholder = "1h",
+            supporting = stringResource(R.string.settings_lb_ttl_desc),
+        )
+    }
 }

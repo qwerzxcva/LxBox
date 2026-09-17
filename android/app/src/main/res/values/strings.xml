@@ -330,7 +330,7 @@
     <string name="settings_mux_flow_hint">Nodes carrying a flow value (xtls-rprx-vision) bypass mux automatically — the combination is rejected by the core.</string>
 
     <!-- built-in rule presets -->
-    <string name="preset_section">Built-in rule sets</string>
+    <string name="preset_section">Built-in rules</string>
     <string name="preset_add">Add</string>
     <string name="preset_added">Added</string>
     <string name="preset_installed">Installed — its rules are in the list above; enable, edit or delete them there.</string>
@@ -375,7 +375,12 @@
     <string name="settings_ntp">Clock sync (NTP)</string>
     <string name="settings_ntp_desc">Reality and shadowsocks-2022 reject handshakes outside a ±30 s clock window; the core syncs via SNTP every 30 minutes to prevent \'node suddenly broke\'.</string>
     <string name="settings_section_sniffer">Sniffer</string>
-    <string name="settings_section_logging">Logging</string>
+        <string name="settings_lb_section">Load balancing</string>
+    <string name="settings_lb_top_n">Use the %1$d fastest nodes at once (top-N)</string>
+    <string name="settings_lb_ttl">Sticky session TTL</string>
+    <string name="settings_lb_ttl_desc">How long a sticky session keeps using the same node, e.g. 1h. Leave empty for the engine default.</string>
+    <string name="settings_lb_top_n_desc">The exit group uses the N lowest-latency nodes concurrently. If a rule excludes one of them, the next fastest available node takes its place.</string>
+<string name="settings_section_logging">Logging</string>
     <string name="settings_section_language">Language</string>
     <string name="settings_color_mode">Color mode</string>
     <string name="settings_color_system">System</string>
@@ -432,6 +437,7 @@
     <string name="routes_builtin_reject_ipv6_desc">Rejects IPv6 connections when the current network has no public IPv6 (2000::/3) — dead-route traffic fails fast instead of hanging until timeout.</string>
     <string name="routes_builtin_reject_ipv6_enable">Enable</string>
     <string name="routes_builtin_reject_ipv6_enable_desc">Applies while the tunnel is up; the rule is a logical AND (IPv6 AND no public IPv6 on the default interface), rejected with no_drop so dead traffic fails immediately.</string>
+    <string name="routes_unknown_traffic_bypass">Bypass VPN (direct)</string>
     <string name="routes_unknown_traffic_target">Target for unknown traffic</string>
     <string name="routes_builtin_hijack_dns">Hijack DNS</string>
     <string name="routes_builtin_hijack_dns_enable">Enable</string>

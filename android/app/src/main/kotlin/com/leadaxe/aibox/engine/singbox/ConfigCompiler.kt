@@ -5,6 +5,7 @@ import com.leadaxe.aibox.app.BlockOutboundTag
 import com.leadaxe.aibox.app.ClashModeDirect
 import com.leadaxe.aibox.app.ClashModeGlobal
 import com.leadaxe.aibox.app.ClashModeRule
+import com.leadaxe.aibox.app.LoadBalanceTag
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsOutboundTag
 import com.leadaxe.aibox.app.DnsFinalDirect
@@ -637,11 +638,11 @@ object ConfigCompiler {
         val exit = when {
             state.unknownTrafficOutbound.isNotBlank() -> state.unknownTrafficOutbound
             state.fallbackRouteMode == FallbackRouteDirect -> DirectOutboundTag
-            state.fallbackRouteMode == FallbackRouteProxy -> ProxySelectorTag
+            state.fallbackRouteMode == FallbackRouteProxy -> LoadBalanceTag
             else -> ""
         }
         val key = when (exit) {
-            ProxySelectorTag -> "proxy"
+            ProxySelectorTag, LoadBalanceTag -> "proxy"
             DirectOutboundTag -> "direct"
             else -> ""
         }
@@ -735,6 +736,25 @@ object ConfigCompiler {
                 put("default", selected)
             }
             put("interrupt_exist_connections", true)
+        })
+        // Built-in load-balance exit: the N fastest nodes serve traffic
+        // concurrently (top-N). Rules that filter nodes get their own group
+        // above; this one is the shared exit for unfiltered proxy traffic.
+        add(buildJsonObject {
+            put("type", "loadbalance")
+            put("tag", LoadBalanceTag)
+            putJsonArray("outbounds") { nodeTags.forEach(::add) }
+            put("url", state.speedTestUrl.ifBlank { "https://cp.cloudflare.com/generate_204" })
+            put("interval", defaultUrlTestInterval())
+            put("strategy", state.lbStrategy.ifBlank { LbStrategyRoundRobin })
+            if (state.lbTtl.isNotBlank()) put("ttl", state.lbTtl)
+            // Top-N cap: members are ordered by urltest latency, so the head
+            // is the fastest N. Excluded nodes are absent, so the next
+            // fastest fills the slot.
+            val topN = state.lbTopN.takeIf { it > 0 } ?: 1
+            if (nodeTags.size > topN) {
+                putJsonArray("outbounds") { nodeTags.take(topN).forEach(::add) }
+            }
         })
         state.outbounds.forEach { profile ->
             val parsed = runCatching { json.parseToJsonElement(profile.config).jsonObject }
@@ -861,6 +881,16 @@ object ConfigCompiler {
                     if (group.idleTimeout.isNotBlank()) put("idle_timeout", group.idleTimeout)
                     put("strategy", group.lbStrategy.ifBlank { LbStrategyRoundRobin })
                     if (group.lbTtl.isNotBlank()) put("ttl", group.lbTtl)
+                    // Top-N: cap the member list to the N fastest. The kernel
+                    // orders members by urltest latency, so slicing the head
+                    // yields "use the N fastest concurrently". Excluded nodes
+                    // (rule filters) are simply absent, so the next fastest
+                    // takes the slot automatically.
+                    if (group.lbTopN > 0 && members.size > group.lbTopN) {
+                        putJsonArray("outbounds") {
+                            members.take(group.lbTopN).forEach(::add)
+                        }
+                    }
                 }
                 else -> {
                     put("url", group.url.ifBlank { state.speedTestUrl })
@@ -1088,7 +1118,7 @@ object ConfigCompiler {
                 state.unknownTrafficOutbound.isBlank() -> add(buildJsonObject {
                 put("clash_mode", ClashModeRule)
                 put("action", "route")
-                put("outbound", ProxySelectorTag)
+                put("outbound", LoadBalanceTag)
             })
             state.fallbackRouteMode == FallbackRouteDirect &&
                 state.unknownTrafficOutbound.isBlank() -> add(buildJsonObject {
@@ -1283,7 +1313,11 @@ object ConfigCompiler {
             else -> {
                 put("action", "route")
                 val filterGroup = ruleFilterGroupTags[rule.id]
-                put("outbound", filterGroup ?: rule.outbound.ifBlank { ProxySelectorTag })
+                val target = filterGroup ?: when (rule.outbound) {
+                    ProxySelectorTag -> LoadBalanceTag
+                    else -> rule.outbound.ifBlank { LoadBalanceTag }
+                }
+                put("outbound", target)
             }
         }
     }

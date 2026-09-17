@@ -328,7 +328,7 @@
     <string name="settings_mux_flow_hint">带 flow（xtls-rprx-vision）的节点会自动跳过 mux——内核不允许两者共存。</string>
 
     <!-- built-in rule presets -->
-    <string name="preset_section">内置规则集</string>
+    <string name="preset_section">内置规则</string>
     <string name="preset_add">添加</string>
     <string name="preset_added">已添加</string>
     <string name="preset_installed">已安装 — 规则已加入上方列表，可直接启用/编辑/删除。</string>
@@ -373,7 +373,12 @@
     <string name="settings_ntp">时钟同步（NTP）</string>
     <string name="settings_ntp_desc">Reality 与 shadowsocks-2022 都会拒绝超出 ±30 秒时钟窗口的握手；内核每 30 分钟经 SNTP 同步一次，避免「节点突然失效」。</string>
     <string name="settings_section_sniffer">嗅探</string>
-    <string name="settings_section_logging">日志</string>
+        <string name="settings_lb_section">负载均衡</string>
+    <string name="settings_lb_top_n">同时使用最快的 %1$d 个节点（top-N）</string>
+    <string name="settings_lb_ttl">粘性会话时长</string>
+    <string name="settings_lb_ttl_desc">粘性会话保持同一节点的时长，例如 1h。留空则使用内核默认。</string>
+    <string name="settings_lb_top_n_desc">出口组并发使用延迟最低的 N 个节点。若某节点被规则排除，则由可用节点中次快的补上。</string>
+<string name="settings_section_logging">日志</string>
     <string name="settings_section_language">语言</string>
     <string name="settings_color_mode">主题模式</string>
     <string name="settings_color_system">跟随系统</string>
@@ -430,6 +435,7 @@
     <string name="routes_builtin_reject_ipv6_desc">当前网络没有公网 IPv6（2000::/3）时拦截所有 IPv6 连接 — 死路由流量快速失败，而不是挂起直到超时。</string>
     <string name="routes_builtin_reject_ipv6_enable">启用</string>
     <string name="routes_builtin_reject_ipv6_enable_desc">隧道运行期间生效；规则为逻辑 AND（IPv6 且默认接口无公网 IPv6），no_drop 快速失败。</string>
+    <string name="routes_unknown_traffic_bypass">绕过 VPN（直连）</string>
     <string name="routes_unknown_traffic_target">未知流量去向</string>
     <string name="routes_builtin_hijack_dns">劫持 DNS</string>
     <string name="routes_builtin_hijack_dns_enable">启用</string>

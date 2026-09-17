@@ -20,6 +20,8 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CallMissedOutgoing
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DragHandle
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -168,16 +170,33 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                         modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
                     )
                 }
-                Text(
-                    stringResource(
-                        if (rulesExpanded) R.string.common_collapse else R.string.common_expand,
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                // Bigger tap target: a pill with padding, not bare text.
+                androidx.compose.material3.Surface(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier
-                        .padding(horizontal = 12.dp)
+                        .padding(end = 16.dp)
                         .clickable { rulesExpanded = !rulesExpanded },
-                )
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Icon(
+                            if (rulesExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            stringResource(
+                                if (rulesExpanded) R.string.common_collapse else R.string.common_expand,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
             }
         }
 
@@ -209,6 +228,34 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     }
                 },
             )
+        }
+
+        // Unknown traffic (lxbox's 未知流量): connections whose owning app
+        // cannot be attributed (background/foreign processes). NOT the rule
+        // fallback — that one is the tail card above. Empty = bypass VPN.
+        item {
+            CollapsibleSection(
+                title = stringResource(R.string.routes_unknown_traffic),
+                expanded = builtinUnknownExpanded,
+                onToggle = { builtinUnknownExpanded = !builtinUnknownExpanded },
+                subtitle = stringResource(R.string.routes_unknown_traffic_desc),
+            ) {
+                val unknownOptions = listOf("", DirectOutboundTag, BlockOutboundTag, ProxySelectorTag)
+                SingleChoiceChips(
+                    label = stringResource(R.string.routes_unknown_traffic_target),
+                    options = unknownOptions,
+                    selected = state.unknownTrafficOutbound,
+                    onSelect = { v -> store.update { it.copy(unknownTrafficOutbound = v) } },
+                    display = { tag ->
+                        when (tag) {
+                            "" -> stringResource(R.string.routes_unknown_traffic_bypass)
+                            DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+                            BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
+                            else -> stringResource(R.string.dns_detour_proxy)
+                        }
+                    },
+                )
+            }
         }
 
         // Built-in rules, in the order they run in the kernel: sniff →
@@ -279,25 +326,16 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
             }
         }
 
-        // Fallback rule: the tail of the rules list. Anything no rule above
-        // matched lands here. Direct = go straight out; Proxy = route to the
-        // main selector. (Finer targets — a specific node/group, or reject —
-        // remain available in Settings-level unknownTraffic control below.)
+        // Fallback rule: the tail of the rules list — traffic that matched
+        // NO rule above. Strictly separate from unknown traffic (app
+        // attribution, lxbox-style), which lives with the built-ins below.
         item {
             FallbackRuleCard(
                 state = state,
                 mode = state.fallbackRouteMode,
-                finalOutbound = state.unknownTrafficOutbound,
                 onPickMode = { mode ->
-                    store.update {
-                        it.copy(
-                            fallbackRouteMode = mode,
-                            // A mode pick supersedes any custom final target.
-                            unknownTrafficOutbound = "",
-                        )
-                    }
+                    store.update { it.copy(fallbackRouteMode = mode) }
                 },
-                onPickTarget = { tag -> store.update { it.copy(unknownTrafficOutbound = tag) } },
             )
         }
 
@@ -707,9 +745,7 @@ internal fun outboundDisplayLabel(tag: String, state: AppState): String {
 private fun FallbackRuleCard(
     state: AppState,
     mode: String,
-    finalOutbound: String,
     onPickMode: (String) -> Unit,
-    onPickTarget: (String) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -728,11 +764,9 @@ private fun FallbackRuleCard(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = when {
-                        finalOutbound == BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
-                        finalOutbound.isNotBlank() -> stringResource(R.string.routes_fallback_custom)
-                        mode == FallbackRouteDirect -> stringResource(R.string.dns_detour_direct)
-                        else -> stringResource(R.string.routes_unknown_traffic_proxy)
+                    text = when (mode) {
+                        FallbackRouteDirect -> stringResource(R.string.dns_detour_direct)
+                        else -> stringResource(R.string.dns_detour_proxy)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
@@ -747,7 +781,7 @@ private fun FallbackRuleCard(
                 val modes = listOf(FallbackRouteProxy, FallbackRouteDirect)
                 modes.forEachIndexed { index, m ->
                     SegmentedButton(
-                        selected = mode == m && finalOutbound.isBlank(),
+                        selected = mode == m,
                         onClick = { onPickMode(m) },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
                         label = {
@@ -758,39 +792,6 @@ private fun FallbackRuleCard(
                         },
                     )
                 }
-            }
-            // Advanced: override the catch-all with a concrete node/group or
-            // reject. This is the original unknown-traffic picker, kept for
-            // the cases the two-way toggle cannot express.
-            var advanced by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-            TextButton(onClick = { advanced = !advanced }) {
-                Text(
-                    if (advanced) stringResource(R.string.routes_fallback_hide_advanced)
-                    else stringResource(R.string.routes_fallback_show_advanced),
-                )
-            }
-            if (advanced) {
-                val outboundOptions = remember(state.outbounds, state.outboundGroups) {
-                    listOf("", DirectOutboundTag, BlockOutboundTag) +
-                        state.outboundGroups.filter { it.enabled }.map { it.tag } +
-                        state.outbounds.map { it.tag }
-                }
-                SingleChoiceChips(
-                    label = stringResource(R.string.routes_unknown_traffic_target),
-                    options = outboundOptions,
-                    selected = finalOutbound,
-                    onSelect = onPickTarget,
-                    display = { tag ->
-                        when (tag) {
-                            "" -> stringResource(R.string.routes_unknown_traffic_proxy)
-                            DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
-                            BlockOutboundTag -> stringResource(R.string.routes_unknown_traffic_reject)
-                            else -> state.outboundGroups.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
-                                ?: state.outbounds.firstOrNull { it.tag == tag }?.name?.ifBlank { tag }
-                                ?: tag
-                        }
-                    },
-                )
             }
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -107,6 +108,47 @@ fun HomeScreen(
         // The home tab is for *looking* (bettbox-style): status, traffic and
         // mode. Node selection lives in Groups → Nodes; repeating it here
         // made the page a second control surface.
+        // Explicit connection state: the dial alone left the user guessing
+        // whether the tunnel was actually up. A status chip states it.
+        val connectedAt = (boxState as? BoxState.Connected)?.sinceEpochMillis ?: 0L
+        val stateLabel = when (boxState) {
+            is BoxState.Connected -> stringResource(R.string.home_status_connected)
+            is BoxState.Starting -> stringResource(R.string.home_status_starting)
+            is BoxState.Stopping -> stringResource(R.string.home_status_stopping)
+            is BoxState.Error -> stringResource(R.string.home_status_error, boxState.message)
+            else -> stringResource(R.string.home_status_idle)
+        }
+        val stateColor = when (boxState) {
+            is BoxState.Connected -> MaterialTheme.colorScheme.primary
+            is BoxState.Error -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+            color = stateColor.copy(alpha = 0.14f),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(
+                            color = stateColor,
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                        ),
+                )
+                Text(
+                    text = "  $stateLabel" + if (connectedAt > 0L) {
+                        " · ${formatDuration(System.currentTimeMillis() - connectedAt)}"
+                    } else "",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = stateColor,
+                )
+            }
+        }
+
         if (boxState is BoxState.Connected) {
             val via = appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
                 ?.name?.ifBlank { appState.selectedOutbound }
@@ -390,4 +432,12 @@ private fun formatBytes(value: Long): String {
     var u = 0
     while (v >= 1024.0 && u < units.lastIndex) { v /= 1024.0; u++ }
     return "%.1f %s".format(v, units[u])
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
 }

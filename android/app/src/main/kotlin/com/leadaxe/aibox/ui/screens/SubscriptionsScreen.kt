@@ -135,6 +135,18 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
         return
     }
 
+    fun addSubscription(sub: com.leadaxe.aibox.app.Subscription) {
+        store.update { st ->
+            st.copy(
+                subscriptions = st.subscriptions + sub,
+                routeRules = st.routeRules.withSubscriptionRule(sub),
+            )
+        }
+        scope.launch {
+            runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers, existingFor = emptyList()) }
+        }
+    }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             contentPadding = PaddingValues(vertical = 16.dp),
@@ -191,37 +203,26 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 }
             }
 
-            // ----- outbound groups (the tab's namesake, expanded by default)
-            item {
-                CollapsibleSection(
-                    title = stringResource(R.string.groups_section_title),
-                    expanded = groupsExpanded,
-                    onToggle = { groupsExpanded = !groupsExpanded },
-                    count = state.outboundGroups.size,
-                    subtitle = stringResource(R.string.groups_section_short),
-                ) {
-                    state.outboundGroups.forEach { group ->
-                        GroupRow(
-                            group = group,
-                            state = state,
-                            onEdit = { editingGroup = group },
-                            onDelete = {
-                                store.update { st ->
-                                    st.copy(
-                                        outboundGroups = st.outboundGroups.filterNot { it.id == group.id },
-                                        // Drop the selection if it pointed at the deleted group.
-                                        selectedOutbound = st.selectedOutbound.takeIf { it != group.tag } ?: "",
-                                    )
-                                }
-                            },
-                        )
-                    }
-                    FilledTonalButton(onClick = { creatingGroup = true }) {
-                        Icon(Icons.Outlined.Add, contentDescription = null)
-                        Text(stringResource(R.string.groups_add))
-                    }
+            if (showAddForm) {
+                item {
+                    AddSubscriptionFormCard(
+                        state = state,
+                        presetGroupId = addDialogFolderId,
+                        onDismiss = {
+                            showAddForm = false
+                            addDialogFolderId = null
+                        },
+                        onAdd = { sub -> addSubscription(sub) },
+                    )
                 }
             }
+
+
+            // ----- outbound groups (the tab's namesake, expanded by default)
+            // The single built-in exit group replaced user-created outbound
+            // groups (routing rules now filter nodes directly), so the group
+            // editor UI is gone — its load-balance settings moved to
+            // Settings -> Load balancing.
             // Paste link lives with the groups: a pasted source becomes a
             // subscription entry grouped with the panel imports.
             item {
@@ -483,73 +484,7 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
         ) { Snackbar(snackbarData = it) }
     }
 
-    if (showAddForm) {
-        AddSubscriptionFormCard(
-            state = state,
-            presetGroupId = addDialogFolderId,
-            onDismiss = {
-                showAddForm = false
-                addDialogFolderId = null
-            },
-            onAdd = { sub ->
-                store.update { st ->
-                    st.copy(
-                        subscriptions = st.subscriptions + sub,
-                        routeRules = st.routeRules.withSubscriptionRule(sub),
-                    )
-                }
-                scope.launch {
-                    runCatching { fetcher.fetch(sub, dnsServers = state.dnsServers, existingFor = emptyList()) }
-                        .onSuccess { r ->
-                            store.update { st ->
-                                // Blank name: adopt the panel's profile-title
-                                // (or the URL host) so the list stays readable.
-                                val named = if (sub.autoName && sub.name.isBlank()) {
-                                    sub.copy(
-                                        name = r.suggestedName
-                                            ?: runCatching { java.net.URL(sub.url).host }.getOrDefault(sub.url),
-                                    )
-                                } else sub
-                                st.copy(
-                                    outbounds = st.outbounds + r.outbounds,
-                                    subscriptions = st.subscriptions.map {
-                                        if (it.id == named.id) named.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) else it
-                                    },
-                                )
-                            }
-                            val msg = when {
-                                r.outbounds.isNotEmpty() ->
-                                    context.getString(R.string.subs_nodes_added, sub.name.ifBlank { sub.url }, r.outbounds.size)
-                                // Fetched fine but nothing usable came out:
-                                // name the first parse error so the user knows
-                                // whether the panel served another format or
-                                // an expired link.
-                                r.errors.isNotEmpty() ->
-                                    context.getString(
-                                        R.string.subs_no_nodes_reason,
-                                        r.errors.first().reason,
-                                    )
-                                else -> context.getString(R.string.subs_no_nodes_hint)
-                            }
-                            snackbar.showSnackbar(msg)
-                        }
-                        .onFailure {
-                            // Fetch-level failure (network, HTTP, HTML page):
-                            // keep the message the fetcher produced — it
-                            // already names the cause.
-                            snackbar.showSnackbar(
-                                context.getString(
-                                    R.string.subs_fetch_failed,
-                                    sub.name.ifBlank { sub.url },
-                                    it.message ?: "fetch failed",
-                                ),
-                            )
-                        }
-                }
-                showAddForm = false
-            },
-        )
-    }
+
 
     if (pasteDialog) {
         PasteLinkDialog(
