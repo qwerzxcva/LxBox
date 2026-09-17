@@ -45,7 +45,47 @@ object AiboxCore {
         runCatching { nativeRouteCheck(rulesJson, queryJson) }.getOrNull()
     }
 
+    /**
+     * Boots the Rust micro-kernel conductor: registers every leader
+     * (rules / dns / dialer / power / security / stats / tun) and hands each
+     * its own opaque config slice. Returns "ok", or "partial; <failures>".
+     * Null when the native core is unavailable (the Go engine still runs).
+     */
+    fun kernelStart(appStateJson: String): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelStart(appStateJson) }.getOrNull()
+    }
+
+    /** Stops the Rust conductor. Safe to call repeatedly; null when unavailable. */
+    fun kernelStop(): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelStop() }.getOrNull()
+    }
+
+    /** Drains Conductor reports as JSON: [{module,kind,at,message}...]. */
+    fun kernelDrainReports(): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelDrainReports() }.getOrNull()
+    }
+
+    /** Per-module health as JSON: [{module,health}...]. */
+    fun kernelHealth(): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelHealth() }.getOrNull()
+    }
+
     private external fun nativeSnapshotFingerprint(snapshotJson: String): String
 
     private external fun nativeRouteCheck(rulesJson: String, queryJson: String): String
+    private external fun nativeKernelStart(appStateJson: String)
+
+    private external fun nativeKernelStop()
+
+    private external fun nativeKernelDrainReports()
+
+    private external fun nativeKernelHealth()
 }

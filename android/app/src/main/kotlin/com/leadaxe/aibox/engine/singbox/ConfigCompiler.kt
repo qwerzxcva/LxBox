@@ -173,9 +173,18 @@ object ConfigCompiler {
             // through when the proxy chain is the only way out.
             val resolverTag = pickDefaultResolver(state)
             if (resolverTag != null) put("default_domain_resolver", resolverTag)
-            // "Unknown traffic" exit: the route `final` catch-all. Empty =
-            // the main proxy selector.
-            put("final", state.unknownTrafficOutbound.ifBlank { ProxySelectorTag })
+            // Fallback exit for traffic that matched NO rule above (the
+            // tail of the routing table). Controlled by [fallbackRouteMode];
+            // an explicit "unknown traffic" choice (unattributable apps)
+            // overrides it, since that is a stricter, narrower decision.
+            val fallbackTag = when (state.fallbackRouteMode) {
+                FallbackRouteDirect -> DirectOutboundTag
+                else -> LoadBalanceTag
+            }
+            put(
+                "final",
+                state.unknownTrafficOutbound.ifBlank { fallbackTag },
+            )
             put("auto_detect_interface", true)
         }
     }
@@ -1108,30 +1117,18 @@ object ConfigCompiler {
                 put("action", "hijack-dns")
             })
         }
-        // Fallback rule: the tail of the rule-mode table — after the
-        // sniff/hijack action rows, before the clash-mode shortcuts (so
-        // Global/Direct still bypass it). Pinned by the user as proxy or
-        // direct; reject/block on unknownTrafficOutbound is stricter and
-        // wins via route.final without an extra rule.
-        when {
-            state.fallbackRouteMode == FallbackRouteProxy &&
-                state.unknownTrafficOutbound.isBlank() -> add(buildJsonObject {
-                put("clash_mode", ClashModeRule)
-                put("action", "route")
-                put("outbound", LoadBalanceTag)
-            })
-            state.fallbackRouteMode == FallbackRouteDirect &&
-                state.unknownTrafficOutbound.isBlank() -> add(buildJsonObject {
-                put("clash_mode", ClashModeRule)
-                put("action", "route")
-                put("outbound", DirectOutboundTag)
-            })
-        }
+        // No extra fallback rule is emitted: sing-box's route.final already
+        // is the tail catch-all. Emitting a clash_mode=Rule copy would
+        // shadow the user's unknown-traffic choice (the two were the same
+        // kernel slot, which read as a confusing duplicate).
         // Clash-mode shortcuts (Global / Direct bypass the managed rules).
+        // Global routes through the load-balance group, matching the proxy
+        // exit used by rules (so "proxy" always means "fastest available"),
+        // while Direct is the plain direct outbound.
         add(buildJsonObject {
             put("clash_mode", ClashModeGlobal)
             put("action", "route")
-            put("outbound", ProxySelectorTag)
+            put("outbound", LoadBalanceTag)
         })
         add(buildJsonObject {
             put("clash_mode", ClashModeDirect)

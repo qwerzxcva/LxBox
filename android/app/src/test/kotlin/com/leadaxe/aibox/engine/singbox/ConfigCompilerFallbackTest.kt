@@ -6,6 +6,7 @@ import com.leadaxe.aibox.app.ClashModeRule
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.FallbackRouteDirect
 import com.leadaxe.aibox.app.FallbackRouteProxy
+import com.leadaxe.aibox.app.LoadBalanceTag
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -63,20 +64,28 @@ class ConfigCompilerFallbackTest {
     }
 
     @Test
-    fun `fallback rule pins proxy or direct ahead of the mode shortcuts`() {
-        // Proxy fallback: an explicit catch-all proxy rule closes the table.
+    fun `fallback mode drives route final, not a duplicate rule`() {
+        // The fallback IS sing-box's route.final — no extra rule is emitted
+        // (a clash_mode=Rule copy used to shadow the unknown-traffic choice).
         val proxy = compile(AppState(fallbackRouteMode = FallbackRouteProxy))
-        val last = fallbackRuleOf(proxy)!!
-        assertEquals("lb", last["outbound"]!!.jsonPrimitive.content)
-        assertEquals(ClashModeRule, last["clash_mode"]!!.jsonPrimitive.content)
+        assertEquals(
+            LoadBalanceTag,
+            proxy["route"]!!.jsonObject["final"]!!.jsonPrimitive.content,
+        )
+        assertNull(fallbackRuleOf(proxy))
 
-        // Direct fallback: same position, direct outbound.
         val direct = compile(AppState(fallbackRouteMode = FallbackRouteDirect))
-        assertEquals("direct", fallbackRuleOf(direct)!!["outbound"]!!.jsonPrimitive.content)
+        assertEquals(
+            "direct",
+            direct["route"]!!.jsonObject["final"]!!.jsonPrimitive.content,
+        )
 
-        // Default: fallback = direct, so a catch-all direct rule exists.
+        // Default: fallback = direct.
         val none = compile(AppState())
-        assertEquals("direct", fallbackRuleOf(none)!!["outbound"]!!.jsonPrimitive.content)
+        assertEquals(
+            "direct",
+            none["route"]!!.jsonObject["final"]!!.jsonPrimitive.content,
+        )
     }
 
     @Test

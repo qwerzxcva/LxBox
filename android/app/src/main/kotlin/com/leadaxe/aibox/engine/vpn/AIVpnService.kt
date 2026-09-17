@@ -387,6 +387,11 @@ class AIVpnService : VpnService() {
         localProxyTrigger = null
         if (HevTun.isRunning()) HevTun.stop()
         networkMonitor.stop()
+        // Stop the Rust micro-kernel conductor: it runs alongside the Go
+        // engine, so leaving it up kept leaders alive with no tunnel to serve.
+        runCatching {
+            com.leadaxe.aibox.engine.rust.AiboxCore.kernelStop()
+        }
         engine.stop()
         platform.clearTun()
         stopForegroundCompat()

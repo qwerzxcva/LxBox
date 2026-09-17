@@ -93,8 +93,6 @@ data class AppState(
     val localProxyHoldMs: Long = 60_000L,
     /** Extra DNS cache knobs (0 = engine default). */
     val dnsCacheCapacity: Int = 4096,
-    /** DNS cache eviction algorithm: "arc" (default, scan-resistant) or "lru". */
-    val dnsCacheAlgorithm: String = "arc",
     val dnsIndependentCache: Boolean = true,
     /** SNI-based DNS rules should attach client subnet to queries. */
     val dnsClientSubnet: String = "",
@@ -146,8 +144,6 @@ data class AppState(
     val fakeIpInet4Range: String = "",
     /** IPv6 fake range; empty = sing-box default (fc00::/18). */
     val fakeIpInet6Range: String = "",
-    /** TTL (seconds) for fake-IP answers; 0 = engine default. */
-    val fakeIpTtl: Int = 0,
     /**
      * Block HTTPS/SVCB records (RFC 9460) while fake-IP is on: an empty
      * NOERROR is answered for HTTPS-type queries so apps fall back to
