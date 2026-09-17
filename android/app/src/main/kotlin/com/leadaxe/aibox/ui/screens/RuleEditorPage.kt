@@ -83,6 +83,7 @@ fun RuleEditorPage(
     var overrideAddress by remember { mutableStateOf(initial?.overrideAddress.orEmpty()) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
     var jsonBody by remember { mutableStateOf(initial?.json.orEmpty()) }
+    var nodeFilter by remember { mutableStateOf(initial?.nodeFilter ?: emptyList()) }
     var ipFamily by remember { mutableStateOf(initial?.ipFamily.orEmpty()) }
     var ipPreference by remember { mutableStateOf(initial?.ipPreference ?: "prefer_ipv6") }
 
@@ -257,33 +258,65 @@ fun RuleEditorPage(
                                         state.outboundGroups.filter { it.enabled }.map { it.tag } +
                                         state.outbounds.map { it.tag }
                                 }
-                                // karing-style: rows with a tick on the
-                                // selected outbound (scannable with many nodes).
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                // Exit picker: proxy/direct only (user spec).
+                                SingleChoiceChips(
+                                    label = stringResource(R.string.routes_outbound),
+                                    options = listOf(ProxySelectorTag, DirectOutboundTag),
+                                    selected = outbound,
+                                    onSelect = { outbound = it },
+                                    display = {
+                                        when (it) {
+                                            DirectOutboundTag -> stringResource(R.string.dns_detour_direct)
+                                            else -> stringResource(R.string.dns_detour_proxy)
+                                        }
+                                    },
+                                )
+                                // Node filter (proxy only): flag-grouped
+                                // multi-select. Picked nodes form the rule's
+                                // own urltest group; unpicked are excluded.
+                                if (outbound == ProxySelectorTag && state.outbounds.size > 1) {
+                                    var filterExpanded by remember { mutableStateOf(false) }
                                     Text(
-                                        stringResource(R.string.routes_outbound),
+                                        stringResource(R.string.routes_node_filter, nodeFilter.size),
                                         style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.clickable { filterExpanded = !filterExpanded },
                                     )
-                                    outboundOptions.forEach { option ->
-                                        val selected = option == outbound
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable { outbound = option }
-                                                .padding(vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
+                                    if (filterExpanded) {
+                                        val groups = state.outbounds.groupBy { n ->
+                                            n.name.substringBeforeLast(' ').ifBlank { n.name }
+                                        }
+                                        groups.forEach { (region, nodes) ->
                                             Text(
-                                                outboundDisplayLabel(option, state),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                modifier = Modifier.weight(1f),
+                                                "$region (${nodes.size})",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(top = 6.dp),
                                             )
-                                            if (selected) {
-                                                Icon(
-                                                    Icons.Outlined.CheckCircle,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                )
+                                            nodes.forEach { node ->
+                                                val picked = node.tag in nodeFilter
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            nodeFilter = if (picked) nodeFilter - node.tag
+                                                            else nodeFilter + node.tag
+                                                        }
+                                                        .padding(vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Text(
+                                                        node.name.ifBlank { node.tag },
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        modifier = Modifier.weight(1f),
+                                                    )
+                                                    if (picked) {
+                                                        Icon(
+                                                            Icons.Outlined.CheckCircle,
+                                                            contentDescription = null,
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -315,7 +348,7 @@ fun RuleEditorPage(
                                             overrideAddress = overrideAddress,
                                             enabled = enabled, jsonBody = jsonBody,
                                             ipFamily = ipFamily, ipPreference = ipPreference,
-                                            branches = branches,
+                                            branches = branches, nodeFilter = nodeFilter,
                                         ),
                                     )
                                 },
@@ -670,6 +703,7 @@ private fun compose(
     ipFamily: String,
     ipPreference: String,
     branches: List<RouteRule>,
+    nodeFilter: List<String>,
 ): RouteRule {
     val base = initial ?: RouteRule(id = UUID.randomUUID().toString())
     // Uniform model: the branches are the match; the container owns the
@@ -682,6 +716,7 @@ private fun compose(
             name = name, kind = kind, action = action, outbound = outbound,
             syncDnsServer = syncDnsServer, clientSubnet = clientSubnet,
             overrideAddress = overrideAddress,
+            nodeFilter = nodeFilter,
             enabled = enabled, type = RouteRule.RuleTypeDefault,
             combine = m.combine,
             rules = emptyList(),

@@ -608,6 +608,12 @@ data class RouteRule(
     /** "route" → outbound tag; "reject"; "resolve" (resolve-only advanced). */
     val action: String = RuleActionRoute,
     val outbound: String = ProxySelectorTag,
+    /**
+     * Node filter for proxy-exit rules: when non-empty, the compiler builds
+     * a urltest/loadbalance group from exactly these node tags instead of
+     * the global selector — karing's "pick which nodes serve this rule".
+     */
+    val nodeFilter: List<String> = emptyList(),
     /** EDNS client subnet for the resolve action, e.g. "1.2.3.0/24". Empty = off. */
     val clientSubnet: String = "",
     /**

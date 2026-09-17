@@ -154,7 +154,13 @@ object ConfigCompiler {
             }
         }
         localProxyPort = SubscriptionFetchPort
-        putJsonArray("outbounds") { compileOutbounds(state).forEach(::add) }
+        putJsonArray("outbounds") {
+            compileOutbounds(state).forEach(::add)
+            // Per-rule node-filter groups must exist before the route rules
+            // referencing them (built in the same pass order as compileRouteRules).
+            buildNodeFilterGroups(state)
+            takeNodeFilterGroups().forEach(::add)
+        }
         putJsonObject("route") {
             putJsonArray("rules") { compileRouteRules(state).forEach(::add) }
             val ruleSets = compileRuleSets(state, ruleSetDir)
@@ -1276,10 +1282,50 @@ object ConfigCompiler {
             }
             else -> {
                 put("action", "route")
-                put("outbound", rule.outbound.ifBlank { ProxySelectorTag })
+                val filterGroup = ruleFilterGroupTags[rule.id]
+                put("outbound", filterGroup ?: rule.outbound.ifBlank { ProxySelectorTag })
             }
         }
     }
+
+    /** rule.id -> generated per-rule urltest group tag (node filter rules). */
+    private val ruleFilterGroupTags = mutableMapOf<String, String>()
+
+    /**
+     * Pre-pass: for every proxy-exit rule with a node filter, build a
+     * urltest group from the filtered nodes (karing's per-rule node picker).
+     * Groups are appended to the outbounds array by [compileRouteRules]'
+     * caller through [takeNodeFilterGroups].
+     */
+    private val nodeFilterGroups = mutableListOf<JsonObject>()
+
+    private fun buildNodeFilterGroups(state: AppState) {
+        nodeFilterGroups.clear()
+        ruleFilterGroupTags.clear()
+        state.routeRules
+            .filter {
+                it.enabled && it.action == RouteRule.RuleActionRoute &&
+                    it.outbound == ProxySelectorTag && it.nodeFilter.isNotEmpty()
+            }
+            .forEach { rule ->
+                val members = rule.nodeFilter.filter { tag ->
+                    state.outbounds.any { it.tag == tag } ||
+                        state.outboundGroups.any { it.tag == tag && it.enabled }
+                }
+                if (members.isEmpty()) return@forEach
+                val tag = "filter-${rule.id.take(8)}"
+                nodeFilterGroups.add(buildJsonObject {
+                    put("type", "urltest")
+                    put("tag", tag)
+                    putJsonArray("outbounds") { members.forEach(::add) }
+                    put("tolerance", 50)
+                    put("interrupt_exist_connections", false)
+                })
+                ruleFilterGroupTags[rule.id] = tag
+            }
+    }
+
+    private fun takeNodeFilterGroups(): List<JsonObject> = nodeFilterGroups.toList()
 
     /**
      * ECS resolution, in priority order: the rule's explicit subnet, then

@@ -147,6 +147,7 @@
     <string name="routes_action_reject">拒绝</string>
     <string name="routes_action_resolve">仅解析</string>
     <string name="routes_override">重写目标</string>
+    <string name="routes_node_filter">节点过滤（已选 %1$d 个）— 点击展开</string>
     <string name="routes_outbound">出口</string>
     <string name="routes_override_hint">改写命中连接的去向：纯端口（8443 = 同主机换端口）、主机:端口 或 主机。留空 = 不改写。原始目标会保留给出站使用。</string>
     <string name="routes_field_domain">精确域名</string>
