@@ -567,6 +567,7 @@
 
     <!-- 测速 / 节点列表 -->
     <string name="subs_ping">测速</string>
+    <string name="subs_speed_url_title">测速地址</string>
     <string name="subs_ping_all">全部测速</string>
     <string name="subs_ping_running">测速中…</string>
     <string name="subs_ping_result">%1$d 毫秒</string>

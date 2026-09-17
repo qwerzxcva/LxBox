@@ -569,6 +569,7 @@
 
     <!-- ping / node list -->
     <string name="subs_ping">Ping</string>
+    <string name="subs_speed_url_title">Speed-test URL</string>
     <string name="subs_ping_all">Ping all</string>
     <string name="subs_ping_running">Pinging…</string>
     <string name="subs_ping_result">%1$d ms</string>

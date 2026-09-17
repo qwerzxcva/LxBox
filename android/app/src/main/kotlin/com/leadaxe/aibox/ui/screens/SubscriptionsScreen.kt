@@ -1,5 +1,6 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -83,7 +85,6 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     var probeExpanded by remember { mutableStateOf(false) }
     var nodesExpanded by remember { mutableStateOf(false) }
     // null = config order; true = delay ascending (failures last)
-    var sortByDelay by remember { mutableStateOf<Boolean?>(null) }
     var sourcesExpanded by remember { mutableStateOf(false) }
     var foldersExpanded by remember { mutableStateOf(false) }
     val relay = remember { app.vpnRelay }
@@ -118,6 +119,22 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+    // Node/group editor replaces the whole screen (early return) — the
+    // previous overlay rendered under the list and was untouchable.
+    if (editingNode != null) {
+        NodeEditorPage(
+            initial = editingNode!!,
+            onDismiss = { editingNode = null },
+            onSave = { updated ->
+                store.update { st ->
+                    st.copy(outbounds = st.outbounds.map { if (it.id == updated.id) updated else it })
+                }
+                editingNode = null
+            },
+        )
+        return
+    }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
             contentPadding = PaddingValues(vertical = 16.dp),
@@ -253,7 +270,12 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     subtitle = stringResource(R.string.subs_section_nodes_short),
                 ) {
                     if (state.outbounds.isNotEmpty()) {
+                        var showSpeedUrl by remember { mutableStateOf(false) }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = { showSpeedUrl = !showSpeedUrl }) {
+                                Icon(Icons.Outlined.Link, contentDescription = null)
+                                Text(stringResource(R.string.subs_speed_url_title))
+                            }
                             FilledTonalButton(onClick = {
                                 // Parallel probes (karing-style test panel):
                                 // all requests fire at once; the :vpn process
@@ -266,39 +288,82 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                                     }
                                 }
                             }) { Text(stringResource(R.string.subs_ping_all)) }
-                            // Cycle: config order → delay asc → config order.
-                            FilledTonalButton(onClick = {
-                                sortByDelay = if (sortByDelay == null) true else null
-                            }) {
-                                Text(
-                                    stringResource(
-                                        if (sortByDelay == true) R.string.subs_sort_config
-                                        else R.string.subs_sort_delay,
-                                    ),
-                                )
-                            }
+                        }
+                        if (showSpeedUrl) {
+                            StringField(
+                                label = stringResource(R.string.subs_speed_url_title),
+                                value = state.speedTestUrl,
+                                onValueChange = { v -> store.update { it.copy(speedTestUrl = v) } },
+                                placeholder = "https://cp.cloudflare.com/generate_204",
+                            )
                         }
                     }
-                    val displayNodes = when (sortByDelay) {
-                        true -> state.outbounds.sortedWith(
-                            compareBy { node -> (pingResults[node.id] as? PingState.Ok)?.delayMillis ?: Int.MAX_VALUE },
-                        )
-                        else -> state.outbounds
-                    }
-                    displayNodes.forEach { node ->
-                        NodeRow(
-                            node = node,
-                            selected = node.tag == state.selectedOutbound,
-                            pingState = pingResults[node.id],
-                            onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
-                            onPing = {
-                                scope.launch {
-                                    pingResults = pingResults + (node.id to PingState.Triggered)
-                                    relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                    val displayNodes = state.outbounds.sortedWith(
+                        compareBy { node -> (pingResults[node.id] as? PingState.Ok)?.delayMillis ?: Int.MAX_VALUE },
+                    )
+                    // Region grouping (karing-style): nodes sharing a base
+                    // name (flag+region prefix before trailing counters) fold
+                    // into one header row "region ×N"; tapping unfolds them.
+                    val groups = displayNodes
+                        .groupBy { it.name.substringBeforeLast(' ').ifBlank { it.name } }
+                    groups.forEach { (region, nodes) ->
+                        var regionOpen by remember(region) { mutableStateOf(false) }
+                        if (nodes.size == 1) {
+                            nodes.forEach { node ->
+                                NodeRow(
+                                    node = node,
+                                    selected = node.tag == state.selectedOutbound,
+                                    pingState = pingResults[node.id],
+                                    onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                                    onPing = {
+                                        scope.launch {
+                                            pingResults = pingResults + (node.id to PingState.Triggered)
+                                            relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                        }
+                                    },
+                                    onEdit = { editingNode = node },
+                                )
+                            }
+                        } else {
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { regionOpen = !regionOpen }
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "$region ✕${nodes.size}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Icon(
+                                        if (regionOpen) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
-                            },
-                            onEdit = { editingNode = node },
-                        )
+                            }
+                            if (regionOpen) {
+                                nodes.forEach { node ->
+                                    NodeRow(
+                                        node = node,
+                                        selected = node.tag == state.selectedOutbound,
+                                        pingState = pingResults[node.id],
+                                        onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                                        onPing = {
+                                            scope.launch {
+                                                pingResults = pingResults + (node.id to PingState.Triggered)
+                                                relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                            }
+                                        },
+                                        onEdit = { editingNode = node },
+                                    )
+                                }
+                            }
+                        }
                     }
                     if (state.outbounds.isEmpty()) {
                         Text(
@@ -550,18 +615,6 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     st.copy(outboundGroups = st.outboundGroups.map { if (it.id == updated.id) updated else it })
                 }
                 editingGroup = null
-            },
-        )
-    }
-    editingNode?.let { node ->
-        NodeEditorPage(
-            initial = node,
-            onDismiss = { editingNode = null },
-            onSave = { updated ->
-                store.update { st ->
-                    st.copy(outbounds = st.outbounds.map { if (it.id == updated.id) updated else it })
-                }
-                editingNode = null
             },
         )
     }
@@ -898,7 +951,18 @@ private fun NodeRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(node.name.ifBlank { node.tag }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(node.type, style = MaterialTheme.typography.bodySmall)
+                    // Full protocol line: type · server:port (parsed once per
+                    // composition; config JSON is small).
+                    val proto = remember(node.config) {
+                        val obj = runCatching {
+                            kotlinx.serialization.json.Json.parseToJsonElement(node.config)
+                                .let { it as? kotlinx.serialization.json.JsonObject }
+                        }.getOrNull()
+                        val host = (obj?.get("server") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                        val port = (obj?.get("server_port") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                        if (host.isNotBlank()) "${node.type} · $host:$port" else node.type
+                    }
+                    Text(proto, style = MaterialTheme.typography.bodySmall)
                     PingBadge(pingState)
                 }
             }
