@@ -27,8 +27,6 @@
     <string name="home_mode_rule">Rule</string>
     <string name="home_mode_global">Global</string>
     <string name="home_mode_direct">Direct</string>
-    <string name="home_select_outbound">Select outbound</string>
-    <string name="home_no_nodes">No nodes yet — add a subscription on the Subscriptions tab.</string>
 
     <!-- subscriptions -->
     <string name="subs_add">Add subscription</string>
@@ -44,7 +42,6 @@
     <string name="subs_folder_count">%1$d subscription(s)</string>
     <string name="subs_groups_section_title">Folders</string>
     <string name="groups_section_title">Groups</string>
-    <string name="groups_section_short">Selector and URL-test groups built on the nodes</string>
     <string name="settings_mux_disabled_short">Off — tap to configure</string>
     <string name="subs_name">Name</string>
     <string name="subs_name_optional">Name (optional — taken from the panel when blank)</string>
@@ -64,7 +61,6 @@
     <string name="subs_fetch_via_direct">Direct</string>
     <string name="subs_fetch_via_proxy">Proxy (through VPN)</string>
     <string name="subs_resolver">DNS resolver</string>
-    <string name="subs_resolver_system">System default</string>
     <string name="subs_resolver_hint">Only https/h3 DNS servers can be used for fetching.</string>
     <string name="subs_resolver_follow">Follow tunnel DNS</string>
     <string name="subs_resolver_custom">Custom DNS</string>
@@ -79,14 +75,10 @@
     <string name="subs_group_add">Add folder</string>
     <string name="subs_group_name">Folder name</string>
     <string name="subs_duplicates_dropped">%1$d duplicate(s) dropped</string>
-    <string name="subs_no_nodes_hint">No nodes imported. Check the subscription URL, or switch the fetch path to proxy.</string>
-    <string name="subs_no_nodes_reason">No nodes imported (%1$s). Check the subscription URL or the update mode.</string>
     <string name="subs_add_action">Add</string>
     <string name="subs_cancel">Cancel</string>
     <string name="subs_refresh">Refresh</string>
     <string name="subs_delete">Delete</string>
-    <string name="subs_selected">selected</string>
-    <string name="subs_tap_to_use">tap to use</string>
     <string name="subs_refreshed">Refreshed %1$d node(s)</string>
     <string name="subs_refreshed_with_failures">Refreshed with %1$d failure(s)</string>
     <string name="subs_nodes_added">%1$s: %2$d node(s)</string>
@@ -98,7 +90,6 @@
 
     <!-- outbound groups -->
     <string name="groups_section">Groups (%1$d)</string>
-    <string name="groups_add">Add group</string>
     <string name="groups_new">New group</string>
     <string name="groups_edit">Edit group</string>
     <string name="groups_name">Name</string>
@@ -127,20 +118,13 @@
     <string name="routes_add_rule">Add rule</string>
     <string name="routes_edit_rule">Edit rule</string>
     <string name="routes_new_rule">New rule</string>
-    <string name="routes_json_hint">JSON · %1$d chars</string>
     <string name="routes_empty_matcher">empty matcher</string>
     <string name="routes_enabled">Enabled</string>
     <string name="routes_name">Name</string>
     <string name="routes_kind">Kind</string>
     <string name="routes_kind_inline">Inline</string>
     <string name="routes_kind_json">JSON</string>
-    <string name="routes_rule_type">Type</string>
-    <string name="routes_logical_mode">Combine</string>
-    <string name="routes_logical_and">AND</string>
-    <string name="routes_logical_or">OR</string>
     <string name="routes_combine_mode">Combine conditions</string>
-    <string name="routes_combine_or">OR (any match)</string>
-    <string name="routes_combine_and">AND (all match)</string>
     <string name="routes_json_invalid">Invalid JSON</string>
     <string name="routes_json_recognized">Recognised</string>
     <string name="routes_invert">Invert match</string>
@@ -157,20 +141,13 @@
     <string name="routes_field_domain_keyword">Domain keyword</string>
     <string name="routes_field_domain_regex">Domain regex</string>
     <string name="routes_field_ip_cidr">IP CIDR</string>
-    <string name="routes_field_source_ip_cidr">Source IP CIDR</string>
     <string name="routes_field_port">Port</string>
-    <string name="routes_field_source_port">Source port</string>
-    <string name="routes_field_port_range">Port range</string>
     <string name="routes_field_network">Network</string>
     <string name="routes_field_protocol">Protocol</string>
     <string name="routes_field_package">Package name</string>
     <string name="routes_field_rule_set">Rule set</string>
-    <string name="routes_source_private">Match private source IP</string>
     <string name="routes_ip_private">Match private destination IP</string>
     <string name="routes_json_body">Rule JSON</string>
-    <string name="routes_save">Save</string>
-    <string name="routes_move_up">Move up</string>
-    <string name="routes_move_down">Move down</string>
 
     <!-- rule sets (srs) -->
 
@@ -190,7 +167,6 @@
     <string name="dns_detour">Send queries via</string>
     <string name="dns_detour_direct">Direct</string>
     <string name="dns_detour_proxy">Proxy (main selector)</string>
-    <string name="dns_detour_node">Node: %1$s</string>
     <string name="dns_strategy">Strategy</string>
     <string name="dns_strategy_inherit">Inherit global</string>
     <string name="dns_domain_resolver">Domain resolver</string>
@@ -202,17 +178,10 @@
     <string name="dns_target_system">System default</string>
     <string name="dns_query_type">Query type</string>
     <string name="dns_options">Options</string>
-    <string name="dns_clear_cache">Clear DNS cache</string>
-    <string name="dns_clear_cache_action">Clear</string>
-    <string name="dns_clear_cache_done">DNS cache cleared.</string>
-    <string name="dns_clear_cache_offline">The tunnel is not running — nothing to clear.</string>
     <string name="dns_hijack">Hijack DNS</string>
     <string name="dns_hijack_desc">Route port 53 through sing-box; required for fake-IP and tun DNS.</string>
     <string name="dns_cache_capacity">Cache capacity</string>
     <string name="dns_cache_capacity_desc">Number of DNS answers kept in memory. Empty uses the engine default.</string>
-    <string name="dns_cache_algorithm">Cache algorithm</string>
-    <string name="dns_cache_arc">ARC (recommended)</string>
-    <string name="dns_cache_lru">LRU</string>
     <string name="dns_independent_cache">Independent cache</string>
     <string name="dns_global_strategy">Global strategy</string>
     <string name="dns_final_server">Fallback resolver</string>
@@ -236,7 +205,6 @@
     <string name="dns_group_error_ttl_hint">default 2m</string>
     <string name="dns_group_win_ttl_hint">default 5m, fastest only</string>
     <string name="dns_group_hint">Wraps several resolvers behind one name so a single dead server does not stall resolution. Do not mix internal and public resolvers in one group.</string>
-    <string name="dns_delete">Delete</string>
 
     <!-- fakeip -->
     <string name="fakeip_title">Fake IP</string>
@@ -249,7 +217,6 @@
     <string name="fakeip_block_https">Block HTTPS records</string>
     <string name="fakeip_block_https_desc">Reply with an empty NOERROR to HTTPS/SVCB queries (RFC 9460) so apps fall back to plain A/AAAA — these queries would otherwise leak to the fallback DNS, which cannot answer for fake-IP domains.</string>
     <string name="fakeip_desc">Answer matching domains with synthetic addresses so routing can work before real DNS resolves.</string>
-    <string name="fakeip_enable">Enable Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 range</string>
     <string name="fakeip_inet6_range">IPv6 range</string>
     <string name="fakeip_filter">Filter (domain suffixes, comma separated)</string>
@@ -263,7 +230,6 @@
     <!-- settings -->
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_tunnel">Tunnel</string>
-    <string name="settings_section_power">Battery &amp; background</string>
     <string name="settings_battery_ok">Battery optimization is disabled for AIBox — the system won\'t freeze the tunnel in the background.</string>
     <string name="settings_battery_prompt">AIBox is subject to battery optimization: the system may freeze the tunnel in the background.</string>
     <string name="settings_battery_action">Exempt from battery optimization</string>
@@ -292,8 +258,6 @@
     <string name="settings_github_token_hint">Raises the raw/api.github.com rate limit for rule-set updates. Sent only to github.com hosts, stored on-device.</string>
     <string name="dns_hosts_entries">Hosts entries</string>
     <string name="dns_hosts_hint">domain=ip, one per line. Answered locally — no upstream query is sent for these domains.</string>
-    <string name="subs_sort_delay">Sort by delay</string>
-    <string name="subs_sort_config">Config order</string>
     <string name="groups_alias_include">Include filter (regex)</string>
     <string name="groups_alias_exclude">Exclude filter (regex)</string>
     <string name="groups_alias_hint">Matched against each node\'s display name when the group is built. Empty = all members.</string>
@@ -333,7 +297,6 @@
     <!-- built-in rule presets -->
     <string name="preset_section">Built-in rules</string>
     <string name="preset_add">Add</string>
-    <string name="preset_added">Added</string>
     <string name="preset_installed">Installed — its rules are in the list above; enable, edit or delete them there.</string>
     <string name="preset_block_ads">Block ads</string>
     <string name="preset_block_ads_desc">Reject ad and tracker domains. Downloads a ~1 MB rule set on first use.</string>
@@ -375,14 +338,12 @@
     <string name="settings_quic_disable_ecn_desc">Turn off explicit congestion notification. Fix for QUIC stalls on networks whose NAT drops ECN-marked packets. Takes effect on new connections.</string>
     <string name="settings_ntp">Clock sync (NTP)</string>
     <string name="settings_ntp_desc">Reality and shadowsocks-2022 reject handshakes outside a ±30 s clock window; the core syncs via SNTP every 30 minutes to prevent \'node suddenly broke\'.</string>
-    <string name="settings_section_sniffer">Sniffer</string>
         <string name="settings_lb_section">Load balancing</string>
     <string name="settings_lb_top_n">Use the %1$d fastest nodes at once (top-N)</string>
     <string name="settings_lb_ttl">Sticky session TTL</string>
     <string name="settings_lb_ttl_desc">How long a sticky session keeps using the same node, e.g. 1h. Leave empty for the engine default.</string>
     <string name="settings_lb_top_n_desc">The exit group uses the N lowest-latency nodes concurrently. If a rule excludes one of them, the next fastest available node takes its place.</string>
 <string name="settings_section_logging">Logging</string>
-    <string name="settings_section_language">Language</string>
     <string name="settings_color_mode">Color mode</string>
     <string name="settings_color_system">System</string>
     <string name="settings_color_light">Light</string>
@@ -427,10 +388,8 @@
     <string name="dns_clash_mode">Apply in modes</string>
     <string name="dns_json_rule_notice">This rule was created from a route rule (JSON form). Edit its matchers from the route rule, or the JSON body below.</string>
     <string name="dns_response_rcode_hint">Match DNS responses by return code, e.g. NOERROR, NXDOMAIN, SERVFAIL.</string>
-    <string name="routes_sync_dns_desc">lxbox-style: the compiler derives a DNS rule from the domain matchers of this rule — nothing is copied into the DNS rule list.</string>
     <string name="routes_sync_dns_server">DNS resolution for this rule</string>
     <string name="routes_sync_dns_none">Follow default</string>
-    <string name="routes_sync_dns_na">IP-only rule: no DNS rule is created (matches happen on resolved addresses).</string>
     <string name="routes_section_builtin">Built-in rules</string>
     <string name="routes_builtin_sniff">Sniff</string>
     <string name="routes_builtin_sniff_desc">Extracts domains from connections so domain rules can match them. Runs before every other built-in rule.</string>
@@ -452,9 +411,6 @@
     <string name="routes_fallback_rule_desc">The last rule of the list: traffic no rule above matched lands here.</string>
     <string name="routes_fallback_proxy">Proxy</string>
     <string name="routes_fallback_direct">Direct</string>
-    <string name="routes_fallback_custom">Custom target</string>
-    <string name="routes_fallback_show_advanced">Show advanced targets</string>
-    <string name="routes_fallback_hide_advanced">Hide advanced targets</string>
     <string name="routes_unknown_traffic_reject">Reject (block unknown traffic)</string>
     <string name="routes_unknown_traffic_proxy">Proxy (default)</string>
     <string name="routes_unknown_traffic_desc">Where connections go when no rule matched: the main proxy selector, a node/group, or direct.</string>
@@ -493,7 +449,6 @@
     <string name="settings_local_http">Local HTTP proxy</string>
     <string name="settings_local_http_desc">Loopback HTTP proxy inbound (127.0.0.1). Same rules and DNS as the tunnel.</string>
     <string name="settings_local_http_port">HTTP port</string>
-    <string name="common_drag_reorder">Hold and drag to reorder</string>
     <string name="settings_local_trigger">Auto-start by app (HTTP/SOCKS5)</string>
     <string name="settings_local_trigger_desc">While one of the trigger apps below has live connections, the local HTTP/SOCKS5 inbounds switch on; after they go quiet they switch back off automatically.</string>
     <string name="settings_local_trigger_packages">Trigger apps (package name, one per line)</string>
@@ -514,7 +469,6 @@
     <string name="logs_open">View log</string>
     <string name="logs_viewer_title">Logs</string>
     <string name="logs_export">Export log</string>
-    <string name="logs_copied">Log copied to clipboard</string>
     <string name="logs_sanitised_note">Exported logs are sanitised: node servers, UUIDs, passwords and SNI are stripped. Kernel messages may still mention in-use server addresses transiently.</string>
     <string name="logs_empty">No log entries at this level yet. Lower the level or reproduce the issue.</string>
     <string name="settings_cache_file">Persist cache to disk</string>
@@ -568,12 +522,7 @@
     <string name="groups_idle_timeout">Idle timeout</string>
     <string name="groups_idle_timeout_hint">How long an idle group stops probing itself. Leave empty for the engine default (30m).</string>
     <string name="common_delete">Delete</string>
-    <string name="common_add">Add</string>
     <string name="common_edit">Edit</string>
-    <string name="common_enabled">Enabled</string>
-    <string name="common_none">None</string>
-    <string name="common_yes">Yes</string>
-    <string name="common_no">No</string>
 
     <!-- ping / node list -->
     <string name="subs_ping">Ping</string>
@@ -583,8 +532,6 @@
     <string name="subs_ping_result">%1$d ms</string>
     <string name="subs_ping_failed">failed</string>
     <string name="subs_nodes_count">%1$d node(s)</string>
-    <string name="subs_nodes_expand">Show nodes</string>
-    <string name="subs_nodes_collapse">Hide nodes</string>
 
     <!-- http head masking on subscription fetches -->
     <string name="subs_http_masking">Advanced fetch options</string>
@@ -605,12 +552,8 @@
 
     <!-- folder actions -->
     <string name="subs_folder_add_url">Add URL to this folder</string>
-    <string name="subs_move_to_folder">Move to folder</string>
-    <string name="subs_folder_none">Not in a folder</string>
-    <string name="common_move">Move</string>
 
     <!-- logical rule structure -->
-    <string name="routes_rule_sub_rules">Sub-rules (%1$d)</string>
     <string name="routes_add_sub_rule">Add sub-rule</string>
     <string name="routes_add_sub_rule_named">Add sub-rule %1$d</string>
     <string name="routes_sub_rule_n">Sub-rule %1$d</string>
@@ -618,10 +561,7 @@
     <string name="routes_expand_collapse">Collapse / expand</string>
     <string name="routes_show_advanced">Show advanced fields</string>
     <string name="routes_hide_advanced">Hide advanced fields</string>
-    <string name="routes_outbound_shared_hint">Every sub-rule below shares this exit.</string>
-    <string name="routes_sync_dns_desc_shared">The compiler derives a matching DNS rule for the whole group — nothing is copied into the DNS list.</string>
     <string name="routes_sync_dns_json_hint">A DNS rule is created alongside this one (JSON, named "sync-…") — inspect or edit it in the DNS tab.</string>
-    <string name="routes_edit_sub_rule">Edit sub-rule</string>
 
     <!-- field hints -->
     <string name="hint_domain_suffix">Matches the domain and every subdomain: "google.com" also covers "mail.google.com".</string>
@@ -629,20 +569,12 @@
     <string name="hint_domain_keyword">Substring anywhere in the hostname — "ads" hits "ads.example.com" and "tracker-ads.net".</string>
     <string name="hint_domain_regex">Regular expression, matched as written.</string>
     <string name="hint_ip_cidr">Destination IP block, e.g. "8.8.8.8/32" or "10.0.0.0/8".</string>
-    <string name="hint_source_ip_cidr">Where the connection comes from — on a phone that is the LAN or the tun address.</string>
     <string name="hint_port">Destination ports, comma separated: "443, 8443".</string>
-    <string name="hint_source_port">Source port; rarely needed on mobile.</string>
-    <string name="hint_port_range">Range written "start:end", e.g. "1000:2000".</string>
-    <string name="hint_network">Which transport to match: tcp, udp, or both.</string>
     <string name="hint_protocol">Protocol detected by the sniffer — http, tls, quic and friends. Needs the sniffer enabled.</string>
     <string name="hint_package_name">Android package name, e.g. "com.android.chrome".</string>
     <string name="hint_rule_set">Rule-set tag or an https .srs/.json URL — URLs are imported automatically.</string>
-    <string name="hint_outbound">Where matching traffic goes: a node, a group, the main selector, or direct.</string>
-    <string name="hint_invert">Flip the match: everything that does NOT match the fields above.</string>
-    <string name="hint_action">Route sends the connection to the outbound; Reject drops it; Resolve only resolves the domain and lets later rules decide.</string>
 
     <!-- settings sections -->
-    <string name="settings_section_advanced">Advanced</string>
     <string name="settings_restart_hint">Changes apply on the next connect.</string>
     <string name="settings_section_privacy">Privacy &amp; security</string>
     <string name="settings_privacy_screenshots">Block screenshots &amp; recents preview</string>

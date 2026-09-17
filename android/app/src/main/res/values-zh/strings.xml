@@ -25,8 +25,6 @@
     <string name="home_mode_rule">规则</string>
     <string name="home_mode_global">全局</string>
     <string name="home_mode_direct">直连</string>
-    <string name="home_select_outbound">选择出口</string>
-    <string name="home_no_nodes">暂无节点 — 请在「订阅」页添加订阅。</string>
 
     <!-- subscriptions -->
     <string name="subs_add">添加订阅</string>
@@ -42,7 +40,6 @@
     <string name="subs_folder_count">%1$d 个订阅</string>
     <string name="subs_groups_section_title">文件夹</string>
     <string name="groups_section_title">出口组</string>
-    <string name="groups_section_short">基于节点构建的选择器与自动测速组</string>
     <string name="settings_mux_disabled_short">未启用 — 点击配置</string>
     <string name="subs_name">名称</string>
     <string name="subs_name_optional">名称（可留空 — 自动取机场名）</string>
@@ -62,7 +59,6 @@
     <string name="subs_fetch_via_direct">直连</string>
     <string name="subs_fetch_via_proxy">代理（经 VPN）</string>
     <string name="subs_resolver">DNS 解析器</string>
-    <string name="subs_resolver_system">系统默认</string>
     <string name="subs_resolver_hint">仅 https/h3 类型的 DNS 服务器可用于抓取订阅。</string>
     <string name="subs_resolver_follow">跟随隧道 DNS</string>
     <string name="subs_resolver_custom">自定义 DNS</string>
@@ -77,14 +73,10 @@
     <string name="subs_group_add">添加文件夹</string>
     <string name="subs_group_name">文件夹名称</string>
     <string name="subs_duplicates_dropped">已去重 %1$d 个节点</string>
-    <string name="subs_no_nodes_hint">未导入任何节点。请检查订阅地址，或改用「代理」方式获取。</string>
-    <string name="subs_no_nodes_reason">未导入任何节点（%1$s）。请检查订阅地址或更新方式。</string>
     <string name="subs_add_action">添加</string>
     <string name="subs_cancel">取消</string>
     <string name="subs_refresh">刷新</string>
     <string name="subs_delete">删除</string>
-    <string name="subs_selected">已选择</string>
-    <string name="subs_tap_to_use">点击使用</string>
     <string name="subs_refreshed">已刷新 %1$d 个节点</string>
     <string name="subs_refreshed_with_failures">刷新完成，%1$d 个失败</string>
     <string name="subs_nodes_added">%1$s：%2$d 个节点</string>
@@ -96,7 +88,6 @@
 
     <!-- outbound groups -->
     <string name="groups_section">出口组（%1$d）</string>
-    <string name="groups_add">添加出口组</string>
     <string name="groups_new">新建出口组</string>
     <string name="groups_edit">编辑出口组</string>
     <string name="groups_name">名称</string>
@@ -125,20 +116,13 @@
     <string name="routes_add_rule">添加规则</string>
     <string name="routes_edit_rule">编辑规则</string>
     <string name="routes_new_rule">新建规则</string>
-    <string name="routes_json_hint">JSON · %1$d 字符</string>
     <string name="routes_empty_matcher">空匹配条件</string>
     <string name="routes_enabled">启用</string>
     <string name="routes_name">名称</string>
     <string name="routes_kind">类型</string>
     <string name="routes_kind_inline">界面编辑</string>
     <string name="routes_kind_json">JSON</string>
-    <string name="routes_rule_type">规则结构</string>
-    <string name="routes_logical_mode">组合方式</string>
-    <string name="routes_logical_and">与（AND）</string>
-    <string name="routes_logical_or">或（OR）</string>
     <string name="routes_combine_mode">条件组合</string>
-    <string name="routes_combine_or">或（任一匹配）</string>
-    <string name="routes_combine_and">与（全部匹配）</string>
     <string name="routes_json_invalid">JSON 格式错误</string>
     <string name="routes_json_recognized">已识别</string>
     <string name="routes_invert">反转匹配</string>
@@ -155,20 +139,13 @@
     <string name="routes_field_domain_keyword">域名关键字</string>
     <string name="routes_field_domain_regex">域名正则</string>
     <string name="routes_field_ip_cidr">目标 IP 段</string>
-    <string name="routes_field_source_ip_cidr">来源 IP 段</string>
     <string name="routes_field_port">目标端口</string>
-    <string name="routes_field_source_port">来源端口</string>
-    <string name="routes_field_port_range">端口范围</string>
     <string name="routes_field_network">网络类型</string>
     <string name="routes_field_protocol">协议</string>
     <string name="routes_field_package">应用包名</string>
     <string name="routes_field_rule_set">规则集</string>
-    <string name="routes_source_private">匹配局域网来源 IP</string>
     <string name="routes_ip_private">匹配局域网目标 IP</string>
     <string name="routes_json_body">规则 JSON</string>
-    <string name="routes_save">保存</string>
-    <string name="routes_move_up">上移</string>
-    <string name="routes_move_down">下移</string>
 
     <!-- rule sets (srs) -->
 
@@ -188,7 +165,6 @@
     <string name="dns_detour">查询出口</string>
     <string name="dns_detour_direct">直连</string>
     <string name="dns_detour_proxy">代理（主选择器）</string>
-    <string name="dns_detour_node">节点：%1$s</string>
     <string name="dns_strategy">解析策略</string>
     <string name="dns_strategy_inherit">跟随全局</string>
     <string name="dns_domain_resolver">服务器域名解析器</string>
@@ -200,16 +176,9 @@
     <string name="dns_target_system">系统默认</string>
     <string name="dns_query_type">查询类型</string>
     <string name="dns_options">选项</string>
-    <string name="dns_clear_cache">清除 DNS 缓存</string>
-    <string name="dns_clear_cache_action">清除</string>
-    <string name="dns_clear_cache_done">DNS 缓存已清除。</string>
-    <string name="dns_clear_cache_offline">隧道未运行 — 无缓存可清。</string>
     <string name="dns_hijack">DNS 劫持</string>
     <string name="dns_hijack_desc">将 53 端口流量导入 sing-box；Fake-IP 和 tun DNS 必需。</string>
     <string name="dns_cache_capacity">缓存容量</string>
-    <string name="dns_cache_algorithm">缓存算法</string>
-    <string name="dns_cache_arc">ARC（推荐）</string>
-    <string name="dns_cache_lru">LRU</string>
     <string name="dns_independent_cache">独立缓存</string>
     <string name="dns_global_strategy">全局策略</string>
     <string name="dns_final_server">兜底解析服务器</string>
@@ -233,7 +202,6 @@
     <string name="dns_group_error_ttl_hint">默认 2m</string>
     <string name="dns_group_win_ttl_hint">默认 5m，仅 fastest 模式</string>
     <string name="dns_group_hint">将多个解析器合并为一个名字，单个服务器宕机时不会阻断解析。不要在同一组里混用内网与公网 DNS。</string>
-    <string name="dns_delete">删除</string>
 
     <!-- fakeip -->
     <string name="fakeip_title">Fake IP（虚拟 IP）</string>
@@ -246,7 +214,6 @@
     <string name="fakeip_block_https">拦截 HTTPS 记录</string>
     <string name="fakeip_block_https_desc">对 HTTPS/SVCB 查询回复空 NOERROR（RFC 9460），让应用回落到普通 A/AAAA — 否则这些查询会泄漏给兜底 DNS，而它无法有效解析 fake-IP 域名。</string>
     <string name="fakeip_desc">对匹配的域名返回合成地址，让路由规则在真实 DNS 解析前即可生效。</string>
-    <string name="fakeip_enable">启用 Fake IP</string>
     <string name="fakeip_inet4_range">IPv4 地址池</string>
     <string name="fakeip_inet6_range">IPv6 地址池</string>
     <string name="fakeip_filter">过滤域名（后缀，逗号分隔）</string>
@@ -260,7 +227,6 @@
     <!-- settings -->
     <string name="settings_section_appearance">外观</string>
     <string name="settings_section_tunnel">隧道</string>
-    <string name="settings_section_power">电池与后台</string>
     <string name="settings_battery_ok">AIBox 已免除电池优化 — 系统不会在后台冻结隧道。</string>
     <string name="settings_battery_prompt">AIBox 受电池优化限制：系统可能在后冻结隧道。</string>
     <string name="settings_battery_action">免除电池优化</string>
@@ -289,8 +255,6 @@
     <string name="settings_github_token_hint">提高规则集更新时 raw/api.github.com 的速率限制。仅发送给 github.com 域名，保存在本机。</string>
     <string name="dns_hosts_entries">Hosts 条目</string>
     <string name="dns_hosts_hint">domain=ip，每行一条。这些域名在本地直接应答，不发上游。</string>
-    <string name="subs_sort_delay">按延迟排序</string>
-    <string name="subs_sort_config">按配置顺序</string>
     <string name="groups_alias_include">包含过滤（正则）</string>
     <string name="groups_alias_exclude">排除过滤（正则）</string>
     <string name="groups_alias_hint">构建组时按节点显示名匹配。留空 = 全部成员。</string>
@@ -330,7 +294,6 @@
     <!-- built-in rule presets -->
     <string name="preset_section">内置规则</string>
     <string name="preset_add">添加</string>
-    <string name="preset_added">已添加</string>
     <string name="preset_installed">已安装 — 规则已加入上方列表，可直接启用/编辑/删除。</string>
     <string name="preset_block_ads">屏蔽广告</string>
     <string name="preset_block_ads_desc">拒绝广告与追踪域名。首次使用时下载约 1 MB 规则集。</string>
@@ -372,14 +335,12 @@
     <string name="settings_quic_disable_ecn_desc">关闭显式拥塞通知。修复运营商 NAT 丢弃 ECN 标记包导致的 QUIC 卡顿。对新连接生效。</string>
     <string name="settings_ntp">时钟同步（NTP）</string>
     <string name="settings_ntp_desc">Reality 与 shadowsocks-2022 都会拒绝超出 ±30 秒时钟窗口的握手；内核每 30 分钟经 SNTP 同步一次，避免「节点突然失效」。</string>
-    <string name="settings_section_sniffer">嗅探</string>
         <string name="settings_lb_section">负载均衡</string>
     <string name="settings_lb_top_n">同时使用最快的 %1$d 个节点（top-N）</string>
     <string name="settings_lb_ttl">粘性会话时长</string>
     <string name="settings_lb_ttl_desc">粘性会话保持同一节点的时长，例如 1h。留空则使用内核默认。</string>
     <string name="settings_lb_top_n_desc">出口组并发使用延迟最低的 N 个节点。若某节点被规则排除，则由可用节点中次快的补上。</string>
 <string name="settings_section_logging">日志</string>
-    <string name="settings_section_language">语言</string>
     <string name="settings_color_mode">主题模式</string>
     <string name="settings_color_system">跟随系统</string>
     <string name="settings_color_light">浅色</string>
@@ -424,10 +385,8 @@
     <string name="dns_clash_mode">生效模式</string>
     <string name="dns_json_rule_notice">此规则由路由规则创建（JSON 形式）。请在路由规则中编辑匹配条件，或直接查看下方 JSON。</string>
     <string name="dns_response_rcode_hint">按 DNS 应答码匹配，如 NOERROR、NXDOMAIN、SERVFAIL。</string>
-    <string name="routes_sync_dns_desc">lxbox 式联动：编译时按此规则的域名条件自动生成 DNS 规则 — 不会往 DNS 规则列表里复制条目。</string>
     <string name="routes_sync_dns_server">本规则的 DNS 解析</string>
     <string name="routes_sync_dns_none">跟随默认</string>
-    <string name="routes_sync_dns_na">纯 IP 规则：不创建 DNS 规则（IP 规则直接匹配解析后的地址）。</string>
     <string name="routes_section_builtin">内置规则</string>
     <string name="routes_builtin_sniff">嗅探</string>
     <string name="routes_builtin_sniff_desc">从连接中提取域名，让域名规则可以匹配。运行于所有其它内置规则之前。</string>
@@ -449,9 +408,6 @@
     <string name="routes_fallback_rule_desc">规则列表的最后一条：未被上面任何规则命中的流量都落到这里。</string>
     <string name="routes_fallback_proxy">代理</string>
     <string name="routes_fallback_direct">直连</string>
-    <string name="routes_fallback_custom">自定义目标</string>
-    <string name="routes_fallback_show_advanced">展开高级目标</string>
-    <string name="routes_fallback_hide_advanced">收起高级目标</string>
     <string name="routes_unknown_traffic_reject">拒绝（阻断未知流量）</string>
     <string name="routes_unknown_traffic_proxy">代理（默认）</string>
     <string name="routes_unknown_traffic_desc">未命中任何规则的连接走向：主代理选择器、某个节点/分组，或直连。</string>
@@ -490,7 +446,6 @@
     <string name="settings_local_http">本地 HTTP 代理</string>
     <string name="settings_local_http_desc">本地回环 HTTP 代理入站（127.0.0.1），规则与 DNS 与隧道一致。</string>
     <string name="settings_local_http_port">HTTP 端口</string>
-    <string name="common_drag_reorder">长按拖动排序</string>
     <string name="settings_local_trigger">按应用自动启停（HTTP/SOCKS5）</string>
     <string name="settings_local_trigger_desc">当下方任一应用有活动连接时自动开启本地 HTTP/SOCKS5 入站；静默一段时间后自动关闭。</string>
     <string name="settings_local_trigger_packages">触发应用（包名，每行一个）</string>
@@ -511,7 +466,6 @@
     <string name="logs_open">查看日志</string>
     <string name="logs_viewer_title">日志</string>
     <string name="logs_export">导出日志</string>
-    <string name="logs_copied">日志已复制到剪贴板</string>
     <string name="logs_sanitised_note">导出的日志已脱敏：节点服务器、UUID、密码和 SNI 都已移除。内核消息可能瞬时提及使用中的服务器地址，但不会包含存储的节点配置。</string>
     <string name="logs_empty">当前级别暂无日志。可降低级别或复现问题后再查看。</string>
     <string name="settings_cache_file">持久化缓存到磁盘</string>
@@ -565,12 +519,7 @@
     <string name="groups_idle_timeout">空闲超时</string>
     <string name="groups_idle_timeout_hint">空闲组停止自测的时长。留空 = 内核默认（30 分钟）。</string>
     <string name="common_delete">删除</string>
-    <string name="common_add">添加</string>
     <string name="common_edit">编辑</string>
-    <string name="common_enabled">已启用</string>
-    <string name="common_none">无</string>
-    <string name="common_yes">是</string>
-    <string name="common_no">否</string>
 
     <!-- 测速 / 节点列表 -->
     <string name="subs_ping">测速</string>
@@ -580,8 +529,6 @@
     <string name="subs_ping_result">%1$d 毫秒</string>
     <string name="subs_ping_failed">失败</string>
     <string name="subs_nodes_count">%1$d 个节点</string>
-    <string name="subs_nodes_expand">展开节点</string>
-    <string name="subs_nodes_collapse">收起节点</string>
 
     <!-- 请求头伪装 -->
     <string name="subs_http_masking">高级获取选项</string>
@@ -602,12 +549,8 @@
 
     <!-- 文件夹操作 -->
     <string name="subs_folder_add_url">向此文件夹添加订阅</string>
-    <string name="subs_move_to_folder">移动到文件夹</string>
-    <string name="subs_folder_none">不分组</string>
-    <string name="common_move">移动</string>
 
     <!-- 逻辑规则 -->
-    <string name="routes_rule_sub_rules">子规则（%1$d）</string>
     <string name="routes_add_sub_rule">添加子规则</string>
     <string name="routes_add_sub_rule_named">添加子规则 %1$d</string>
     <string name="routes_sub_rule_n">子规则 %1$d</string>
@@ -615,10 +558,7 @@
     <string name="routes_expand_collapse">折叠 / 展开</string>
     <string name="routes_show_advanced">显示高级字段</string>
     <string name="routes_hide_advanced">隐藏高级字段</string>
-    <string name="routes_outbound_shared_hint">下方所有子规则共用此出口。</string>
-    <string name="routes_sync_dns_desc_shared">编译器为整组条件生成对应的 DNS 规则 — 不会往 DNS 列表里复制条目。</string>
     <string name="routes_sync_dns_json_hint">将同时创建一条 DNS 规则（JSON 格式，命名 "sync-…"）— 可在 DNS 页查看或编辑。</string>
-    <string name="routes_edit_sub_rule">编辑子规则</string>
 
     <!-- 字段说明 -->
     <string name="hint_domain_suffix">匹配该域名及其所有子域名：填 google.com 也会命中 mail.google.com。</string>
@@ -626,20 +566,12 @@
     <string name="hint_domain_keyword">主机名中包含该字即命中 — 例如 ads 命中 ads.example.com 与 tracker-ads.net。</string>
     <string name="hint_domain_regex">正则表达式，按原样匹配。</string>
     <string name="hint_ip_cidr">目标 IP 段，例如 8.8.8.8/32 或 10.0.0.0/8。</string>
-    <string name="hint_source_ip_cidr">连接来源地址 — 手机上多为局域网或 tun 地址。</string>
     <string name="hint_port">目标端口列表，逗号分隔：443, 8443。</string>
-    <string name="hint_source_port">来源端口，移动端很少用到。</string>
-    <string name="hint_port_range">范围写法「起:止」，例如 1000:2000。</string>
-    <string name="hint_network">匹配的传输层：tcp、udp 或两者都选。</string>
     <string name="hint_protocol">由嗅探器识别出的协议 — http、tls、quic 等，需开启嗅探。</string>
     <string name="hint_package_name">Android 包名，例如 com.android.chrome。</string>
     <string name="hint_rule_set">规则集 tag 或 https 的 .srs/.json 链接 — 填链接会自动导入为规则集。</string>
-    <string name="hint_outbound">命中流量的去向：某个节点、出口组、主选择器或直连。</string>
-    <string name="hint_invert">反转匹配：命中的全部排除，未命中的才算匹配。</string>
-    <string name="hint_action">转发=送到出口；拒绝=丢弃连接；仅解析=只解析域名，交后续规则决定。</string>
 
     <!-- 设置分区 -->
-    <string name="settings_section_advanced">高级</string>
     <string name="settings_restart_hint">修改将在下次连接时生效。</string>
     <string name="settings_section_privacy">Privacy &amp; security</string>
     <string name="settings_privacy_screenshots">Block screenshots &amp; recents preview</string>
