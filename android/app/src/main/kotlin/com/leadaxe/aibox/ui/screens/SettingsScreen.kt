@@ -57,6 +57,12 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
     val state by store.state.collectAsState()
+    var showLogViewer by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+
+    if (showLogViewer) {
+        LogViewerPage(onDismiss = { showLogViewer = false })
+        return
+    }
 
     // Backup / restore via SAF: no storage permission needed, the user
     // picks the file. Export writes the full AppState JSON; import merges
@@ -450,6 +456,15 @@ fun SettingsScreen() {
 
         item {
             SettingsSection(stringResource(R.string.settings_section_logging)) {
+                FilledTonalButton(onClick = {
+                    context.startService(
+                        android.content.Intent(context, com.leadaxe.aibox.engine.vpn.AIVpnService::class.java)
+                            .setAction(com.leadaxe.aibox.engine.vpn.AIVpnService.ACTION_EXPORT_LOGS),
+                    )
+                    showLogViewer = true
+                }) {
+                    Text(stringResource(R.string.logs_open))
+                }
                 SingleChoiceChips(
                     label = stringResource(R.string.settings_log_level),
                     options = SingBoxLogLevels,

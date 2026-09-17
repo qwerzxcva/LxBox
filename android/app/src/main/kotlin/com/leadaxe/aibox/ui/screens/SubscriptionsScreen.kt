@@ -205,6 +205,15 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     }
                 }
             }
+            // Paste link lives with the groups: a pasted source becomes a
+            // subscription entry grouped with the panel imports.
+            item {
+                FilledTonalButton(onClick = { pasteDialog = true }) {
+                    Icon(Icons.Outlined.ContentPaste, contentDescription = null)
+                    Text(stringResource(R.string.subs_paste_link))
+                }
+            }
+
 
             // ----- multiplex, next to the nodes it affects
             item {

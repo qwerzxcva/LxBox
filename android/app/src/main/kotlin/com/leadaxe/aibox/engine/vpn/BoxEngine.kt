@@ -39,6 +39,9 @@ class BoxEngine internal constructor(
 
     companion object {
         private const val TAG = "BoxEngine"
+
+        /** Process-wide kernel log ring shared with the UI (LogViewerPage). */
+        val sharedLog = ArrayDeque<Pair<Int, String>>(2000)
         private const val COMMAND_PORT = 8964
         /** ms between status pushes — longer = less CPU, less UI responsiveness. */
         private const val RUNTIME_PUSH_INTERVAL_MS = 1000L
@@ -195,6 +198,7 @@ class BoxEngine internal constructor(
         try {
             val cfg = ConfigCompiler
                 .compile(state, ruleSetDir = workDir()).toString()
+            lastConfigSnapshot = cfg
             ensureLibboxInitialised()
             // Pre-flight check (reference client's `sing-box check` pattern):
             // construct the whole instance off the hot path and discard it.
@@ -238,6 +242,7 @@ class BoxEngine internal constructor(
         try {
             val cfg = ConfigCompiler
                 .compile(state, ruleSetDir = workDir()).toString()
+            lastConfigSnapshot = cfg
             s.startOrReloadService(cfg, state.toOverrideOptions())
             Result.success(Unit)
         } catch (t: Throwable) {
@@ -273,6 +278,11 @@ class BoxEngine internal constructor(
 
     /** Re-derived per-start so each VPN session has its own client + secret. */
     private var currentSecret: String = ""
+
+    /** Last compiled config, kept for the log exporter's sanitiser. */
+    @Volatile
+    var lastConfigSnapshot: String? = null
+        private set
 
     /**
      * QUIC compatibility switches, applied before the service starts so the
@@ -355,7 +365,13 @@ class BoxEngine internal constructor(
 
     override fun clearLogs() = Unit
 
-    override fun writeLogs(logs: io.nekohasekai.libbox.LogIterator) = Unit
+    override fun writeLogs(logs: io.nekohasekai.libbox.LogIterator) {
+        while (logs.hasNext()) {
+            val entry = logs.next()
+            sharedLog.addLast(entry.level to entry.message)
+            while (sharedLog.size > 2000) sharedLog.removeFirst()
+        }
+    }
 
     /**
      * Group snapshots: the tag → delay map feeds single-node ping replies.

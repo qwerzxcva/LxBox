@@ -501,6 +501,12 @@
     <string name="settings_log_level">日志级别</string>
     <string name="settings_append_log">日志写入文件</string>
     <string name="settings_append_log_desc">用于崩溃报告和事后诊断。</string>
+    <string name="logs_open">查看日志</string>
+    <string name="logs_viewer_title">日志</string>
+    <string name="logs_export">导出日志</string>
+    <string name="logs_copied">日志已复制到剪贴板</string>
+    <string name="logs_sanitised_note">导出的日志已脱敏：节点服务器、UUID、密码和 SNI 都已移除。内核消息可能瞬时提及使用中的服务器地址，但不会包含存储的节点配置。</string>
+    <string name="logs_empty">当前级别暂无日志。可降低级别或复现问题后再查看。</string>
     <string name="settings_cache_file">持久化缓存到磁盘</string>
     <string name="settings_cache_file_desc">跨会话保留 fake-IP 与规则集缓存。</string>
 

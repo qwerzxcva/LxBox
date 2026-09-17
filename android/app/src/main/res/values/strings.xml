@@ -503,6 +503,12 @@
     <string name="settings_log_level">Log level</string>
     <string name="settings_append_log">Append logs to file</string>
     <string name="settings_append_log_desc">Used for crash reports and post-mortem diagnostics.</string>
+    <string name="logs_open">View log</string>
+    <string name="logs_viewer_title">Logs</string>
+    <string name="logs_export">Export log</string>
+    <string name="logs_copied">Log copied to clipboard</string>
+    <string name="logs_sanitised_note">Exported logs are sanitised: node servers, UUIDs, passwords and SNI are stripped. Kernel messages may still mention in-use server addresses transiently.</string>
+    <string name="logs_empty">No log entries at this level yet. Lower the level or reproduce the issue.</string>
     <string name="settings_cache_file">Persist cache to disk</string>
     <string name="settings_cache_file_desc">Keeps fake-IP and rule-set caches between sessions.</string>
 

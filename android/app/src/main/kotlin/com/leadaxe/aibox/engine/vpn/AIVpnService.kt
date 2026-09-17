@@ -410,6 +410,56 @@ class AIVpnService : VpnService() {
         }
     }
 
+    /**
+     * Exports the kernel log ring to a file in app-external files, then
+     * broadcasts the path. The log is sanitised: node servers, UUIDs,
+     * passwords and SNI values are stripped so a shared log never leaks
+     * node configuration (rsxm-security posture).
+     */
+    private fun handleExportLogs() {
+        scope.launch(Dispatchers.IO) {
+            val sensitive = buildList {
+                engine.lastConfigSnapshot?.let { cfg ->
+                    // servers / uuid / password extraction from the compiled JSON
+                    runCatching {
+                        val obj = kotlinx.serialization.json.Json.parseToJsonElement(cfg)
+                            .let { it as? kotlinx.serialization.json.JsonObject }
+                        obj?.get("outbounds")?.let { ob ->
+                            (ob as? kotlinx.serialization.json.JsonArray)?.forEach { o ->
+                                val m = o as? kotlinx.serialization.json.JsonObject ?: return@forEach
+                                (m["server"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { it.isNotBlank() }?.let(::add)
+                                (m["uuid"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::add)
+                                (m["password"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::add)
+                                ((m["tls"] as? kotlinx.serialization.json.JsonObject)?.get("server_name")
+                                    as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::add)
+                            }
+                        }
+                    }
+                }
+            }
+            val dir = getExternalFilesDir(null) ?: filesDir
+            val file = java.io.File(dir, "aibox-log.txt")
+            file.bufferedWriter().use { w ->
+                w.appendLine("AIBox kernel log export — ${java.util.Date()}")
+                w.appendLine("sanitised: ${sensitive.size} config patterns masked")
+                w.appendLine()
+                synchronized(BoxEngine.sharedLog) {
+                    BoxEngine.sharedLog.forEach { (lvl, msg) ->
+                        var line = msg
+                        sensitive.forEach { s -> line = line.replace(s, "***") }
+                        w.appendLine("[\$lvl] \$line")
+                    }
+                }
+            }
+            // Broadcast the path so the UI can offer a share intent.
+            sendBroadcast(
+                android.content.Intent(BROADCAST_LOGS_EXPORTED)
+                    .setPackage(packageName)
+                    .putExtra("path", file.absolutePath),
+            )
+        }
+    }
+
     // ----------------- state observation ------------------------------------
 
     private fun observeState() {
@@ -565,6 +615,8 @@ class AIVpnService : VpnService() {
         const val ACTION_DISCONNECT = "com.leadaxe.aibox.engine.DISCONNECT"
         const val ACTION_RELOAD = "com.leadaxe.aibox.engine.RELOAD"
         const val ACTION_CLEAR_DNS_CACHE = "com.leadaxe.aibox.engine.CLEAR_DNS_CACHE"
+        const val ACTION_EXPORT_LOGS = "com.leadaxe.aibox.engine.EXPORT_LOGS"
+        const val BROADCAST_LOGS_EXPORTED = "com.leadaxe.aibox.engine.LOGS_EXPORTED"
 
         private const val ROUTE_ALL = "0.0.0.0"
         private const val ROUTE_ALL_V6 = "::"
