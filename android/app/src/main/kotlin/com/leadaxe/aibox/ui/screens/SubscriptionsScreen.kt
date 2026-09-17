@@ -335,7 +335,7 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
-                                        text = "$region ✕${nodes.size}",
+                                        text = "$region ✖️${nodes.size}",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.weight(1f),
