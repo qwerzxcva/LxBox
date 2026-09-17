@@ -14,9 +14,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -133,6 +138,22 @@ private fun RootScaffold(
             // Reserve room at the bottom so lists can scroll their last
             // item clear of the floating bar (bar height ≈ 64dp + lift).
             Column(modifier = Modifier.fillMaxSize().padding(bottom = 96.dp)) {
+            // Page-title capsule: every page opens with its name in a
+            // rounded pill, centered (user request).
+            Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                Surface(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.Center),
+                ) {
+                    Text(
+                        stringResource(Destination.entries[page].labelRes),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
+                    )
+                }
+            }
             when (Destination.entries[page]) {
                 Destination.Home -> HomeScreen(controller = controller, onRequestVpnConsent = onRequestVpnConsent)
                 Destination.Subscriptions -> SubscriptionsScreen(onEditorLock = { pagerLocked = it })

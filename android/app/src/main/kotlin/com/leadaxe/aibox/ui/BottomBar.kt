@@ -3,6 +3,11 @@ package com.leadaxe.aibox.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -18,6 +23,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -48,10 +55,56 @@ fun LxBottomBar(
     onSelect: (Destination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Collapse/expand by horizontal drag (user gesture spec): swipe the bar
+    // left to fold it into a single floating orb (current page icon), swipe
+    // the orb right to unfold. State survives recomposition.
+    var collapsed by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf(false)
+    }
+    if (collapsed) {
+        // Folded orb: one floating circle showing the current destination.
+        // Drag it right to unfold; tap to unfold too (bigger target).
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
+            shadowElevation = 12.dp,
+            modifier = modifier
+                .padding(horizontal = 24.dp, vertical = 6.dp)
+                .size(56.dp)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { },
+                        onDragEnd = { collapsed = false },
+                        onDragCancel = { },
+                    ) { _, _ -> }
+                },
+            onClick = { collapsed = false },
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(
+                    selected.icon,
+                    contentDescription = stringResource(selected.labelRes),
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        return
+    }
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 6.dp),
+            .padding(horizontal = 24.dp, vertical = 6.dp)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { },
+                    onDragEnd = { },
+                    onDragCancel = { },
+                ) { change, dragAmount ->
+                    if (dragAmount < -24f) collapsed = true  // swipe left folds
+                    change.consume()
+                }
+            },
         shape = RoundedCornerShape(32.dp),
         // Frosted look: a much more translucent surface lets the scrolled
         // content bleed through (the "light-through" read), with a soft
