@@ -263,6 +263,22 @@ class AIVpnService : VpnService() {
             }
         }
         engine.start(state)
+        // Boot the Rust micro-kernel conductor alongside the Go engine. It
+        // registers every leader (rules / dns / dialer / power / security /
+        // stats / tun) and gives each its opaque config slice; failures are
+        // non-fatal (the Go engine is authoritative today) but reported so a
+        // broken leader is visible instead of silent.
+        scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                val stateJson = kotlinx.serialization.json.Json {
+                    ignoreUnknownKeys = true
+                    encodeDefaults = true
+                }.encodeToString(com.leadaxe.aibox.app.AppState.serializer(), store.current)
+                com.leadaxe.aibox.engine.rust.AiboxCore.kernelStart(stateJson)
+            }.onFailure {
+                android.util.Log.w(TAG, "rsxm kernel start failed: ${it.message}")
+            }
+        }
         networkMonitor.start()
         // Scheduled health probe: a url-test pass over every group each
         // healthCheckIntervalMinutes while the tunnel is up (leastPing-style

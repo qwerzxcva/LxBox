@@ -5,10 +5,13 @@ import androidx.annotation.Keep
 /**
  * Bridge to the Rust core (`libaibox_core.so`, sources in `rust/aibox-core`).
  *
- * Phase 1 hosts the connection-snapshot fingerprinting: the VPN process runs
+ * Phase 1 hosted the connection-snapshot fingerprinting: the VPN process runs
  * it on every push tick, so it is the first hot path moved off the Kotlin
- * runtime. Methods are fail-safe — any error collapses to "no fingerprint",
- * which re-enables the plain broadcast path.
+ * runtime. Phase 2 adds the RSXM route-check engine, and Phase 3 exposes the
+ * micro-kernel Conductor (kernelStart / kernelStop / reports / health).
+ *
+ * Methods are fail-safe — any error collapses to "no answer" (null), which
+ * keeps the Go engine authoritative and never stalls the VPN path.
  */
 @Keep
 object AiboxCore {
@@ -46,10 +49,10 @@ object AiboxCore {
     }
 
     /**
-     * Boots the Rust micro-kernel conductor: registers every leader
+     * Boots the Rust micro-kernel Conductor: registers every leader
      * (rules / dns / dialer / power / security / stats / tun) and hands each
-     * its own opaque config slice. Returns "ok", or "partial; <failures>".
-     * Null when the native core is unavailable (the Go engine still runs).
+     * its own opaque config slice. Returns "ok", or "partial; <failures>";
+     * null when the native core is unavailable (the Go engine still runs).
      */
     fun kernelStart(appStateJson: String): String? = if (!available) {
         null
@@ -57,21 +60,24 @@ object AiboxCore {
         runCatching { nativeKernelStart(appStateJson) }.getOrNull()
     }
 
-    /** Stops the Rust conductor. Safe to call repeatedly; null when unavailable. */
+    /** Stops the Rust Conductor. Safe to call repeatedly; null when unavailable. */
     fun kernelStop(): String? = if (!available) {
         null
     } else {
         runCatching { nativeKernelStop() }.getOrNull()
     }
 
-    /** Drains Conductor reports as JSON: [{module,kind,at,message}...]. */
+    /**
+     * Drains the Conductor report bus as JSON: `[{module,kind,at,message}...]`.
+     * Used by the log viewer to surface leader events without polling.
+     */
     fun kernelDrainReports(): String? = if (!available) {
         null
     } else {
         runCatching { nativeKernelDrainReports() }.getOrNull()
     }
 
-    /** Per-module health as JSON: [{module,health}...]. */
+    /** Per-module health as JSON: `[{module,health}...]`. */
     fun kernelHealth(): String? = if (!available) {
         null
     } else {
@@ -81,11 +87,12 @@ object AiboxCore {
     private external fun nativeSnapshotFingerprint(snapshotJson: String): String
 
     private external fun nativeRouteCheck(rulesJson: String, queryJson: String): String
-    private external fun nativeKernelStart(appStateJson: String)
 
-    private external fun nativeKernelStop()
+    private external fun nativeKernelStart(appStateJson: String): String
 
-    private external fun nativeKernelDrainReports()
+    private external fun nativeKernelStop(): String
 
-    private external fun nativeKernelHealth()
+    private external fun nativeKernelDrainReports(): String
+
+    private external fun nativeKernelHealth(): String
 }
