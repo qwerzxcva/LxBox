@@ -484,7 +484,7 @@ internal fun DragDropRow(
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(
             modifier = Modifier
-                .weight(1f)
+                .fillMaxWidth()
                 .onGloballyPositioned { rowHeightPx = it.size.height.toFloat() }
                 .graphicsLayer {
                     translationY = if (dragging) offsetY else settleY
@@ -495,12 +495,10 @@ internal fun DragDropRow(
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                     clip = false
                 }
-                .zIndex(if (dragging) 1f else 0f),
-        ) { content() }
-        IconButton(
-            onClick = {},
-            modifier = Modifier
-                .pointerInput(Unit) {
+                .zIndex(if (dragging) 1f else 0f)
+                // Long-press anywhere on the row to lift and carry it — the
+                // dedicated drag handle is gone (it ate width and drew the eye).
+                .pointerInput(index, itemsCount) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { dragging = true },
                         onDragEnd = {
@@ -528,13 +526,7 @@ internal fun DragDropRow(
                         },
                     )
                 },
-        ) {
-            Icon(
-                Icons.Outlined.DragHandle,
-                contentDescription = stringResource(R.string.common_drag_reorder),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        ) { content() }
     }
 }
 
