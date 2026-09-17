@@ -283,7 +283,7 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_statsRecord(
         }
     })()
     .unwrap_or_else(|| "no kernel".into());
-    to_jstring(&mut env, out)
+    to_jstring(&env, out)
 }
 
 /// Stats snapshot as JSON (connections + per-outbound bytes).
