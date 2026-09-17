@@ -5,8 +5,8 @@
 use super::cidr::{Cidr, RuleCidrs};
 use super::domain::{DomainIndex, GlobalNode};
 use super::{Match, Query, Rule, Target};
-use std::collections::{BTreeSet, HashMap, HashSet};
 use regex::RegexBuilder;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::net::IpAddr;
 
 /// A compiled routing table.

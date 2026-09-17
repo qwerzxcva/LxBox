@@ -157,7 +157,9 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStart(
         conductor.register(Arc::new(rsxm_power::PowerModule::new()));
         conductor.register(Arc::new(rsxm_security::SecurityModule::new()));
         conductor.register(stats);
-        conductor.register(Arc::new(rsxm_tun::TunModule::new(rsxm_tun::TunConfig::default())));
+        conductor.register(Arc::new(rsxm_tun::TunModule::new(
+            rsxm_tun::TunConfig::default(),
+        )));
         conductor.distribute(envelope);
         let failures: Vec<String> = conductor
             .start_all()
@@ -181,7 +183,12 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStop(
     env: JNIEnv,
     _class: JClass,
 ) -> jstring {
-    with_kernel(|k| { k.stop_all(); }, ());
+    with_kernel(
+        |k| {
+            k.stop_all();
+        },
+        (),
+    );
     to_jstring(&env, "ok".into())
 }
 
@@ -205,7 +212,7 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelDrainR
                         "message": r.message,
                     })
                 })
-                    .collect();
+                .collect();
             serde_json::to_string(&reports).unwrap_or_else(|_| "[]".into())
         },
         "[]".into(),
@@ -224,9 +231,7 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelHealth
             let list: Vec<serde_json::Value> = k
                 .health()
                 .into_iter()
-                .map(|(name, h)| {
-                    serde_json::json!({ "module": name, "health": h.to_string() })
-                })
+                .map(|(name, h)| serde_json::json!({ "module": name, "health": h.to_string() }))
                 .collect();
             serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())
         },
@@ -240,7 +245,6 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelHealth
 // the libbox counters it already sees, keeping rsxm-stats warm until the
 // Rust data path takes over.
 // ---------------------------------------------------------------------------
-
 
 /// Records traffic into rsxm-stats: `op` ∈ {"open","close","reject"} for
 /// connection events, or `record_bytes` with direction/up/down and outbound.
