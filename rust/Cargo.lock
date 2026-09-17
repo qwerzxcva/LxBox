@@ -51,7 +51,15 @@ name = "aibox-core"
 version = "0.1.0"
 dependencies = [
  "jni",
+ "rsxm-config",
+ "rsxm-core",
+ "rsxm-dialer",
+ "rsxm-dns",
+ "rsxm-power",
  "rsxm-rules",
+ "rsxm-security",
+ "rsxm-stats",
+ "rsxm-tun",
  "serde",
  "serde_json",
 ]

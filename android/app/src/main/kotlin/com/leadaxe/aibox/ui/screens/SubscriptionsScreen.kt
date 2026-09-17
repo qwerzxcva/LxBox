@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.leadaxe.aibox.AIBoxApp
@@ -237,11 +238,12 @@ fun SubscriptionsScreen() {
                     if (state.outbounds.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilledTonalButton(onClick = {
-                                // Sequential probes: requests go to the :vpn
-                                // process one at a time, keeping the list
-                                // readable and avoiding a connection burst.
+                                // Parallel probes (karing-style test panel):
+                                // all requests fire at once; the :vpn process
+                                // multiplexes them and snapshots stream back
+                                // per group.
                                 scope.launch {
-                                    for (node in state.outbounds) {
+                                    state.outbounds.forEach { node ->
                                         pingResults = pingResults + (node.id to PingState.Triggered)
                                         relay.requestPing(node.id, node.tag, state.speedTestUrl)
                                     }
@@ -908,7 +910,10 @@ private sealed interface PingState {
     data class Failed(val reason: String) : PingState
 }
 
-/** Small inline latency readout shown next to the node type. */
+/**
+ * Latency badge (karing/FlClash style): a colored pill graded by RTT —
+ * green under 200ms, orange under 500ms, red beyond, grey while running.
+ */
 @Composable
 private fun PingBadge(state: PingState?) {
     if (state == null) return
@@ -918,16 +923,29 @@ private fun PingBadge(state: PingState?) {
         is PingState.Ok -> stringResource(R.string.subs_ping_result, state.delayMillis)
         is PingState.Failed -> stringResource(R.string.subs_ping_failed)
     }
-    val color = when (state) {
-        is PingState.Ok -> MaterialTheme.colorScheme.primary
-        is PingState.Failed -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    val (bg, fg) = when (val s = state) {
+        is PingState.Ok -> when {
+            s.delayMillis < 200 -> Color(0xFF2E7D32) to Color.White
+            s.delayMillis < 500 -> Color(0xFFEF6C00) to Color.White
+            else -> Color(0xFFC62828) to Color.White
+        }
+        is PingState.Failed -> MaterialTheme.colorScheme.errorContainer to
+            MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant to
+            MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Text(
-        text = "  ·  $text",
-        style = MaterialTheme.typography.bodySmall,
-        color = color,
-    )
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+        color = bg,
+        modifier = Modifier.padding(start = 6.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = fg,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+    }
 }
 
 @Composable

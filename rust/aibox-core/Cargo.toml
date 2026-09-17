@@ -12,3 +12,11 @@ jni = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rsxm-rules = { path = "../rsxm/crates/rsxm-rules" }
+rsxm-core = { path = "../rsxm/crates/rsxm-core" }
+rsxm-config = { path = "../rsxm/crates/rsxm-config" }
+rsxm-dns = { path = "../rsxm/crates/rsxm-dns" }
+rsxm-dialer = { path = "../rsxm/crates/rsxm-dialer" }
+rsxm-power = { path = "../rsxm/crates/rsxm-power" }
+rsxm-security = { path = "../rsxm/crates/rsxm-security" }
+rsxm-stats = { path = "../rsxm/crates/rsxm-stats" }
+rsxm-tun = { path = "../rsxm/crates/rsxm-tun" }

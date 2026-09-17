@@ -257,6 +257,47 @@ private fun PowerDome(
     }
 }
 
+/**
+ * Rolling rate samples for the traffic chart. Kept outside the composable
+ * so it survives recomposition; capacity 60 = one minute at 1s pushes.
+ */
+private val rateHistory = ArrayDeque<Pair<Long, Long>>(60)
+
+/** FlClash-style live traffic-rate sparkline over the last minute. */
+@Composable
+private fun TrafficRateChart(uplink: Long, downlink: Long) {
+    // Record the delta since the previous push as the current rate.
+    androidx.compose.runtime.LaunchedEffect(uplink, downlink) {
+        rateHistory.addLast(uplink to downlink)
+        while (rateHistory.size > 60) rateHistory.removeFirst()
+    }
+    val upColor = MaterialTheme.colorScheme.primary
+    val downColor = MaterialTheme.colorScheme.tertiary
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp),
+    ) {
+        if (rateHistory.size < 2) return@Canvas
+        val maxRate = rateHistory.maxOf { maxOf(it.first, it.second) }.coerceAtLeast(1L)
+        fun x(i: Int) = size.width * i / (rateHistory.size - 1).coerceAtLeast(1).toFloat()
+        fun y(v: Long) = size.height * (1f - v.toFloat() / maxRate)
+        // Downlink filled area.
+        val downPath = androidx.compose.ui.graphics.Path()
+        val upPath = androidx.compose.ui.graphics.Path()
+        rateHistory.forEachIndexed { i, (up, down) ->
+            val px = x(i)
+            if (i == 0) {
+                downPath.moveTo(px, y(down)); upPath.moveTo(px, y(up))
+            } else {
+                downPath.lineTo(px, y(down)); upPath.lineTo(px, y(up))
+            }
+        }
+        drawPath(downPath, color = downColor.copy(alpha = 0.55f), style = Stroke(2.dp.toPx()))
+        drawPath(upPath, color = upColor.copy(alpha = 0.85f), style = Stroke(2.dp.toPx()))
+    }
+}
+
 @Composable
 private fun StatusCard(
     state: BoxState,
@@ -284,6 +325,10 @@ private fun StatusCard(
                 )
                 MetricColumn(label = stringResource(R.string.home_goroutines), value = runtime.goroutines.toString())
                 MetricColumn(label = stringResource(R.string.home_memory), value = formatBytes(runtime.memoryBytes))
+            }
+            if (state is BoxState.Connected) {
+                Spacer(Modifier.height(10.dp))
+                TrafficRateChart(runtime.uplinkBytes, runtime.downlinkBytes)
             }
         }
     }
