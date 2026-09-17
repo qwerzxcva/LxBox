@@ -18,82 +18,102 @@ import com.leadaxe.aibox.app.ColorModeLight
 import com.leadaxe.aibox.app.ColorModeSystem
 
 /**
- * "ClashFest" festive palettes — warm cream surfaces with a coral/rose
- * accent pair and a violet highlight. Every neutral is warm-tinted (no cold
- * blue-greys): light mode is cream paper with peach cards, dark mode is
- * espresso-warm charcoal so the coral stays the loudest thing on screen.
+ * Clean blue-violet palettes inspired by ClashFest and bilipai.
+ *
+ * Light mode is paper-white with a cobalt primary, so the app reads neutral
+ * and clean — nothing warm or beige fighting the status text. Dark mode uses
+ * Material-You deep neutral grey tinted with the primary blue (#1A1D2E —
+ * notice the "2E" in the blue channel instead of flat 1F), which keeps it
+ * readable without looking like a pure-black OLED burn-in special (Android
+ * 14+ Material-You guidance). Every surface stays separated by subtle tone
+ * steps so collapsed sections and cards read as distinct even on flat screens.
  */
-private val SeedLight = lightColorScheme(
-    primary = Color(0xFFFF6A3D),
+private val BiliLight = lightColorScheme(
+    primary = Color(0xFF2F6BFF),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFDBCA),
-    onPrimaryContainer = Color(0xFF330F00),
-    inversePrimary = Color(0xFFFFB599),
-    secondary = Color(0xFFE34D7F),
+    primaryContainer = Color(0xFFDBE4FF),
+    onPrimaryContainer = Color(0xFF001A56),
+    inversePrimary = Color(0xFFB4C6FF),
+
+    secondary = Color(0xFF7B5CFF),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFD9E6),
-    onSecondaryContainer = Color(0xFF3D0720),
-    tertiary = Color(0xFF8A5CF6),
+    secondaryContainer = Color(0xFFE6E0FF),
+    onSecondaryContainer = Color(0xFF1A0F4D),
+
+    tertiary = Color(0xFF00A896),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE9DDFF),
-    onTertiaryContainer = Color(0xFF22005C),
-    background = Color(0xFFFFF7F0),
-    onBackground = Color(0xFF231913),
-    surface = Color(0xFFFFF7F0),
-    onSurface = Color(0xFF231913),
-    surfaceVariant = Color(0xFFF4DED1),
-    onSurfaceVariant = Color(0xFF57433A),
-    surfaceTint = Color(0xFFFF6A3D),
-    inverseSurface = Color(0xFF3A2D25),
-    inverseOnSurface = Color(0xFFFFEDE2),
-    outline = Color(0xFF8A7468),
-    outlineVariant = Color(0xFFDCC3B4),
+    tertiaryContainer = Color(0xFF7EF5DE),
+    onTertiaryContainer = Color(0xFF00201C),
+
+    background = Color(0xFFFAFBFF),
+    onBackground = Color(0xFF141B2C),
+    surface = Color(0xFFFAFBFF),
+    onSurface = Color(0xFF141B2C),
+    surfaceVariant = Color(0xFFE0E4EF),
+    onSurfaceVariant = Color(0xFF434A5E),
+    surfaceTint = Color(0xFF2F6BFF),
+    inverseSurface = Color(0xFF283044),
+    inverseOnSurface = Color(0xFFF1F4FF),
+    outline = Color(0xFF737A8E),
+    outlineVariant = Color(0xFFC3C8D9),
+
     error = Color(0xFFBA1A1A),
     onError = Color.White,
     errorContainer = Color(0xFFFFDAD6),
     onErrorContainer = Color(0xFF410002),
+
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFFFFDFB),
-    surfaceContainer = Color(0xFFFFF4EB),
-    surfaceContainerHigh = Color(0xFFFCEADB),
-    surfaceContainerHighest = Color(0xFFF7E0CE),
+    surfaceContainerLow = Color(0xFFF4F6FC),
+    surfaceContainer = Color(0xFFEEF1F8),
+    surfaceContainerHigh = Color(0xFFE7EBF4),
+    surfaceContainerHighest = Color(0xFFDEE2EE),
 )
 
-private val SeedDark = darkColorScheme(
-    primary = Color(0xFFFF9E7D),
-    onPrimary = Color(0xFF4A1800),
-    primaryContainer = Color(0xFF713711),
-    onPrimaryContainer = Color(0xFFFFDBCA),
-    inversePrimary = Color(0xFFFF6A3D),
-    secondary = Color(0xFFFFADC9),
-    onSecondary = Color(0xFF5E0D30),
-    secondaryContainer = Color(0xFF852A53),
-    onSecondaryContainer = Color(0xFFFFD9E6),
-    tertiary = Color(0xFFCFBEFF),
-    onTertiary = Color(0xFF330A72),
-    tertiaryContainer = Color(0xFF4B308B),
-    onTertiaryContainer = Color(0xFFE9DDFF),
-    // Espresso-warm charcoal: neutral brown ramp, never cold blue-black.
-    background = Color(0xFF17120F),
-    onBackground = Color(0xFFF4E5DA),
-    surface = Color(0xFF17120F),
-    onSurface = Color(0xFFF4E5DA),
-    surfaceVariant = Color(0xFF52443B),
-    onSurfaceVariant = Color(0xFFD8C2B5),
-    surfaceTint = Color(0xFFFF9E7D),
-    inverseSurface = Color(0xFFF4E5DA),
-    inverseOnSurface = Color(0xFF3A2D25),
-    outline = Color(0xFFA28E80),
-    outlineVariant = Color(0xFF52443B),
+private val BiliDark = darkColorScheme(
+    primary = Color(0xFFAEC6FF),
+    onPrimary = Color(0xFF00297A),
+    primaryContainer = Color(0xFF103FA8),
+    onPrimaryContainer = Color(0xFFDBE4FF),
+    inversePrimary = Color(0xFF2F6BFF),
+
+    secondary = Color(0xFFCCBDFF),
+    onSecondary = Color(0xFF2F1F7C),
+    secondaryContainer = Color(0xFF463794),
+    onSecondaryContainer = Color(0xFFE6E0FF),
+
+    tertiary = Color(0xFF6ED9C2),
+    onTertiary = Color(0xFF00382F),
+    tertiaryContainer = Color(0xFF005144),
+    onTertiaryContainer = Color(0xFF7EF5DE),
+
+    // Blue-tinted deep neutral — not pure black, not flat grey. The 0x1A1D2E
+    // base carries just enough of the primary family to read as "AIBox dark"
+    // rather than the generic system dark theme.
+    background = Color(0xFF1A1D2E),
+    onBackground = Color(0xFFE2E5F3),
+    surface = Color(0xFF1A1D2E),
+    onSurface = Color(0xFFE2E5F3),
+    surfaceVariant = Color(0xFF424758),
+    onSurfaceVariant = Color(0xFFC3C7D8),
+    surfaceTint = Color(0xFFAEC6FF),
+    inverseSurface = Color(0xFFE2E5F3),
+    inverseOnSurface = Color(0xFF2A2D3E),
+    outline = Color(0xFF8D92A5),
+    outlineVariant = Color(0xFF424758),
+
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
     onErrorContainer = Color(0xFFFFDAD6),
-    surfaceContainerLowest = Color(0xFF110D0B),
-    surfaceContainerLow = Color(0xFF1F1915),
-    surfaceContainer = Color(0xFF231D19),
-    surfaceContainerHigh = Color(0xFF2E2621),
-    surfaceContainerHighest = Color(0xFF39302A),
+
+    // Toned surfaces with increasing elevation — the key to making dark
+    // mode feel "designed" instead of flat. Each step is a 2-3% alpha blend
+    // of primary over the base #1A1D2E.
+    surfaceContainerLowest = Color(0xFF121524),
+    surfaceContainerLow = Color(0xFF222638),
+    surfaceContainer = Color(0xFF282C40),
+    surfaceContainerHigh = Color(0xFF33374C),
+    surfaceContainerHighest = Color(0xFF3E4358),
 )
 
 private val LxTypography = Typography(
@@ -121,7 +141,7 @@ fun LxTheme(
         else -> isSystemInDarkTheme()
     }
     MaterialTheme(
-        colorScheme = if (darkTheme) SeedDark else SeedLight,
+        colorScheme = if (darkTheme) BiliDark else BiliLight,
         typography = LxTypography,
         // Consistently rounder surfaces across every Card/Sheet/Menu that
         // reads the theme defaults — the "softer" look the user asked for.

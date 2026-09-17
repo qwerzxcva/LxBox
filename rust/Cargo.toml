@@ -11,6 +11,7 @@ members = [
     "rsxm/crates/rsxm-stats",
     "rsxm/crates/rsxm-power",
     "rsxm/crates/rsxm-security",
+    "rsxm/crates/rsxm-sniffer",
     "rsxm/crates/rsxm-agent",
 ]
 

@@ -510,6 +510,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "rsxm-core",
+ "serde",
  "serde_json",
  "sha2",
 ]
@@ -545,6 +546,15 @@ dependencies = [
 
 [[package]]
 name = "rsxm-security"
+version = "0.2.0"
+dependencies = [
+ "rsxm-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rsxm-sniffer"
 version = "0.2.0"
 dependencies = [
  "rsxm-core",

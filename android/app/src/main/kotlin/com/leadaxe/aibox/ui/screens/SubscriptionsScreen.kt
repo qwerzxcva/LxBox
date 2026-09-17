@@ -117,10 +117,13 @@ fun SubscriptionsScreen() {
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // Actions row: compact icon buttons; each section below carries
-            // its own add affordance, so this row stays short.
+            // Actions row: compact icon buttons so the page header stays
+            // short. Each section below carries its own add affordance.
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     FilledTonalButton(onClick = { addDialog = true }) {
                         Icon(Icons.Outlined.Add, contentDescription = null)
                         Text(stringResource(R.string.subs_add))
@@ -158,8 +161,15 @@ fun SubscriptionsScreen() {
                         Icon(Icons.Outlined.Refresh, contentDescription = null)
                         Text(stringResource(R.string.subs_refresh_all))
                     }
-                    FilledTonalButton(onClick = { pasteDialog = true }) {
-                        Icon(Icons.Outlined.ContentPaste, contentDescription = null)
+                    // Paste link: compact text icon, not a full button row.
+                    // Pasting is less common than adding/refresh; making it
+                    // a small text chip keeps the header uncluttered.
+                    TextButton(onClick = { pasteDialog = true }) {
+                        Icon(
+                            Icons.Outlined.ContentPaste,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
                         Text(stringResource(R.string.subs_paste_link))
                     }
                 }
@@ -1205,30 +1215,80 @@ private fun GroupRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    val isSelected = state.selectedOutbound == group.tag
+    val kindLabel = if (group.kind == com.leadaxe.aibox.app.OutboundGroup.KindSelector)
+        stringResource(R.string.groups_kind_selector)
+    else
+        stringResource(R.string.groups_kind_urltest)
+    val modeLabel = when {
+        group.kind != com.leadaxe.aibox.app.OutboundGroup.KindUrlTest -> null
+        group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeRoundRobin ->
+            stringResource(R.string.groups_mode_rr)
+        group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeFallback ->
+            stringResource(R.string.groups_mode_fallback)
+        else -> stringResource(R.string.groups_mode_least)
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Small colored dot to mark the active selection — bilipai-style.
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier.padding(end = 10.dp)
+                    .then(Modifier),
+            ) {
+                val r = 6f
+                drawCircle(
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    radius = r,
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    group.name.ifBlank { group.tag },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                val kindLabel = if (group.kind == com.leadaxe.aibox.app.OutboundGroup.KindSelector)
-                    stringResource(R.string.groups_kind_selector)
-                else
-                    stringResource(R.string.groups_kind_urltest)
-                val modeLabel = when {
-                    group.kind != com.leadaxe.aibox.app.OutboundGroup.KindUrlTest -> ""
-                    group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeRoundRobin ->
-                        " · " + stringResource(R.string.groups_mode_rr)
-                    group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeFallback ->
-                        " · " + stringResource(R.string.groups_mode_fallback)
-                    else -> " · " + stringResource(R.string.groups_mode_least)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        group.name.ifBlank { group.tag },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // Kind badge — tiny outlined box next to the title.
+                    Text(
+                        kindLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 8.dp)
+                            .then(Modifier),
+                    )
                 }
-                Text(
-                    "$kindLabel$modeLabel · ${group.members.size} member(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Member count pill — compact number with muted color.
+                    Text(
+                        "${group.members.size} member${if (group.members.size == 1) "" else "s"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (modeLabel != null) {
+                        Text(
+                            " · $modeLabel",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (isSelected) {
+                        Text(
+                            " · active",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
