@@ -6,11 +6,13 @@
 //! ClientHello carries the REALITY authentication, plus the VLESS request
 //! frame format verified against `sing-vmess`'s Go sources.
 
+pub mod fingerprints;
 pub mod hello;
 pub mod module;
 pub mod tls13;
 pub mod vless;
 
+pub use fingerprints::{build_table as build_fingerprint_table, known_names as known_fingerprint_names, lookup as lookup_fingerprint};
 pub use module::{DialerModule, OutboundInfo};
 
 use std::io::{Read, Write};

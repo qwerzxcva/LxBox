@@ -151,6 +151,8 @@
     <string name="routes_override">Override destination</string>
     <string name="routes_override_hint">Rewrite where matched connections go: a bare port (8443 = same host, new port), host:port, or host. Leave empty for no rewrite. The original destination is preserved for the outbound.</string>
     <string name="routes_outbound">Outbound</string>
+    <string name="routes_outbound_direct">Direct</string>
+    <string name="routes_outbound_proxy">Proxy</string>
     <string name="routes_field_domain">Domain</string>
     <string name="routes_field_domain_suffix">Domain suffix</string>
     <string name="routes_field_domain_keyword">Domain keyword</string>

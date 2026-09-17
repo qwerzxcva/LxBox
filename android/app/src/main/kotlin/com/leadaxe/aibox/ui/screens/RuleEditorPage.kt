@@ -1,6 +1,8 @@
 package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,8 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -256,18 +260,32 @@ fun RuleEditorPage(
                                 },
                             )
                             if (action == RouteRule.RuleActionRoute) {
-                                val outboundOptions = remember(state.outbounds, state.outboundGroups) {
-                                    listOf(ProxySelectorTag, DirectOutboundTag) +
-                                        state.outboundGroups.filter { it.enabled }.map { it.tag } +
-                                        state.outbounds.map { it.tag }
+                                // Two-level exit picker:
+                                //   Level 1: proxy (→ selector) or direct
+                                //   Level 2 (proxy only): country/region
+                                //           groups → expand → individual node
+                                val useProxy = outbound != DirectOutboundTag
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    FilterChip(
+                                        selected = !useProxy,
+                                        onClick = { outbound = DirectOutboundTag },
+                                        label = { Text(stringResource(R.string.routes_outbound_direct)) },
+                                    )
+                                    FilterChip(
+                                        selected = useProxy,
+                                        onClick = { outbound = ProxySelectorTag },
+                                        label = { Text(stringResource(R.string.routes_outbound_proxy)) },
+                                    )
                                 }
-                                SingleChoiceChips(
-                                    label = stringResource(R.string.routes_outbound),
-                                    options = outboundOptions,
-                                    selected = outbound,
-                                    onSelect = { outbound = it },
-                                    display = { outboundDisplayLabel(it, state) },
-                                )
+                                AnimatedVisibility(visible = useProxy) {
+                                    OutboundNodePicker(
+                                        state = state,
+                                        selectedNodeTag = null, // keep rule-wide ProxySelectorTag; per-node list coming in v2
+                                    )
+                                }
                                 // Destination override: rewrite where matched
                                 // connections go (host, host:port, or bare port).
                                 StringField(
@@ -696,4 +714,104 @@ internal fun subRuleSummary(rule: RouteRule): String {
         if (rule.ipIsPrivate) add("dst-private")
     }
     return parts.joinToString(" · ")
+}
+
+/**
+ * Flag-grouped node picker shown when the route-rule exit is set to proxy.
+ * Every region is a collapsible card; the header shows flag + label + node
+ * count. Expanding reveals per-node checkboxes (v1 display-only; v2 will
+ * drive RouteRule.outboundNodes for per-rule pool selection).
+ *
+ * The "action → proxy" line above still writes `ProxySelectorTag` so the
+ * route behaviour is "this rule flows through the proxy selector" — users
+ * pick the actual member from the Groups tab. This picker is a visual
+ * catalogue showing *which* nodes that covers, matching the UX the user
+ * described: see all flags, expand one, pick individual nodes later.
+ */
+@Composable
+private fun OutboundNodePicker(
+    state: AppState,
+    selectedNodeTag: String?,
+) {
+    val groups = remember(state.outbounds) { com.leadaxe.aibox.ui.groupByRegion(state.outbounds) }
+    if (groups.isEmpty()) {
+        Text(
+            text = "No proxy nodes yet — add a subscription first.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        groups.forEach { group ->
+            var expanded by remember(group.key) { mutableStateOf(group.nodes.size <= 3) }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.animateContentSize()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { expanded = !expanded }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = group.flagEmoji,
+                            fontSize = MaterialTheme.typography.titleSmall.fontSize,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                        Text(
+                            "${group.regionName} \u00d7${group.nodes.size}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    AnimatedVisibility(visible = expanded) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 6.dp).padding(bottom = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            group.nodes.forEach { node ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Checkbox(
+                                        checked = node.tag == selectedNodeTag,
+                                        onCheckedChange = { /* v2: drive RouteRule.outboundNodes */ },
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            com.leadaxe.aibox.ui.FlagParser.stripLeadingFlag(
+                                                node.name.ifBlank { node.tag },
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                        )
+                                        Text(
+                                            com.leadaxe.aibox.ui.FlagParser.protocolLine(node),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Text(
+            "This rule uses your proxy selector — pick active nodes from the Groups tab.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

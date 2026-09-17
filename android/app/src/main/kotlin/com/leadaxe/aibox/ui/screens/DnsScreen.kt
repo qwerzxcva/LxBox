@@ -1,6 +1,7 @@
 package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
@@ -565,10 +568,6 @@ private fun DnsServerCard(
                         "${server.type} · ${server.address.ifBlank { "(system)" }}",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    Text(
-                        stringResource(R.string.dns_detour) + ": " + detourLabel(server.detour, state),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
                 }
                 FilterChip(
                     selected = server.enabled,
@@ -642,8 +641,13 @@ private fun AddServerRow(onClick: () -> Unit) {
 /**
  * Inline expanding server editor (used both for create and edit). The outer
  * LazyColumn owns scrolling, so the form is a plain Column inside a card —
- * no dialog, no clipped viewport. [formKey] resets the fields when the
- * target switches between "new" and a different server id.
+ * no dialog, no clipped viewport. The header row carries the title *and* a
+ * chevron so the form can be collapsed back without scrolling up.
+ *
+ * Per-server `detour` is gone from the UI — routing rules and DNS rules
+ * already decide which DNS server answers which flow; the server itself no
+ * longer needs to pick an exit. The detour field still exists on the model
+ * (Compiler may set it internally) but the user cannot edit it.
  */
 @Composable
 private fun DnsServerFormCard(
@@ -654,10 +658,10 @@ private fun DnsServerFormCard(
     onSave: (DnsServerState) -> Unit,
 ) {
     val formKey = initial?.id ?: "__new_dns_server__"
+    var collapsed by remember(formKey) { mutableStateOf(false) }
     var name by remember(formKey) { mutableStateOf(initial?.name.orEmpty()) }
     var type by remember(formKey) { mutableStateOf(initial?.type ?: "https") }
     var address by remember(formKey) { mutableStateOf(initial?.address.orEmpty()) }
-    var detour by remember(formKey) { mutableStateOf(initial?.detour ?: DnsDetourProxy) }
     var strategy by remember(formKey) { mutableStateOf(initial?.strategy.orEmpty()) }
     var domainResolver by remember(formKey) { mutableStateOf(initial?.domainResolver.orEmpty()) }
     var clientSubnet by remember(formKey) { mutableStateOf(initial?.clientSubnet.orEmpty()) }
@@ -671,9 +675,6 @@ private fun DnsServerFormCard(
     var groupErrorTtl by remember(formKey) { mutableStateOf(initial?.groupErrorTtl.orEmpty()) }
     var groupWinTtl by remember(formKey) { mutableStateOf(initial?.groupWinTtl.orEmpty()) }
 
-    val detourOptions = remember(state.outbounds) {
-        listOf(DnsDetourDirect, DnsDetourProxy) + state.outbounds.map { it.tag }
-    }
     // Candidate members for a group: every concrete (non-group) server
     // except this one — groups cannot nest groups.
     val groupCandidates = remember(state.dnsServers, formKey) {
@@ -688,7 +689,10 @@ private fun DnsServerFormCard(
                 name = name.ifBlank { address.ifBlank { type } },
                 type = type,
                 address = address,
-                detour = detour,
+                // Leave detour as-is: the model keeps it for compiler use,
+                // but the UI no longer exposes it (route/DNS rules choose
+                // servers per-flow instead).
+                detour = initial?.detour.orEmpty(),
                 strategy = strategy,
                 domainResolver = domainResolver,
                 clientSubnet = clientSubnet,
@@ -704,135 +708,148 @@ private fun DnsServerFormCard(
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            StringField(
-                label = stringResource(R.string.dns_name),
-                value = name,
-                onValueChange = { name = it },
-            )
-            SingleChoiceChips(
-                label = stringResource(R.string.dns_type),
-                options = DnsServerTypes,
-                selected = type,
-                onSelect = { type = it },
-                display = { t -> if (t == "group") stringResource(R.string.dns_type_group) else t },
-            )
-            if (type == "hosts") {
-                ListField(
-                    label = stringResource(R.string.dns_hosts_entries),
-                    values = hostsEntries,
-                    onValuesChange = { hostsEntries = it },
-                    placeholder = "example.com=1.2.3.4",
-                    supporting = stringResource(R.string.dns_hosts_hint),
-                )
-            }
-            if (type != "local" && type != "direct" && type != "group" && type != "hosts") {
-                StringField(
-                    label = stringResource(R.string.dns_address),
-                    value = address,
-                    onValueChange = { address = it },
-                    placeholder = "1.1.1.1",
-                )
-            }
-            if (type == "group") {
-                Text(
-                    stringResource(R.string.dns_group_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                MultiChoiceChips(
-                    label = stringResource(R.string.dns_group_members),
-                    options = groupCandidates,
-                    selected = groupServers,
-                    onToggle = { tag ->
-                        groupServers = if (tag in groupServers) groupServers - tag else groupServers + tag
-                    },
-                    display = { tag ->
-                        state.dnsServers.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
-                    },
-                )
-                SingleChoiceChips(
-                    label = stringResource(R.string.dns_group_mode),
-                    options = com.leadaxe.aibox.app.DnsGroupModes,
-                    selected = groupMode,
-                    onSelect = { groupMode = it },
-                    display = {
-                        when (it) {
-                            com.leadaxe.aibox.app.DnsGroupFastest -> stringResource(R.string.dns_group_fastest)
-                            com.leadaxe.aibox.app.DnsGroupParallel -> stringResource(R.string.dns_group_parallel)
-                            else -> stringResource(R.string.dns_group_stable)
-                        }
-                    },
-                )
-                StringField(
-                    label = stringResource(R.string.dns_group_error_ttl),
-                    value = groupErrorTtl,
-                    onValueChange = { groupErrorTtl = it },
-                    placeholder = stringResource(R.string.dns_group_error_ttl_hint),
-                )
-                if (groupMode == com.leadaxe.aibox.app.DnsGroupFastest) {
-                    StringField(
-                        label = stringResource(R.string.dns_group_win_ttl),
-                        value = groupWinTtl,
-                        onValueChange = { groupWinTtl = it },
-                        placeholder = stringResource(R.string.dns_group_win_ttl_hint),
-                    )
-                }
-            } else {
-                DetourPicker(
-                    label = stringResource(R.string.dns_detour),
-                    options = detourOptions,
-                    selected = detour,
-                    state = state,
-                    onSelect = { detour = it },
-                )
-            }
-            SingleChoiceChips(
-                label = stringResource(R.string.dns_strategy),
-                options = DnsStrategies,
-                selected = strategy,
-                onSelect = { strategy = it },
-                display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
-            )
-            ResolverPicker(
-                label = stringResource(R.string.dns_domain_resolver),
-                servers = state.dnsServers,
-                selected = domainResolver,
-                onSelect = { domainResolver = it },
-            )
-            if (type == "tls" || type == "https" || type == "quic" || type == "h3") {
-                StringField(
-                    label = stringResource(R.string.dns_tls_server_name),
-                    value = tlsServerName,
-                    onValueChange = { tlsServerName = it },
-                    placeholder = "dns.example.com",
-                )
-                SwitchRow(
-                    label = stringResource(R.string.dns_insecure),
-                    checked = insecure,
-                    onCheckedChange = { insecure = it },
-                )
-            }
-            StringField(
-                label = stringResource(R.string.dns_client_subnet),
-                value = clientSubnet,
-                onValueChange = { clientSubnet = it },
-                placeholder = "1.2.3.0/24",
-            )
+        Column(modifier = Modifier.animateContentSize()) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                horizontalArrangement = Arrangement.End,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
-                Spacer(Modifier.padding(horizontal = 4.dp))
-                Button(onClick = save) { Text(stringResource(R.string.common_save)) }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { collapsed = !collapsed }) {
+                    Icon(
+                        if (collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                        contentDescription = title,
+                    )
+                }
+            }
+            AnimatedVisibility(visible = !collapsed) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    StringField(
+                        label = stringResource(R.string.dns_name),
+                        value = name,
+                        onValueChange = { name = it },
+                    )
+                    SingleChoiceChips(
+                        label = stringResource(R.string.dns_type),
+                        options = DnsServerTypes,
+                        selected = type,
+                        onSelect = { type = it },
+                        display = { t -> if (t == "group") stringResource(R.string.dns_type_group) else t },
+                    )
+                    if (type == "hosts") {
+                        ListField(
+                            label = stringResource(R.string.dns_hosts_entries),
+                            values = hostsEntries,
+                            onValuesChange = { hostsEntries = it },
+                            placeholder = "example.com=1.2.3.4",
+                            supporting = stringResource(R.string.dns_hosts_hint),
+                        )
+                    }
+                    if (type != "group" && type != "hosts") {
+                        StringField(
+                            label = stringResource(R.string.dns_address),
+                            value = address,
+                            onValueChange = { address = it },
+                            placeholder = "1.1.1.1",
+                        )
+                    }
+                    if (type == "group") {
+                        Text(
+                            stringResource(R.string.dns_group_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        MultiChoiceChips(
+                            label = stringResource(R.string.dns_group_members),
+                            options = groupCandidates,
+                            selected = groupServers,
+                            onToggle = { tag ->
+                                groupServers = if (tag in groupServers) groupServers - tag else groupServers + tag
+                            },
+                            display = { tag ->
+                                state.dnsServers.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
+                            },
+                        )
+                        SingleChoiceChips(
+                            label = stringResource(R.string.dns_group_mode),
+                            options = com.leadaxe.aibox.app.DnsGroupModes,
+                            selected = groupMode,
+                            onSelect = { groupMode = it },
+                            display = {
+                                when (it) {
+                                    com.leadaxe.aibox.app.DnsGroupFastest -> stringResource(R.string.dns_group_fastest)
+                                    com.leadaxe.aibox.app.DnsGroupParallel -> stringResource(R.string.dns_group_parallel)
+                                    else -> stringResource(R.string.dns_group_stable)
+                                }
+                            },
+                        )
+                        StringField(
+                            label = stringResource(R.string.dns_group_error_ttl),
+                            value = groupErrorTtl,
+                            onValueChange = { groupErrorTtl = it },
+                            placeholder = stringResource(R.string.dns_group_error_ttl_hint),
+                        )
+                        if (groupMode == com.leadaxe.aibox.app.DnsGroupFastest) {
+                            StringField(
+                                label = stringResource(R.string.dns_group_win_ttl),
+                                value = groupWinTtl,
+                                onValueChange = { groupWinTtl = it },
+                                placeholder = stringResource(R.string.dns_group_win_ttl_hint),
+                            )
+                        }
+                    }
+                    SingleChoiceChips(
+                        label = stringResource(R.string.dns_strategy),
+                        options = DnsStrategies,
+                        selected = strategy,
+                        onSelect = { strategy = it },
+                        display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
+                    )
+                    ResolverPicker(
+                        label = stringResource(R.string.dns_domain_resolver),
+                        servers = state.dnsServers,
+                        selected = domainResolver,
+                        onSelect = { domainResolver = it },
+                    )
+                    if (type == "tls" || type == "https" || type == "quic" || type == "h3") {
+                        StringField(
+                            label = stringResource(R.string.dns_tls_server_name),
+                            value = tlsServerName,
+                            onValueChange = { tlsServerName = it },
+                            placeholder = "dns.example.com",
+                        )
+                        SwitchRow(
+                            label = stringResource(R.string.dns_insecure),
+                            checked = insecure,
+                            onCheckedChange = { insecure = it },
+                        )
+                    }
+                    StringField(
+                        label = stringResource(R.string.dns_client_subnet),
+                        value = clientSubnet,
+                        onValueChange = { clientSubnet = it },
+                        placeholder = "1.2.3.0/24",
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
+                        Spacer(Modifier.padding(horizontal = 4.dp))
+                        Button(onClick = save) { Text(stringResource(R.string.common_save)) }
+                    }
+                }
             }
         }
     }
@@ -897,6 +914,11 @@ private fun ResolverPicker(
 
 // -------------------------------------------------------------- dns rule
 
+/**
+ * Collapsible DNS rule card — folded by default so long matcher lists
+ * (hundreds of domains / rule-sets) don't blow up the list height. Tap the
+ * header row to reveal every matcher group. Mirrors RuleCard's shape.
+ */
 @Composable
 private fun DnsRuleCard(
     rule: DnsRule,
@@ -905,15 +927,42 @@ private fun DnsRuleCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
+    var collapsed by remember { mutableStateOf(true) }
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = rule.name.ifBlank { rule.id.take(8) },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
+        Column(modifier = Modifier.animateContentSize()) {
+            // Header row: tap to collapse/expand; chevron on the far right.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { collapsed = !collapsed }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    val title = rule.name.ifBlank { rule.id.take(8) }
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = if (collapsed) 1 else Int.MAX_VALUE,
+                    )
+                    val summary = buildList {
+                        if (rule.domain.isNotEmpty()) add("dom ${rule.domain.size}")
+                        if (rule.domainSuffix.isNotEmpty()) add("suf ${rule.domainSuffix.size}")
+                        if (rule.domainKeyword.isNotEmpty()) add("kw ${rule.domainKeyword.size}")
+                        if (rule.ruleSet.isNotEmpty()) add("rs ${rule.ruleSet.size}")
+                        if (rule.queryType.isNotEmpty()) add("qtype ${rule.queryType.size}")
+                        if (rule.packageName.isNotEmpty()) add("pkg ${rule.packageName.size}")
+                        if (rule.clashMode.isNotEmpty()) add("mode ${rule.clashMode.size}")
+                    }.joinToString(" · ").ifBlank { stringResource(R.string.routes_empty_matcher) }
+                    val actionLabel = "${rule.action} → ${rule.server.ifBlank { stringResource(R.string.dns_target_system) }}"
+                    Text(
+                        text = "$summary · $actionLabel",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (collapsed) 1 else Int.MAX_VALUE,
+                    )
+                }
                 FilterChip(
                     selected = rule.enabled,
                     onClick = { onToggleEnabled(!rule.enabled) },
@@ -925,23 +974,60 @@ private fun DnsRuleCard(
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
                 }
+                Icon(
+                    if (collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            val summary = buildList {
-                if (rule.domain.isNotEmpty()) add("domain ${rule.domain.size}")
-                if (rule.domainSuffix.isNotEmpty()) add("suffix ${rule.domainSuffix.size}")
-                if (rule.domainKeyword.isNotEmpty()) add("keyword ${rule.domainKeyword.size}")
-                if (rule.ruleSet.isNotEmpty()) add("rule_set ${rule.ruleSet.size}")
-                if (rule.queryType.isNotEmpty()) add("qtype ${rule.queryType.size}")
-                if (rule.packageName.isNotEmpty()) add("package ${rule.packageName.size}")
-                if (rule.clashMode.isNotEmpty()) add("mode ${rule.clashMode.size}")
-            }.joinToString(" · ").ifBlank { stringResource(R.string.routes_empty_matcher) }
-            Text(summary, style = MaterialTheme.typography.bodySmall)
-            Text(
-                "${rule.action} → ${rule.server.ifBlank { stringResource(R.string.dns_target_system) }}",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            // Expanded body: one row per populated matcher group, showing
+            // the actual values (not just counts) — but still compact so
+            // the card stays scannable.
+            AnimatedVisibility(visible = !collapsed) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                        .padding(bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    MatcherRow("domain", rule.domain.take(6), rule.domain.size)
+                    MatcherRow("suffix", rule.domainSuffix.take(6), rule.domainSuffix.size)
+                    MatcherRow("keyword", rule.domainKeyword.take(6), rule.domainKeyword.size)
+                    MatcherRow("rule_set", rule.ruleSet.take(6), rule.ruleSet.size)
+                    MatcherRow("qtype", rule.queryType.take(6), rule.queryType.size)
+                    MatcherRow("package", rule.packageName.take(6), rule.packageName.size)
+                    MatcherRow("mode", rule.clashMode.take(6), rule.clashMode.size)
+                    if (rule.clientSubnet.isNotBlank()) {
+                        Text(
+                            "client_subnet: ${rule.clientSubnet}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (rule.invert) {
+                        Text(
+                            "invert: true",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                }
+            }
         }
     }
+}
+
+/** Small label + truncated values row used inside an expanded DnsRuleCard. */
+@Composable
+private fun MatcherRow(label: String, values: List<String>, total: Int) {
+    if (total == 0) return
+    val shown = values.joinToString(", ")
+    val suffix = if (total > values.size) " +${total - values.size}" else ""
+    Text(
+        "$label: $shown$suffix",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+    )
 }
 
 @Composable

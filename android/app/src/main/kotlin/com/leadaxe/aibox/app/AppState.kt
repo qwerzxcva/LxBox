@@ -379,11 +379,12 @@ const val MuxProtocolYamux = "yamux"
 val MuxProtocols = listOf(MuxProtocolH2mux, MuxProtocolSmux, MuxProtocolYamux)
 
 /**
- * DNS server transport types. `local` uses the OS resolver; `direct` forces
- * the request through the direct outbound; everything else maps to the
- * sing-box server type of the same name.
+ * DNS server transport types. Removed `local`/`direct` — route rules and DNS
+ * rules already specify which DNS server to use per-flow, so the server
+ * itself no longer needs a detour. `local`'s job is covered by the OS/system
+ * resolver (empty tag), `direct` by leaving detour unset.
  */
-val DnsServerTypes = listOf("local", "direct", "hosts", "udp", "tcp", "tls", "https", "quic", "h3", "group")
+val DnsServerTypes = listOf("hosts", "udp", "tcp", "tls", "https", "quic", "h3", "group")
 
 /**
  * DNS hosts entries for the `hosts` transport: domain → IP (one per line
@@ -928,9 +929,11 @@ val DnsResponseRcodes = listOf(
 )
 
 /**
- * Default DNS servers. `remote` / proxy-chain resolvers route through the
- * proxy selector; `direct` uses the OS resolver for LAN lookups; `fakeip`
- * is opt-in via [AppState.enableFakeIp].
+ * Default DNS servers. The UI no longer exposes `detour` or `local`/`direct`
+ * types (per-server exit decisions belong in route / DNS rules now), so the
+ * defaults are plain DoH servers. The compiler adds its own internal
+ * `local` servers for final-resolver shortcuts as needed — the user never
+ * sees those.
  */
 fun defaultDnsServers(): List<DnsServerState> = listOf(
     DnsServerState(
@@ -938,14 +941,6 @@ fun defaultDnsServers(): List<DnsServerState> = listOf(
         name = "Remote",
         type = "https",
         address = "1.1.1.1",
-        detour = ProxySelectorTag,
-    ),
-    DnsServerState(
-        id = "direct",
-        name = "Direct",
-        type = "local",
-        address = "",
-        detour = DirectOutboundTag,
     ),
 )
 

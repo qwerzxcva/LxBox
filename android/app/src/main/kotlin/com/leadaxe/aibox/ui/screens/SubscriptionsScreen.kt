@@ -1,5 +1,8 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -117,10 +120,13 @@ fun SubscriptionsScreen() {
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // Actions row: compact icon buttons; each section below carries
-            // its own add affordance, so this row stays short.
+            // Actions row: compact icon buttons so the page header stays
+            // short. Each section below carries its own add affordance.
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     FilledTonalButton(onClick = { addDialog = true }) {
                         Icon(Icons.Outlined.Add, contentDescription = null)
                         Text(stringResource(R.string.subs_add))
@@ -158,8 +164,15 @@ fun SubscriptionsScreen() {
                         Icon(Icons.Outlined.Refresh, contentDescription = null)
                         Text(stringResource(R.string.subs_refresh_all))
                     }
-                    FilledTonalButton(onClick = { pasteDialog = true }) {
-                        Icon(Icons.Outlined.ContentPaste, contentDescription = null)
+                    // Paste link: compact text icon, not a full button row.
+                    // Pasting is less common than adding/refresh; making it
+                    // a small text chip keeps the header uncluttered.
+                    TextButton(onClick = { pasteDialog = true }) {
+                        Icon(
+                            Icons.Outlined.ContentPaste,
+                            contentDescription = null,
+                            modifier = Modifier.padding(end = 4.dp),
+                        )
                         Text(stringResource(R.string.subs_paste_link))
                     }
                 }
@@ -266,20 +279,45 @@ fun SubscriptionsScreen() {
                         )
                         else -> state.outbounds
                     }
-                    displayNodes.forEach { node ->
-                        NodeRow(
-                            node = node,
-                            selected = node.tag == state.selectedOutbound,
-                            pingState = pingResults[node.id],
-                            onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
-                            onPing = {
-                                scope.launch {
-                                    pingResults = pingResults + (node.id to PingState.Triggered)
-                                    relay.requestPing(node.id, node.tag, state.speedTestUrl)
-                                }
-                            },
-                            onEdit = { editingNode = node },
-                        )
+                    // Grouped by flag when not sorting by delay (delay sort
+                    // is a one-off that destroys region grouping). Delay-sorted
+                    // view is always flat because the user wants a latency list.
+                    val groupedNodes = when (sortByDelay) {
+                        true -> null
+                        else -> com.leadaxe.aibox.ui.groupByRegion(displayNodes)
+                    }
+                    if (groupedNodes != null) {
+                        groupedNodes.forEach { group ->
+                            FlaggedRegionRow(
+                                group = group,
+                                pingResults = pingResults,
+                                selectedTag = state.selectedOutbound,
+                                onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                                onPing = { node ->
+                                    scope.launch {
+                                        pingResults = pingResults + (node.id to PingState.Triggered)
+                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                    }
+                                },
+                                onEdit = { node -> editingNode = node },
+                            )
+                        }
+                    } else {
+                        displayNodes.forEach { node ->
+                            NodeRow(
+                                node = node,
+                                selected = node.tag == state.selectedOutbound,
+                                pingState = pingResults[node.id],
+                                onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                                onPing = {
+                                    scope.launch {
+                                        pingResults = pingResults + (node.id to PingState.Triggered)
+                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                    }
+                                },
+                                onEdit = { editingNode = node },
+                            )
+                        }
                     }
                     if (state.outbounds.isEmpty()) {
                         Text(
@@ -858,6 +896,87 @@ private fun ResolverPicker(
     }
 }
 
+/**
+ * Collapsible region group header. Shows flag + region name + node count
+ * in the compact form `🇭🇰 Hong Kong ×5`. Tapping the row expands/collapses
+ * the [content] slot that lists every node in this region.
+ *
+ * The "selected" dot turns primary when any node in this group is the
+ * currently active outbound — visual cue without needing to expand.
+ */
+@Composable
+private fun FlaggedRegionRow(
+    group: com.leadaxe.aibox.ui.RegionGroup,
+    pingResults: Map<String, PingState>,
+    selectedTag: String,
+    onSelect: (String) -> Unit,
+    onPing: (OutboundProfile) -> Unit,
+    onEdit: (OutboundProfile) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(group.nodes.size <= 3) }
+    val activeInGroup = group.nodes.any { it.tag == selectedTag }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.animateContentSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.Text(
+                    text = group.flagEmoji,
+                    fontSize = MaterialTheme.typography.titleMedium.fontSize,
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${group.regionName} ×${group.nodes.size}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (activeInGroup) {
+                        Text(
+                            "active",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 6.dp).padding(bottom = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    group.nodes.forEach { node ->
+                        NodeRow(
+                            node = node,
+                            selected = node.tag == selectedTag,
+                            pingState = pingResults[node.id],
+                            onSelect = { onSelect(node.tag) },
+                            onPing = { onPing(node) },
+                            onEdit = { onEdit(node) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One proxy node. Shows the clean name (flag already lives in the parent
+ * region group header) plus a full protocol line:
+ *
+ *   Hong Kong 01         ← [name]
+ *   vless · hk1.example.com:443 · tls  ← [protocolLine] from FlagParser
+ */
 @Composable
 private fun NodeRow(
     node: OutboundProfile,
@@ -872,14 +991,24 @@ private fun NodeRow(
         colors = if (selected) CardDefaults.elevatedCardColors() else CardDefaults.outlinedCardColors(),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(checked = selected, onCheckedChange = { onSelect(node.tag) })
             Column(modifier = Modifier.weight(1f)) {
-                Text(node.name.ifBlank { node.tag }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    com.leadaxe.aibox.ui.FlagParser.stripLeadingFlag(node.name.ifBlank { node.tag }),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(node.type, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        com.leadaxe.aibox.ui.FlagParser.protocolLine(node),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
                     PingBadge(pingState)
                 }
             }
@@ -1205,30 +1334,80 @@ private fun GroupRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+    val isSelected = state.selectedOutbound == group.tag
+    val kindLabel = if (group.kind == com.leadaxe.aibox.app.OutboundGroup.KindSelector)
+        stringResource(R.string.groups_kind_selector)
+    else
+        stringResource(R.string.groups_kind_urltest)
+    val modeLabel = when {
+        group.kind != com.leadaxe.aibox.app.OutboundGroup.KindUrlTest -> null
+        group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeRoundRobin ->
+            stringResource(R.string.groups_mode_rr)
+        group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeFallback ->
+            stringResource(R.string.groups_mode_fallback)
+        else -> stringResource(R.string.groups_mode_least)
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.outlinedCardColors(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Small colored dot to mark the active selection — bilipai-style.
+            androidx.compose.foundation.Canvas(
+                modifier = Modifier.padding(end = 10.dp)
+                    .then(Modifier),
+            ) {
+                val r = 6f
+                drawCircle(
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    radius = r,
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    group.name.ifBlank { group.tag },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                val kindLabel = if (group.kind == com.leadaxe.aibox.app.OutboundGroup.KindSelector)
-                    stringResource(R.string.groups_kind_selector)
-                else
-                    stringResource(R.string.groups_kind_urltest)
-                val modeLabel = when {
-                    group.kind != com.leadaxe.aibox.app.OutboundGroup.KindUrlTest -> ""
-                    group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeRoundRobin ->
-                        " · " + stringResource(R.string.groups_mode_rr)
-                    group.mode == com.leadaxe.aibox.app.OutboundGroup.ModeFallback ->
-                        " · " + stringResource(R.string.groups_mode_fallback)
-                    else -> " · " + stringResource(R.string.groups_mode_least)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        group.name.ifBlank { group.tag },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    // Kind badge — tiny outlined box next to the title.
+                    Text(
+                        kindLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 8.dp)
+                            .then(Modifier),
+                    )
                 }
-                Text(
-                    "$kindLabel$modeLabel · ${group.members.size} member(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Member count pill — compact number with muted color.
+                    Text(
+                        "${group.members.size} member${if (group.members.size == 1) "" else "s"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (modeLabel != null) {
+                        Text(
+                            " · $modeLabel",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (isSelected) {
+                        Text(
+                            " · active",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))

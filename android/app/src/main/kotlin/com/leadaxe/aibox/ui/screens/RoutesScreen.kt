@@ -1,6 +1,8 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +22,8 @@ import androidx.compose.material.icons.outlined.CallMissedOutgoing
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DragHandle
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -539,8 +543,10 @@ internal fun DragDropRow(
 }
 
 /**
- * Renders one rule as a single readable line: the matcher first (with the
- * first few literal values shown), then an arrow and the action target.
+ * Renders one rule as a compact card with a chevron. The default folded
+ * state shows only the rule name (or a one-line matcher summary if unnamed)
+ * plus the action arrow. Expanding reveals the full matcher list so the row
+ * height stays predictable even when a rule carries dozens of domains.
  */
 @Composable
 private fun RuleCard(
@@ -550,18 +556,32 @@ private fun RuleCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
+    var collapsed by remember { mutableStateOf(true) }
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            // One line per rule, Karing-style: a compact matcher summary on
-            // top, the action underneath. Long matcher lists are counted
-            // rather than printed so the row height stays predictable.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = ruleLine(rule, state),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                )
+        Column(modifier = Modifier.animateContentSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { collapsed = !collapsed }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = rule.name.ifBlank { ruleSummary(rule, state) },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = if (collapsed) 1 else Int.MAX_VALUE,
+                    )
+                    if (rule.name.isNotBlank()) {
+                        Text(
+                            ruleSummary(rule, state),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (collapsed) 1 else Int.MAX_VALUE,
+                        )
+                    }
+                }
                 FilterChip(
                     selected = rule.enabled,
                     onClick = { onToggleEnabled(!rule.enabled) },
@@ -573,16 +593,20 @@ private fun RuleCard(
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.common_delete))
                 }
+                Icon(
+                    if (collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
+/** One-line human-readable summary of the rule's matcher + action. */
 @Composable
-private fun ruleLine(rule: RouteRule, state: AppState): String {
+private fun ruleSummary(rule: RouteRule, state: AppState): String {
     if (rule.kind == RouteRule.KindJson) {
-        // JSON rules describe themselves: parse the payload instead of
-        // assuming it routes to the proxy.
         val summary = remember(rule.json) { RouteJson.describe(rule.json) }
         val proxyLabel = stringResource(R.string.dns_detour_proxy)
         val directLabel = stringResource(R.string.dns_detour_direct)

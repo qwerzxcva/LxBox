@@ -42,6 +42,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
+pub mod runner;
+
 // ---------------------------------------------------------------------------
 // Configuration envelope — opaque to the Conductor
 // ---------------------------------------------------------------------------
