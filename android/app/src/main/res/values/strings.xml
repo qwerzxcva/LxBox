@@ -209,6 +209,7 @@
     <string name="dns_hijack">Hijack DNS</string>
     <string name="dns_hijack_desc">Route port 53 through sing-box; required for fake-IP and tun DNS.</string>
     <string name="dns_cache_capacity">Cache capacity</string>
+    <string name="dns_cache_capacity_desc">Number of DNS answers kept in memory. Empty uses the engine default.</string>
     <string name="dns_cache_algorithm">Cache algorithm</string>
     <string name="dns_cache_arc">ARC (recommended)</string>
     <string name="dns_cache_lru">LRU</string>

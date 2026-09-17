@@ -264,6 +264,18 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                         checked = state.dnsIndependentCache,
                         onCheckedChange = { v -> store.update { it.copy(dnsIndependentCache = v) } },
                     )
+                    // Cache capacity: sing-box's dns.cache_capacity, in
+                    // entries. Empty keeps the engine default.
+                    StringField(
+                        label = stringResource(R.string.dns_cache_capacity),
+                        value = if (state.dnsCacheCapacity <= 0) "" else state.dnsCacheCapacity.toString(),
+                        onValueChange = { raw ->
+                            val n = raw.filter { it.isDigit() }.toIntOrNull() ?: 0
+                            store.update { it.copy(dnsCacheCapacity = n.coerceIn(0, 1_048_576)) }
+                        },
+                        placeholder = "4096",
+                        supporting = stringResource(R.string.dns_cache_capacity_desc),
+                    )
                 }
             }
         }

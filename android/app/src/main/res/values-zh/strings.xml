@@ -646,4 +646,5 @@
     <string name="settings_privacy_screenshots_desc">Hide node lists, subscriptions and traffic in the task switcher and block screen recordings (FLAG_SECURE).</string>
     <string name="settings_privacy_insecure_dns">Allow plaintext DNS</string>
     <string name="settings_privacy_insecure_dns_desc">Permit unencrypted udp/tcp/dhcp DNS upstreams. Keep off unless your network forces its resolver — DoT/DoH/DoQ protect queried names.</string>
+    <string name="dns_cache_capacity_desc">内存中保留的 DNS 应答数量。留空使用内核默认值。</string>
 </resources>
