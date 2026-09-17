@@ -1,5 +1,8 @@
 package com.leadaxe.aibox.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -276,20 +279,45 @@ fun SubscriptionsScreen() {
                         )
                         else -> state.outbounds
                     }
-                    displayNodes.forEach { node ->
-                        NodeRow(
-                            node = node,
-                            selected = node.tag == state.selectedOutbound,
-                            pingState = pingResults[node.id],
-                            onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
-                            onPing = {
-                                scope.launch {
-                                    pingResults = pingResults + (node.id to PingState.Triggered)
-                                    relay.requestPing(node.id, node.tag, state.speedTestUrl)
-                                }
-                            },
-                            onEdit = { editingNode = node },
-                        )
+                    // Grouped by flag when not sorting by delay (delay sort
+                    // is a one-off that destroys region grouping). Delay-sorted
+                    // view is always flat because the user wants a latency list.
+                    val groupedNodes = when (sortByDelay) {
+                        true -> null
+                        else -> com.leadaxe.aibox.ui.groupByRegion(displayNodes)
+                    }
+                    if (groupedNodes != null) {
+                        groupedNodes.forEach { group ->
+                            FlaggedRegionRow(
+                                group = group,
+                                pingResults = pingResults,
+                                selectedTag = state.selectedOutbound,
+                                onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                                onPing = { node ->
+                                    scope.launch {
+                                        pingResults = pingResults + (node.id to PingState.Triggered)
+                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                    }
+                                },
+                                onEdit = { node -> editingNode = node },
+                            )
+                        }
+                    } else {
+                        displayNodes.forEach { node ->
+                            NodeRow(
+                                node = node,
+                                selected = node.tag == state.selectedOutbound,
+                                pingState = pingResults[node.id],
+                                onSelect = { selected -> store.update { it.copy(selectedOutbound = selected) } },
+                                onPing = {
+                                    scope.launch {
+                                        pingResults = pingResults + (node.id to PingState.Triggered)
+                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                    }
+                                },
+                                onEdit = { editingNode = node },
+                            )
+                        }
                     }
                     if (state.outbounds.isEmpty()) {
                         Text(
@@ -868,6 +896,87 @@ private fun ResolverPicker(
     }
 }
 
+/**
+ * Collapsible region group header. Shows flag + region name + node count
+ * in the compact form `🇭🇰 Hong Kong ×5`. Tapping the row expands/collapses
+ * the [content] slot that lists every node in this region.
+ *
+ * The "selected" dot turns primary when any node in this group is the
+ * currently active outbound — visual cue without needing to expand.
+ */
+@Composable
+private fun FlaggedRegionRow(
+    group: com.leadaxe.aibox.ui.RegionGroup,
+    pingResults: Map<String, PingState>,
+    selectedTag: String,
+    onSelect: (String) -> Unit,
+    onPing: (OutboundProfile) -> Unit,
+    onEdit: (OutboundProfile) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(group.nodes.size <= 3) }
+    val activeInGroup = group.nodes.any { it.tag == selectedTag }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.animateContentSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.Text(
+                    text = group.flagEmoji,
+                    fontSize = MaterialTheme.typography.titleMedium.fontSize,
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "${group.regionName} ×${group.nodes.size}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (activeInGroup) {
+                        Text(
+                            "active",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 6.dp).padding(bottom = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    group.nodes.forEach { node ->
+                        NodeRow(
+                            node = node,
+                            selected = node.tag == selectedTag,
+                            pingState = pingResults[node.id],
+                            onSelect = { onSelect(node.tag) },
+                            onPing = { onPing(node) },
+                            onEdit = { onEdit(node) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One proxy node. Shows the clean name (flag already lives in the parent
+ * region group header) plus a full protocol line:
+ *
+ *   Hong Kong 01         ← [name]
+ *   vless · hk1.example.com:443 · tls  ← [protocolLine] from FlagParser
+ */
 @Composable
 private fun NodeRow(
     node: OutboundProfile,
@@ -882,14 +991,24 @@ private fun NodeRow(
         colors = if (selected) CardDefaults.elevatedCardColors() else CardDefaults.outlinedCardColors(),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(checked = selected, onCheckedChange = { onSelect(node.tag) })
             Column(modifier = Modifier.weight(1f)) {
-                Text(node.name.ifBlank { node.tag }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    com.leadaxe.aibox.ui.FlagParser.stripLeadingFlag(node.name.ifBlank { node.tag }),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(node.type, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        com.leadaxe.aibox.ui.FlagParser.protocolLine(node),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
                     PingBadge(pingState)
                 }
             }
