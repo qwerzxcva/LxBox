@@ -29,6 +29,15 @@ pub struct ArcCache {
 }
 
 impl ArcCache {
+    /// A pure-LRU cache: ARC with the adaptive target pinned so every
+    /// insertion lands in T2 (the recency list). Same bound, classic
+    /// least-recently-used eviction.
+    pub fn new_lru(capacity: usize) -> Self {
+        let mut c = Self::new(capacity);
+        c.p = capacity.max(1); // B1 hits never shrink below full T2 share
+        c
+    }
+
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity: capacity.max(1),

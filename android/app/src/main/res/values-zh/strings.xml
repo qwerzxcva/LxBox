@@ -206,6 +206,9 @@
     <string name="dns_hijack">DNS 劫持</string>
     <string name="dns_hijack_desc">将 53 端口流量导入 sing-box；Fake-IP 和 tun DNS 必需。</string>
     <string name="dns_cache_capacity">缓存容量</string>
+    <string name="dns_cache_algorithm">缓存算法</string>
+    <string name="dns_cache_arc">ARC（推荐）</string>
+    <string name="dns_cache_lru">LRU</string>
     <string name="dns_independent_cache">独立缓存</string>
     <string name="dns_global_strategy">全局策略</string>
     <string name="dns_final_server">兜底解析服务器</string>

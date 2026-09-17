@@ -63,7 +63,7 @@ import java.util.UUID
 import kotlinx.coroutines.launch
 
 @Composable
-fun SubscriptionsScreen() {
+fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as AIBoxApp
     val store = app.appStateStore
@@ -92,6 +92,10 @@ fun SubscriptionsScreen() {
     var editingGroup: com.leadaxe.aibox.app.OutboundGroup? by remember { mutableStateOf(null) }
     var editingSubscription: Subscription? by remember { mutableStateOf(null) }
     var editingNode: OutboundProfile? by remember { mutableStateOf(null) }
+    androidx.compose.runtime.DisposableEffect(editingNode, editingSubscription, editingGroup) {
+        onEditorLock(editingNode != null || editingSubscription != null || editingGroup != null)
+        onDispose { onEditorLock(false) }
+    }
     var creatingGroup by remember { mutableStateOf(false) }
 
     // Remote ping answers (from the :vpn process) fold into the local map.

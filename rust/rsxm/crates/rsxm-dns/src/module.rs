@@ -122,6 +122,15 @@ impl Module for DnsModule {
             .unwrap_or_default();
 
         let host_count = hosts.len();
+        let algorithm = match value
+            .get("dnsCacheAlgorithm")
+            .and_then(Value::as_str)
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("lru") => crate::CacheAlgorithm::Lru,
+            _ => crate::CacheAlgorithm::Arc,
+        };
         let engine = DnsEngine::with_policy(
             FakeIpConfig {
                 enabled: fake_enabled,
@@ -129,10 +138,13 @@ impl Module for DnsModule {
                 v4_prefix: v4.1,
                 v6_base: v6.0,
                 v6_prefix: v6.1,
+                cache_capacity: capacity,
+                cache_algorithm: algorithm,
             },
             DnsRouter::new(rules.0),
             hosts,
             capacity,
+            algorithm,
         );
         self.report(
             ReportKind::ConfigAccepted,

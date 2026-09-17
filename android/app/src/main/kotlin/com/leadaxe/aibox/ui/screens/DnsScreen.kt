@@ -286,6 +286,18 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                         checked = state.hijackDns,
                         onCheckedChange = { v -> store.update { it.copy(hijackDns = v) } },
                     )
+                    SingleChoiceChips(
+                        label = stringResource(R.string.dns_cache_algorithm),
+                        options = listOf("arc", "lru"),
+                        selected = state.dnsCacheAlgorithm,
+                        onSelect = { v -> store.update { it.copy(dnsCacheAlgorithm = v) } },
+                        display = {
+                            when (it) {
+                                "lru" -> stringResource(R.string.dns_cache_lru)
+                                else -> stringResource(R.string.dns_cache_arc)
+                            }
+                        },
+                    )
                     SwitchRow(
                         label = stringResource(R.string.dns_independent_cache),
                         checked = state.dnsIndependentCache,
@@ -302,6 +314,10 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
         // Plain computation (a handful of strings) — remember() is not
         // available in the LazyListScope builder block.
         val DnsFinalReject = "final:reject"
+        // Exit rows pick a concrete server only — the fallback IS the
+        // last resort, there is no "follow global" inside it. The global
+        // row (below, collapsed) accepts the special values.
+        val exitOptions = state.dnsServers.map { it.tag }
         val finalOptions = listOf("", DnsFinalProxy, DnsFinalDirect, DnsFinalReject) +
             state.dnsServers.map { it.tag }
         item {
@@ -356,22 +372,20 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                             verticalArrangement = Arrangement.spacedBy(2.dp),
                             modifier = Modifier.weight(0.72f),
                         ) {
-                            finalOptions.forEach { option ->
+                            exitOptions.forEach { option ->
                                 FilterChip(
                                     selected = option == exitValue,
                                     onClick = {
                                         store.update { st ->
                                             val map = st.finalDnsServerByExit.toMutableMap()
-                                            if (option.isBlank()) map.remove(exit) else map[exit] = option
+                                            map[exit] = option
                                             st.copy(finalDnsServerByExit = map)
                                         }
                                     },
                                     label = {
                                         Text(
-                                            when (option) {
-                                                "" -> stringResource(R.string.dns_final_mode_default)
-                                                else -> FinalOptionLabel(option, state)
-                                            },
+                                            state.dnsServers.firstOrNull { s -> s.tag == option }
+                                                ?.name?.ifBlank { option } ?: option,
                                         )
                                     },
                                 )

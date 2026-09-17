@@ -83,6 +83,8 @@ data class AppState(
     val localProxyHoldMs: Long = 60_000L,
     /** Extra DNS cache knobs (0 = engine default). */
     val dnsCacheCapacity: Int = 4096,
+    /** DNS cache eviction algorithm: "arc" (default, scan-resistant) or "lru". */
+    val dnsCacheAlgorithm: String = "arc",
     val dnsIndependentCache: Boolean = true,
     /** SNI-based DNS rules should attach client subnet to queries. */
     val dnsClientSubnet: String = "",

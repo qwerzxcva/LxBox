@@ -43,13 +43,25 @@ pub enum Family {
 
 /// The synthetic range used for fake answers. Defaults match the app's
 /// 198.18.0.0/15 + fc00::/18 configuration.
-#[derive(Debug, Clone)]
+/// DNS cache eviction policy. ARC is the default (scan-resistant);
+/// LRU is the classic least-recently-used discipline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CacheAlgorithm {
+    #[default]
+    Arc,
+    Lru,
+}
+
 pub struct FakeIpConfig {
     pub enabled: bool,
     pub v4_base: Ipv4Addr,
     pub v4_prefix: u8,
     pub v6_base: Ipv6Addr,
     pub v6_prefix: u8,
+    /// DNS cache bound in entries (ARC/LRU-evicted).
+    pub cache_capacity: usize,
+    /// Eviction algorithm.
+    pub cache_algorithm: CacheAlgorithm,
 }
 
 impl Default for FakeIpConfig {
@@ -60,6 +72,8 @@ impl Default for FakeIpConfig {
             v4_prefix: 15,
             v6_base: "fc00::".parse().expect("static v6"),
             v6_prefix: 18,
+            cache_capacity: 4096,
+            cache_algorithm: CacheAlgorithm::Arc,
         }
     }
 }
@@ -225,7 +239,9 @@ pub struct DnsEngine {
 
 impl DnsEngine {
     pub fn new(fake: FakeIpConfig) -> Self {
-        Self::with_policy(fake, DnsRouter::default(), Vec::new(), 4096)
+        let capacity = fake.cache_capacity;
+        let algorithm = fake.cache_algorithm;
+        Self::with_policy(fake, DnsRouter::default(), Vec::new(), capacity, algorithm)
     }
 
     pub fn with_policy(
@@ -233,6 +249,7 @@ impl DnsEngine {
         router: DnsRouter,
         hosts: Vec<(String, IpAddr)>,
         cache_capacity: usize,
+        algorithm: CacheAlgorithm,
     ) -> Self {
         Self {
             fake,
@@ -241,7 +258,10 @@ impl DnsEngine {
                 .into_iter()
                 .map(|(name, ip)| (name.to_ascii_lowercase(), ip))
                 .collect(),
-            cache: ArcCache::new(cache_capacity.clamp(16, 1_048_576)),
+            cache: match algorithm {
+                CacheAlgorithm::Arc => ArcCache::new(cache_capacity.clamp(16, 1_048_576)),
+                CacheAlgorithm::Lru => ArcCache::new_lru(cache_capacity.clamp(16, 1_048_576)),
+            },
             negative: HashMap::new(),
             negative_ttl_ms: 30_000,
             fake_reverse: HashMap::new(),
@@ -664,6 +684,7 @@ mod tests {
             }]),
             Vec::new(),
             64,
+            CacheAlgorithm::Arc,
         );
         // decide_routed needs &mut self only for LRU touch; engines with an
         // empty cache never mutate here, but keep the signature honest.
@@ -683,6 +704,7 @@ mod tests {
             DnsRouter::default(),
             vec![("router.home".into(), v4("192.168.1.1"))],
             64,
+            CacheAlgorithm::Arc,
         );
         assert_eq!(
             engine.decide("router.home", Family::V4, None, 0),
@@ -721,6 +743,7 @@ mod tests {
             DnsRouter::default(),
             Vec::new(),
             16,
+            CacheAlgorithm::Arc,
         );
         for i in 0..16 {
             engine.store(

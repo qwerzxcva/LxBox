@@ -135,7 +135,7 @@ private fun RootScaffold(
             Column(modifier = Modifier.fillMaxSize().padding(bottom = 96.dp)) {
             when (Destination.entries[page]) {
                 Destination.Home -> HomeScreen(controller = controller, onRequestVpnConsent = onRequestVpnConsent)
-                Destination.Subscriptions -> SubscriptionsScreen()
+                Destination.Subscriptions -> SubscriptionsScreen(onEditorLock = { pagerLocked = it })
                 Destination.Connections -> {
                     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as AIBoxApp
                     ConnectionsScreen(relay = app.vpnRelay)
