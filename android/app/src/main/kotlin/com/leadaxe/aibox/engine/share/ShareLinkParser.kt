@@ -215,6 +215,11 @@ object ShareLinkParser {
                     put("type", "http")
                     put("path", e["http-opts.path"] ?: "/")
                 })
+                "httpupgrade", "http-upgrade" -> put("transport", buildJsonObject {
+                    put("type", "httpupgrade")
+                    put("path", e["httpupgrade-opts.path"] ?: "/")
+                    e["httpupgrade-opts.headers.Host"]?.let { host -> put("host", host) }
+                })
             }
             // TLS / reality
             if (tls || reality) {
@@ -455,6 +460,11 @@ object ShareLinkParser {
                 val hosts = query["host"]?.split(",").orEmpty()
                 put("host", buildJsonArray { hosts.forEach(::add) })
                 put("path", query["path"] ?: "/")
+            })
+            "httpupgrade", "http-upgrade" -> put("transport", buildJsonObject {
+                put("type", "httpupgrade")
+                put("path", query["path"] ?: "/")
+                query["host"]?.let { put("host", it) }
             })
         }
     }
