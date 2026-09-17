@@ -218,6 +218,7 @@
     <string name="dns_final_auto">Automatic</string>
     <string name="dns_final_mode_default">Follow mode default</string>
     <string name="dns_final_global_fallback">Fallback for modes without their own pick</string>
+    <string name="dns_final_overrides">%1$d modes overridden</string>
     <string name="dns_group_members">Member servers</string>
     <string name="dns_group_mode">Selection strategy</string>
     <string name="dns_group_stable">Stable</string>

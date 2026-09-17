@@ -216,6 +216,7 @@
     <string name="dns_final_auto">自动</string>
     <string name="dns_final_mode_default">跟随全局</string>
     <string name="dns_final_global_fallback">未单独设置的模式使用此兜底</string>
+    <string name="dns_final_overrides">%1$d 个模式已单独设置</string>
     <string name="dns_group_members">成员服务器</string>
     <string name="dns_group_mode">选择策略</string>
     <string name="dns_group_stable">稳定（粘滞）</string>
