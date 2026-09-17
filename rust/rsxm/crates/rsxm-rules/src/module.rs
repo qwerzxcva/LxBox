@@ -114,6 +114,11 @@ impl Module for RulesModule {
         Ok(())
     }
 
+    fn supports_hot_configure(&self) -> bool {
+        // RuleTable is Arc-swapped behind a RwLock — hot reload is atomic.
+        true
+    }
+
     fn start(&self) -> Result<(), String> {
         Ok(())
     }

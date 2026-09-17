@@ -267,6 +267,11 @@ impl Module for DialerModule {
         Ok(())
     }
 
+    fn supports_hot_configure(&self) -> bool {
+        // DialerPolicy swap is behind a RwLock — no OS resources to teardown.
+        true
+    }
+
     fn start(&self) -> Result<(), String> {
         Ok(())
     }

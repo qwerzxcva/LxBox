@@ -351,12 +351,42 @@ pub trait Module: Send + Sync {
     /// Called before [`Module::start`] on every config change.
     fn configure(&self, slice: Option<&ConfigSlice>) -> Result<(), String>;
 
+    /// Whether this module can absorb a new config slice while already
+    /// running, with no stop/start cycle. Modules that keep their live
+    /// state behind a lock and atomically swap it (DNS, rules, dialer,
+    /// stats) should return `true`. Modules that own OS resources (TUN,
+    /// UDP sockets, listeners) must leave the default and let the
+    /// Conductor cycle them via [`Module::reconfigure`].
+    fn supports_hot_configure(&self) -> bool {
+        false
+    }
+
     /// Bring the module up. Called once, in dependency order, after
     /// [`Module::configure`].
     fn start(&self) -> Result<(), String>;
 
     /// Ask the module to stop; must be idempotent.
     fn stop(&self) -> Result<(), String>;
+
+    /// Reconfigure while already running. Default: `stop → configure → start`.
+    /// `supports_hot_configure()` modules override this to skip the cycle
+    /// (just call [`Module::configure`] directly).
+    fn reconfigure(&self, slice: Option<&ConfigSlice>) -> Result<(), String> {
+        if self.supports_hot_configure() {
+            return self.configure(slice);
+        }
+        self.stop()?;
+        let cfg = self.configure(slice);
+        // Always attempt start after configure, even if configure failed —
+        // the previous state may still be runnable and we don't want to
+        // strand the module down just because a new slice was malformed.
+        let start = self.start();
+        match (cfg, start) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(e), _) => Err(e),
+            (_, Err(e)) => Err(e),
+        }
+    }
 
     /// Cheap, side-effect-free health probe.
     fn health(&self) -> Health {
@@ -467,12 +497,82 @@ impl Conductor {
     /// Distributes a new envelope: each module receives its own slice (or
     /// None when the feature is off). Modules may be registered after this;
     /// [`Conductor::register`] catches them up.
+    ///
+    /// This is the **cold path**: every module gets its slice pushed through
+    /// [`Module::configure`] only — the Conductor does not attempt a
+    /// stop/start cycle even if a module is already up. Use
+    /// [`Conductor::reload_config`] for the hot path.
     pub fn distribute(&mut self, envelope: ConfigEnvelope) {
         for module in &self.modules {
             let slice = envelope.for_module(module.name());
             self.configure_one(module, slice);
         }
         self.last_envelope = envelope;
+    }
+
+    /// Hot-reload every started module with a new envelope. The Conductor
+    /// picks the right strategy per module:
+    ///
+    ///  - `supports_hot_configure() == true`  → just `configure` (atomic swap)
+    ///  - otherwise                           → `stop → configure → start`
+    ///
+    /// Modules that were never started (missing dependency, slice absent)
+    /// are only configured, not restarted.
+    ///
+    /// Returns a per-module result map so the caller (JNI bridge, agent) can
+    /// surface failures to the UI without parsing reports.
+    pub fn reload_config(&mut self, envelope: ConfigEnvelope) -> Vec<(&'static str, Result<(), String>)> {
+        let mut result = Vec::new();
+        for module in &self.modules {
+            let slice = envelope.for_module(module.name());
+            let started_here = self.started.contains(&module.name());
+            let outcome = if started_here {
+                match module.reconfigure(slice) {
+                    Ok(()) => {
+                        module_report(
+                            module,
+                            &self.reporter,
+                            ReportKind::ConfigAccepted,
+                            "hot-reloaded",
+                        );
+                        Ok(())
+                    }
+                    Err(why) => {
+                        module_report(
+                            module,
+                            &self.reporter,
+                            ReportKind::ConfigRejected,
+                            why.clone(),
+                        );
+                        Err(why)
+                    }
+                }
+            } else {
+                self.configure_one(module, slice);
+                Ok(())
+            };
+            result.push((module.name(), outcome));
+        }
+        self.last_envelope = envelope;
+        result
+    }
+
+    /// Reload a single named module — useful when the UI wants to restart
+    /// just the TUN engine (e.g. to switch VPN mode) without disturbing DNS
+    /// or rules.
+    pub fn reload_module(&self, name: &str) -> Result<(), String> {
+        let module = self
+            .modules
+            .iter()
+            .find(|m| m.name() == name)
+            .ok_or_else(|| format!("no such module: {name}"))?;
+        let slice = self.last_envelope.for_module(name);
+        let result = module.reconfigure(slice);
+        match &result {
+            Ok(()) => module_report(module, &self.reporter, ReportKind::ConfigAccepted, "module reloaded"),
+            Err(why) => module_report(module, &self.reporter, ReportKind::ConfigRejected, why.clone()),
+        }
+        result
     }
 
     fn configure_one(&self, module: &Arc<dyn Module>, slice: Option<&ConfigSlice>) {
@@ -813,5 +913,135 @@ mod tests {
         let c = Conductor::new();
         assert!(!c.is_shutting_down());
         assert!(c.health().is_empty());
+    }
+
+    // --- hot reload tests -------------------------------------------------
+
+    /// A FakeModule that tracks starts *and* stops so we can verify the
+    /// reconfigure path (default = stop → configure → start).
+    struct RestartTracker {
+        name: &'static str,
+        starts: AtomicUsize,
+        stops: AtomicUsize,
+        configures: AtomicUsize,
+        fail_start: bool,
+        fail_configure: bool,
+    }
+    impl RestartTracker {
+        fn new(name: &'static str, fail_start: bool, fail_configure: bool) -> Arc<Self> {
+            Arc::new(Self {
+                name,
+                starts: AtomicUsize::new(0),
+                stops: AtomicUsize::new(0),
+                configures: AtomicUsize::new(0),
+                fail_start,
+                fail_configure,
+            })
+        }
+    }
+    impl Module for RestartTracker {
+        fn name(&self) -> &'static str { self.name }
+        fn configure(&self, _: Option<&ConfigSlice>) -> Result<(), String> {
+            self.configures.fetch_add(1, Ordering::SeqCst);
+            if self.fail_configure { Err("cfg boom".into()) } else { Ok(()) }
+        }
+        fn start(&self) -> Result<(), String> {
+            self.starts.fetch_add(1, Ordering::SeqCst);
+            if self.fail_start { Err("start boom".into()) } else { Ok(()) }
+        }
+        fn stop(&self) -> Result<(), String> {
+            self.stops.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// Like RestartTracker but declares it can absorb new configs hot — so
+    /// reconfigure() short-circuits to just configure().
+    struct HotTracker {
+        inner: RestartTracker,
+    }
+    impl HotTracker {
+        fn new(name: &'static str) -> Arc<Self> {
+            let inner_arc = RestartTracker::new(name, false, false);
+            // We just constructed this Arc ourselves — it has exactly one strong ref.
+            let inner = match Arc::try_unwrap(inner_arc) {
+                Ok(v) => v,
+                Err(_) => unreachable!(),
+            };
+            Arc::new(Self { inner })
+        }
+    }
+    impl Module for HotTracker {
+        fn name(&self) -> &'static str { self.inner.name }
+        fn supports_hot_configure(&self) -> bool { true }
+        fn configure(&self, s: Option<&ConfigSlice>) -> Result<(), String> { self.inner.configure(s) }
+        fn start(&self) -> Result<(), String> { self.inner.start() }
+        fn stop(&self) -> Result<(), String> { self.inner.stop() }
+    }
+
+    #[test]
+    fn reload_config_runs_hot_modules_without_cycle() {
+        let mut c = Conductor::new();
+        let hot = HotTracker::new("hot");
+        c.register(hot.clone() as Arc<dyn Module>);
+        c.start_all();
+        assert_eq!(hot.inner.starts.load(Ordering::SeqCst), 1);
+        assert_eq!(hot.inner.stops.load(Ordering::SeqCst), 0);
+
+        // reload_config on a hot module: stops should still be 0, starts unchanged,
+        // configures bumped by 1.
+        c.reload_config(ConfigEnvelope::new(vec![ConfigSlice::new(
+            "hot", serde_json::json!({"v": 2})
+        )]));
+        assert_eq!(hot.inner.starts.load(Ordering::SeqCst), 1, "hot module must NOT restart");
+        assert_eq!(hot.inner.stops.load(Ordering::SeqCst), 0, "hot module must NOT stop");
+        assert!(hot.inner.configures.load(Ordering::SeqCst) >= 2, "configure called again");
+    }
+
+    #[test]
+    fn reload_config_cycles_non_hot_modules() {
+        let mut c = Conductor::new();
+        let cold = RestartTracker::new("cold", false, false);
+        c.register(cold.clone() as Arc<dyn Module>);
+        c.start_all();
+        let starts_before = cold.starts.load(Ordering::SeqCst);
+        let stops_before = cold.stops.load(Ordering::SeqCst);
+
+        c.reload_config(ConfigEnvelope::new(vec![ConfigSlice::new(
+            "cold", serde_json::json!({"v": 2})
+        )]));
+        assert!(cold.stops.load(Ordering::SeqCst) > stops_before, "non-hot module must stop");
+        assert!(cold.starts.load(Ordering::SeqCst) > starts_before, "non-hot module must restart");
+    }
+
+    #[test]
+    fn reload_module_single_target() {
+        let mut c = Conductor::new();
+        let a = RestartTracker::new("a", false, false);
+        let b = RestartTracker::new("b", false, false);
+        c.register(a.clone() as Arc<dyn Module>);
+        c.register(b.clone() as Arc<dyn Module>);
+        c.start_all();
+
+        c.reload_module("a").unwrap();
+        // a was cycled at least once; b was left alone.
+        assert!(a.stops.load(Ordering::SeqCst) >= 1);
+        assert_eq!(b.stops.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn reload_config_reports_failures_per_module() {
+        let mut c = Conductor::new();
+        // configure fails but start is fine → reconfigure returns Err on the configure step.
+        let broken = RestartTracker::new("broken", false, true);
+        c.register(broken.clone() as Arc<dyn Module>);
+        c.start_all();
+        // reload_config cycles it (stop → configure → start) → configure fails → overall Err.
+        let outcomes = c.reload_config(ConfigEnvelope::new(vec![ConfigSlice::new(
+            "broken", serde_json::json!({})
+        )]));
+        let (name, res) = outcomes.into_iter().find(|(n, _)| *n == "broken").unwrap();
+        assert_eq!(name, "broken");
+        assert!(res.is_err(), "reload should report the configure failure");
     }
 }

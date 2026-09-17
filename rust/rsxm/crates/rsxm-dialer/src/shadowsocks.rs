@@ -19,7 +19,7 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use chacha20poly1305::ChaCha20Poly1305;
-use hmac::{Hmac, Mac};
+use hmac::Hmac;
 use sha2::{Sha256};
 
 pub type HmacSha256 = Hmac<Sha256>;

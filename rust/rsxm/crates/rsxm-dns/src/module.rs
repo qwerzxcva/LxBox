@@ -151,6 +151,11 @@ impl Module for DnsModule {
         Ok(())
     }
 
+    fn supports_hot_configure(&self) -> bool {
+        // Engine swap is purely behind a RwLock — hot reload is just a write.
+        true
+    }
+
     fn start(&self) -> Result<(), String> {
         Ok(())
     }

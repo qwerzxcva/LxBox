@@ -28,12 +28,12 @@
 //! are what actually determine latency.
 
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crate::{ConfigSlice, Health, Module, ModuleReporter, Report, Reporter};
+use crate::{ConfigSlice, Module, Reporter};
 
 // ---------------------------------------------------------------------------
 // Command protocol — what the boss sends to a module thread
@@ -54,7 +54,7 @@ pub enum Cmd {
 }
 
 /// Result of a command the Conductor waited on.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CmdResult {
     /// The command succeeded.
     Ok,
@@ -73,10 +73,20 @@ pub enum CmdResult {
 /// (the Android main thread, the VPN service thread, a JNI callback).
 pub struct ModuleRunner {
     name: &'static str,
-    cmd_tx: Sender<Cmd>,
+    cmd_tx: Sender<Envelope>,
     thread: Option<JoinHandle<()>>,
     /// Whether the thread has been told to shut down.
     shut: Arc<Mutex<bool>>,
+    /// Tracks the running state — hot path reads this to decide whether a
+    /// `Configure` should cycle the module inline.
+    running: Arc<AtomicUsize>,
+}
+
+/// A `Cmd` bundled with a one-shot reply channel so the Conductor can
+/// synchronously wait for the result.
+struct Envelope {
+    cmd: Cmd,
+    reply: Option<Sender<CmdResult>>,
 }
 
 impl ModuleRunner {
@@ -89,18 +99,19 @@ impl ModuleRunner {
         module: Arc<dyn Module>,
         reporter: Reporter,
     ) -> Self {
-        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Envelope>();
         let shut = Arc::new(Mutex::new(false));
+        let running = Arc::new(AtomicUsize::new(0));
         let thread_shut = shut.clone();
-        let module_name = module.name();
+        let thread_running = running.clone();
 
         let handle = thread::Builder::new()
-            .name(format!("rsxm-{module_name}"))
+            .name(format!("rsxm-{name}"))
             // 256 KB is plenty for a state-machine loop that delegates all
             // real work to heap-allocated buffers. The default 2 MB on Android
             // is wasteful when we can have 10+ modules in a box.
             .stack_size(256 * 1024)
-            .spawn(move || run_loop(module, reporter, cmd_rx, thread_shut))
+            .spawn(move || run_loop(module, reporter, cmd_rx, thread_shut, thread_running))
             .expect("failed to spawn module thread");
 
         Self {
@@ -108,26 +119,36 @@ impl ModuleRunner {
             cmd_tx,
             thread: Some(handle),
             shut,
+            running,
         }
     }
 
-    /// Dispatches a command and waits for the module's result, bounded by
-    /// `timeout`. Every module command is synchronous from the Conductor's
-    /// point of view — the Conductor never races its own lifecycle.
+    /// Synchronously dispatches a command and waits up to `timeout` for the
+    /// module's result. Returns `CmdResult::Done` if the thread exits first.
     pub fn dispatch(&self, cmd: Cmd, timeout: Duration) -> CmdResult {
-        let _ = self.cmd_tx.send(cmd);
-        // The channel is unbounded for Send but we don't need it — the
-        // runner is always ready for the next cmd within `timeout`.
-        CmdResult::Ok // module runs it on its own thread; wait via sync_cmd if needed
+        let (reply_tx, reply_rx) = std::sync::mpsc::channel();
+        let _ = self.cmd_tx.send(Envelope { cmd, reply: Some(reply_tx) });
+        // A Shutdown reply might never arrive (thread joins immediately);
+        // that's fine — the caller usually just wants fire-and-forget for
+        // that one.
+        match reply_rx.recv_timeout(timeout) {
+            Ok(r) => r,
+            Err(_) => CmdResult::Done,
+        }
     }
 
     /// Fire-and-forget: send a command without waiting for a result.
     pub fn fire(&self, cmd: Cmd) {
-        let _ = self.cmd_tx.send(cmd);
+        let _ = self.cmd_tx.send(Envelope { cmd, reply: None });
     }
 
     pub fn name(&self) -> &'static str {
         self.name
+    }
+
+    /// Whether the runner currently considers the module running.
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire) != 0
     }
 
     /// Gracefully shut down the module thread. Returns once the thread has
@@ -140,11 +161,12 @@ impl ModuleRunner {
             }
             *guard = true;
         }
-        let _ = self.cmd_tx.send(Cmd::Shutdown);
+        // Synchronous Shutdown so we know the module actually stopped before
+        // the thread is allowed to exit — avoids a race where the Conductor
+        // moves on to the next start_all while the old thread is still
+        // draining its final queue.
+        let _ = self.dispatch(Cmd::Shutdown, timeout);
         if let Some(handle) = self.thread.take() {
-            // Android bionic pthread_join is fast on detached-but-joined
-            // threads; we bound it anyway so a wedged module doesn't hang
-            // the Conductor forever.
             let _ = handle.join();
         }
     }
@@ -157,8 +179,9 @@ impl ModuleRunner {
 fn run_loop(
     module: Arc<dyn Module>,
     reporter: Reporter,
-    rx: Receiver<Cmd>,
+    rx: Receiver<Envelope>,
     shut: Arc<Mutex<bool>>,
+    running_flag: Arc<AtomicUsize>,
 ) {
     let name = module.name();
     let mreport = reporter.for_module(name);
@@ -166,8 +189,12 @@ fn run_loop(
     // Attach happens once per thread lifetime; the module stores the handle.
     module.attach(&mreport);
 
-    // Current configuration slice (None = feature disabled / not yet sent).
-    let mut current_slice: Option<ConfigSlice> = None;
+    // Previous configuration slice — retained only so a Configure arriving
+    // before any Start can be kept as the current baseline. We never read it
+    // directly here (the Conductor is the source of truth), but assigning it
+    // keeps the intent visible to future readers.
+    #[allow(dead_code)]
+    let mut _current_slice: Option<ConfigSlice> = None;
     let mut running = false;
 
     // Drain any pre-configure commands that may have queued before the
@@ -175,8 +202,8 @@ fn run_loop(
     // we check shut first to keep shutdown responsive.
     loop {
         // Don't sleep forever — the thread must notice shutdown promptly.
-        let cmd = match rx.recv_timeout(Duration::from_secs(30)) {
-            Ok(cmd) => cmd,
+        let envelope = match rx.recv_timeout(Duration::from_secs(30)) {
+            Ok(e) => e,
             Err(_) => {
                 // Timeout: check for shutdown, then go back to waiting.
                 if *shut.lock().unwrap() {
@@ -187,18 +214,27 @@ fn run_loop(
         };
 
         // Shutdown is the only command that breaks the loop.
-        if matches!(cmd, Cmd::Shutdown) {
+        if matches!(envelope.cmd, Cmd::Shutdown) {
             let _ = module.stop();
-            running = false;
+            running_flag.store(0, Ordering::Release);
             mreport.info("module thread exiting");
+            if let Some(reply) = envelope.reply {
+                let _ = reply.send(CmdResult::Ok);
+            }
             break;
         }
 
-        match cmd {
+        let send = |reply: Option<Sender<CmdResult>>, r: CmdResult| {
+            if let Some(tx) = reply {
+                let _ = tx.send(r);
+            }
+        };
+
+        match envelope.cmd {
             Cmd::Configure(slice) => {
-                current_slice = slice.clone();
+                _current_slice = slice.clone();
                 let result = module.configure(slice.as_ref());
-                match result {
+                match &result {
                     Ok(()) => mreport.info("configured"),
                     Err(why) => mreport.error(format!("configure failed: {why}")),
                 }
@@ -206,40 +242,64 @@ fn run_loop(
                 // the module so it picks up the changes — cheap for
                 // stateless modules; heavyweight ones can keep old state.
                 if running {
-                    let _ = module.stop();
-                    running = false;
-                    let result = module.start();
-                    running = result.is_ok();
-                    match result {
-                        Ok(()) => mreport.info("reconfigured & restarted"),
-                        Err(why) => mreport.error(format!("reconfigure restart failed: {why}")),
-                    }
+                    let reconf = module.reconfigure(slice.as_ref());
+                    let final_r = match reconf {
+                        Ok(()) => {
+                            mreport.info("reconfigured in-place");
+                            CmdResult::Ok
+                        }
+                        Err(why) => {
+                            mreport.error(format!("reconfigure failed: {why}"));
+                            CmdResult::Err(why)
+                        }
+                    };
+                    send(envelope.reply, final_r);
+                    continue;
                 }
+                let r = match result {
+                    Ok(()) => CmdResult::Ok,
+                    Err(why) => CmdResult::Err(why),
+                };
+                send(envelope.reply, r);
             }
             Cmd::Start => {
                 if running {
                     mreport.info("already running");
+                    send(envelope.reply, CmdResult::Ok);
                     continue;
                 }
                 let result = module.start();
                 match &result {
                     Ok(()) => {
                         running = true;
+                        running_flag.store(1, Ordering::Release);
                         mreport.info("module started");
                     }
                     Err(why) => mreport.error(format!("start failed: {why}")),
                 }
+                let r = match result {
+                    Ok(()) => CmdResult::Ok,
+                    Err(why) => CmdResult::Err(why),
+                };
+                send(envelope.reply, r);
             }
             Cmd::Stop => {
                 if !running {
+                    send(envelope.reply, CmdResult::Ok);
                     continue;
                 }
                 let result = module.stop();
                 running = false;
+                running_flag.store(0, Ordering::Release);
                 match &result {
                     Ok(()) => mreport.info("module stopped"),
                     Err(why) => mreport.error(format!("stop error: {why}")),
                 }
+                let r = match result {
+                    Ok(()) => CmdResult::Ok,
+                    Err(why) => CmdResult::Err(why),
+                };
+                send(envelope.reply, r);
             }
             Cmd::Shutdown => unreachable!(),
         }
@@ -294,19 +354,28 @@ impl ThreadedConductor {
         self.runners.push(runner);
     }
 
-    /// Sends a config slice to every registered module. No blocking wait.
-    pub fn distribute(&self, envelope: crate::ConfigEnvelope) {
+    /// Sends a config slice to every registered module. Hot-configure
+    /// modules absorb it in-place; others get cycle-triggered on their
+    /// runner thread. Synchronous — returns when every runner has ACKed.
+    pub fn distribute(&self, envelope: crate::ConfigEnvelope) -> Vec<(&'static str, CmdResult)> {
+        let mut outcomes = Vec::new();
         for runner in &self.runners {
             let slice = envelope.for_module(runner.name()).cloned();
-            runner.fire(Cmd::Configure(slice));
+            let result = runner.dispatch(Cmd::Configure(slice), Duration::from_secs(2));
+            outcomes.push((runner.name(), result));
         }
+        outcomes
     }
 
     /// Sends `Start` to every module (dependency order is the caller's job).
-    pub fn start_all(&self) {
+    /// Synchronous.
+    pub fn start_all(&self) -> Vec<(&'static str, CmdResult)> {
+        let mut outcomes = Vec::new();
         for runner in &self.runners {
-            runner.fire(Cmd::Start);
+            let result = runner.dispatch(Cmd::Start, Duration::from_secs(2));
+            outcomes.push((runner.name(), result));
         }
+        outcomes
     }
 
     /// Sends `Stop` then `Shutdown` to every module. Consumes self.
