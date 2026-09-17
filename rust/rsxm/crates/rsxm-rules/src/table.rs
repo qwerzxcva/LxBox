@@ -1,27 +1,47 @@
-//! The compiled routing table: phase ordering, redundancy elimination
-//! and the first-hit-wins query path.
+//! The compiled routing table: phase ordering, redundancy elimination,
+//! candidate gathering through the global structures, and the
+//! first-hit-wins query path (including logical AND/OR/invert rules).
 
 use super::cidr::{Cidr, RuleCidrs};
-use super::domain::DomainIndex;
+use super::domain::{DomainIndex, GlobalNode};
 use super::{Match, Query, Rule, Target};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use regex::RegexBuilder;
+use std::net::IpAddr;
 
-/// A compiled routing table: rules in execution order with the domain and
-/// CIDR work hoisted into per-rule indexes.
+/// A compiled routing table.
+///
+/// Rules are in execution order (phase-sorted, redundancy-pruned). The hot
+/// path gathers candidate indices from global structures — a shared domain
+/// trie, a keyword inverted map and the CIDR-bearing rule list — then AND-
+/// checks only the candidates plus the always-live rules (logical rules and
+/// rules with no destination-address group, e.g. port- or SSID-only).
 #[derive(Debug, Default)]
 pub struct RuleTable {
     rules: Vec<Rule>,
     domain_indexes: Vec<DomainIndex>,
     cidr_indexes: Vec<RuleCidrs>,
+    source_cidr_indexes: Vec<RuleCidrs>,
+    regex_indexes: Vec<Vec<regex::Regex>>,
+    // ---- global candidate structures ----
+    global_domains: GlobalNode,
+    keyword_index: HashMap<String, Vec<usize>>,
+    cidr_rules: Vec<usize>,
+    /// Simple rules carrying regexes cannot be gathered from a trie: a
+    /// pattern has no labels. Every domain query evaluates these rules'
+    /// compiled patterns, so they are indexed as one short list rather
+    /// than scanning the whole table.
+    regex_rules: Vec<usize>,
+    always_rules: Vec<usize>,
 }
 
 impl RuleTable {
     /// Builds the table: sorts into phases (stable), removes redundant
-    /// entries (both inside a rule and across same-target rules), and
-    /// indexes domain/CIDR classes.
+    /// entries (both inside a rule and across same-target rules), compiles
+    /// regexes and indexes the global domain/CIDR structures.
     pub fn build(mut rules: Vec<Rule>) -> Self {
         // Stable phase sort keeps the user's order inside a class.
-        rules.sort_by_key(|r| r.phase());
+        rules.sort_by_key(Rule::phase);
 
         // Cross-rule coverage is tracked per action target: a rule routing
         // elsewhere says nothing about this rule's fate.
@@ -55,9 +75,8 @@ impl RuleTable {
                 dedupe_within(&mut rule);
 
                 // 2) what earlier same-target destination-only rules cover.
-                rule.keywords.retain(|kw| {
-                    !seen.0.iter().any(|prev| prev.contains(kw.as_str()))
-                });
+                rule.keywords
+                    .retain(|kw| !seen.0.iter().any(|prev| prev.contains(kw.as_str())));
                 rule.suffixes.retain(|sfx| {
                     !seen.0.iter().any(|kw| sfx.contains(kw.as_str()))
                         && !seen
@@ -73,7 +92,6 @@ impl RuleTable {
                             .any(|prev| dom == prev || dom.ends_with(&format!(".{prev}")))
                         && !seen.2.contains(dom)
                 });
-                let before = rule.cidrs.len();
                 rule.cidrs.retain(|raw| {
                     let text = raw.trim();
                     match Cidr::parse(text) {
@@ -81,15 +99,8 @@ impl RuleTable {
                         None => !seen.4.contains(text),
                     }
                 });
-                let _ = before;
 
-                // 3) register survivors — but never empty the destination
-                //    group while other AND conditions remain (the rule would
-                //    widen). A destination-only rule that lost everything is
-                //    fully covered and gets dropped.
-                if rule.has_destination_address() && rule.is_destination_only() {
-                    // nothing to widen — safe to keep or drop
-                } else if !rule.has_destination_address() {
+                if !rule.has_destination_address() {
                     continue; // covered away entirely
                 }
 
@@ -118,6 +129,7 @@ impl RuleTable {
             kept.push(rule);
         }
 
+        // Per-rule validation structures.
         let domain_indexes = kept
             .iter()
             .map(|rule| {
@@ -131,12 +143,63 @@ impl RuleTable {
                 index
             })
             .collect();
-        let cidr_indexes = kept.iter().map(|rule| RuleCidrs::build(&rule.cidrs)).collect();
+        let cidr_indexes: Vec<RuleCidrs> =
+            kept.iter().map(|r| RuleCidrs::build(&r.cidrs)).collect();
+        let source_cidr_indexes: Vec<RuleCidrs> = kept
+            .iter()
+            .map(|r| RuleCidrs::build(&r.source_cidrs))
+            .collect();
+        let regex_indexes: Vec<Vec<regex::Regex>> = kept
+            .iter()
+            .map(|r| {
+                r.regexes
+                    .iter()
+                    .filter_map(|p| RegexBuilder::new(p).case_insensitive(true).build().ok())
+                    .collect()
+            })
+            .collect();
+
+        // Global candidate structures.
+        let mut global_domains = GlobalNode::default();
+        let mut keyword_index: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut cidr_rules = Vec::new();
+        let mut regex_rules = Vec::new();
+        let mut always_rules = Vec::new();
+        for (idx, rule) in kept.iter().enumerate() {
+            for sfx in &rule.suffixes {
+                global_domains.insert_suffix(sfx, idx);
+            }
+            for dom in &rule.domains {
+                global_domains.insert_exact(dom, idx);
+            }
+            for kw in &rule.keywords {
+                keyword_index.entry(kw.clone()).or_default().push(idx);
+            }
+            if !cidr_indexes[idx].nets.is_empty() {
+                cidr_rules.push(idx);
+            }
+            if !rule.is_logical() && !regex_indexes[idx].is_empty() {
+                regex_rules.push(idx);
+            }
+            // Logical rules, and simple rules with no destination group,
+            // must be evaluated for every query (their constraints live in
+            // the AND groups).
+            if rule.is_logical() || !rule.has_destination_address() {
+                always_rules.push(idx);
+            }
+        }
 
         Self {
             rules: kept,
             domain_indexes,
             cidr_indexes,
+            source_cidr_indexes,
+            regex_indexes,
+            global_domains,
+            keyword_index,
+            cidr_rules,
+            regex_rules,
+            always_rules,
         }
     }
 
@@ -144,38 +207,85 @@ impl RuleTable {
         self.rules.len()
     }
 
-    /// First-hit-wins routing.
+    /// First-hit-wins routing, driven by global candidate gathering.
     pub fn match_query(&self, query: &Query) -> Option<Match> {
-        for (idx, rule) in self.rules.iter().enumerate() {
-            if !self.rule_matches(rule, &self.domain_indexes[idx], &self.cidr_indexes[idx], query) {
-                continue;
+        let mut candidates: BTreeSet<usize> = self.always_rules.iter().copied().collect();
+
+        if let Some(domain) = &query.domain {
+            // One shared trie walk for every suffix/exact matcher.
+            self.global_domains.collect(domain, &mut candidates);
+            // Keywords are substring matchers: check each distinct keyword
+            // once and map it to all rules carrying it.
+            for (keyword, indices) in &self.keyword_index {
+                if domain.contains(keyword.as_str()) {
+                    candidates.extend(indices.iter().copied());
+                }
             }
-            if let Some(target) = &rule.target {
-                return Some(Match {
-                    rule_id: rule.id.clone(),
-                    target: target.clone(),
-                });
+            // Regexes have no indexable key: test every regex-bearing rule's
+            // compiled pattern and stage only the hits for full AND checks.
+            for &idx in &self.regex_rules {
+                if self.regex_indexes[idx].iter().any(|re| re.is_match(domain)) {
+                    candidates.insert(idx);
+                }
+            }
+        }
+        if let Some(ip) = query.destination_ip {
+            for idx in &self.cidr_rules {
+                if self.cidr_indexes[*idx].contains(ip) {
+                    candidates.insert(*idx);
+                }
+            }
+        }
+
+        // BTreeSet yields ascending execution order; first valid hit wins.
+        for idx in candidates {
+            let rule = &self.rules[idx];
+            if self.rule_matches(idx, rule, query) {
+                if let Some(target) = &rule.target {
+                    return Some(Match {
+                        rule_id: rule.id.clone(),
+                        target: target.clone(),
+                    });
+                }
             }
         }
         None
     }
 
-    fn rule_matches(
-        &self,
-        rule: &Rule,
-        index: &DomainIndex,
-        cidrs: &RuleCidrs,
-        query: &Query,
-    ) -> bool {
-        // Package group: AND with the rest.
-        if !rule.packages.is_empty() {
-            match &query.package {
-                Some(pkg) if rule.packages.iter().any(|p| p == pkg) => {}
-                _ => return false,
-            }
+    fn rule_matches(&self, idx: usize, rule: &Rule, query: &Query) -> bool {
+        let result = if rule.is_logical() {
+            self.logical_matches(idx, rule, query)
+        } else {
+            self.simple_matches(idx, rule, query)
+        };
+        if rule.invert {
+            !result
+        } else {
+            result
         }
+    }
+
+    fn logical_matches(&self, idx: usize, rule: &Rule, query: &Query) -> bool {
+        let branches = rule
+            .branches
+            .iter()
+            // Branches carry no independent index slot: evaluate with
+            // on-the-fly structures built once per branch (logical rules
+            // are few; their entries are small).
+            .map(|branch| evaluate_standalone(branch, query))
+            .collect::<Vec<_>>();
+        let combined = if rule.mode.eq_ignore_ascii_case("or") {
+            branches.iter().any(|b| *b)
+        } else {
+            branches.iter().all(|b| *b)
+        };
+        // A logical rule may also carry outer AND-side constraints.
+        combined && self.and_groups_match(idx, rule, query)
+    }
+
+    fn simple_matches(&self, idx: usize, rule: &Rule, query: &Query) -> bool {
         // Destination-address group: OR over domain / suffix / keyword /
-        // CIDR — the same grouping the Go kernel uses.
+        // regex / CIDR — the same grouping the Go kernel uses.
         if rule.has_destination_address() {
             let mut satisfied = false;
             if let Some(domain) = &query.domain {
@@ -184,23 +294,64 @@ impl RuleTable {
                 {
                     satisfied = true;
                 }
-                if !satisfied && (!rule.suffixes.is_empty() || !rule.domains.is_empty()) {
-                    satisfied = index.matches(domain);
+                if !satisfied
+                    && (!rule.suffixes.is_empty() || !rule.domains.is_empty())
+                    && self.domain_indexes[idx].matches(domain)
+                {
+                    satisfied = true;
+                }
+                if !satisfied && self.regex_indexes[idx].iter().any(|re| re.is_match(domain)) {
+                    satisfied = true;
                 }
             }
-            if !satisfied && !rule.cidrs.is_empty() {
+            if !satisfied && !self.cidr_indexes[idx].nets.is_empty() {
                 if let Some(ip) = query.destination_ip {
-                    satisfied = cidrs.contains(ip);
+                    satisfied = self.cidr_indexes[idx].contains(ip);
                 }
             }
             if !satisfied {
                 return false;
             }
         }
-        // Port group: AND with the rest.
+        self.and_groups_match(idx, rule, query)
+    }
+
+    /// The AND-side groups shared by simple and logical rules: package,
+    /// port, network, protocol, SSID, source CIDR.
+    fn and_groups_match(&self, idx: usize, rule: &Rule, query: &Query) -> bool {
+        if !rule.packages.is_empty() {
+            match &query.package {
+                Some(pkg) if rule.packages.iter().any(|p| p == pkg) => {}
+                _ => return false,
+            }
+        }
         if !rule.ports.is_empty() {
             match query.port {
                 Some(port) if rule.ports.contains(&port) => {}
+                _ => return false,
+            }
+        }
+        if !rule.networks.is_empty() {
+            match &query.network {
+                Some(v) if rule.networks.iter().any(|n| n.eq_ignore_ascii_case(v)) => {}
+                _ => return false,
+            }
+        }
+        if !rule.protocols.is_empty() {
+            match &query.protocol {
+                Some(v) if rule.protocols.iter().any(|p| p.eq_ignore_ascii_case(v)) => {}
+                _ => return false,
+            }
+        }
+        if !rule.ssids.is_empty() {
+            match &query.ssid {
+                Some(v) if rule.ssids.iter().any(|s| s == v) => {}
+                _ => return false,
+            }
+        }
+        if !self.source_cidr_indexes[idx].nets.is_empty() {
+            match query.source_ip {
+                Some(ip) if self.source_cidr_indexes[idx].contains(ip) => {}
                 _ => return false,
             }
         }
@@ -208,15 +359,94 @@ impl RuleTable {
     }
 }
 
+fn match_source_cidrs(raws: &[String], source_ip: Option<IpAddr>) -> bool {
+    match source_ip {
+        Some(ip) => raws
+            .iter()
+            .filter_map(|raw| Cidr::parse(raw.trim()))
+            .any(|net| net.contains_addr(ip)),
+        None => false,
+    }
+}
+
+/// Evaluates a logical branch as a self-contained rule against the query.
+/// Used for nested branches that are not individually indexed; regexes and
+/// CIDRs inside branches are parsed per evaluation (logical trees stay
+/// small by construction).
+fn evaluate_standalone(rule: &Rule, query: &Query) -> bool {
+    let mut result = if rule.is_logical() {
+        let branches: Vec<bool> = rule
+            .branches
+            .iter()
+            .map(|b| evaluate_standalone(b, query))
+            .collect();
+        if rule.mode.eq_ignore_ascii_case("or") {
+            branches.iter().any(|b| *b)
+        } else {
+            branches.iter().all(|b| *b)
+        }
+    } else {
+        let mut dest = !rule.has_destination_address();
+        if !dest {
+            if let Some(domain) = &query.domain {
+                dest |= rule.keywords.iter().any(|kw| domain.contains(kw.as_str()));
+                dest |= rule
+                    .suffixes
+                    .iter()
+                    .any(|sfx| domain == sfx || domain.ends_with(&format!(".{sfx}")));
+                dest |= rule.domains.iter().any(|d| d == domain);
+                dest |= rule.regexes.iter().any(|p| {
+                    RegexBuilder::new(p)
+                        .case_insensitive(true)
+                        .build()
+                        .map(|re| re.is_match(domain))
+                        .unwrap_or(false)
+                });
+            }
+            if !dest {
+                if let Some(ip) = query.destination_ip {
+                    dest |= rule
+                        .cidrs
+                        .iter()
+                        .filter_map(|raw| Cidr::parse(raw.trim()))
+                        .any(|net| net.contains_addr(ip));
+                }
+            }
+        }
+        dest
+    };
+    if result {
+        // AND-side constraints on the branch itself.
+        if let Some(pkg) = &query.package {
+            if !rule.packages.is_empty() && !rule.packages.iter().any(|p| p == pkg) {
+                result = false;
+            }
+        } else if !rule.packages.is_empty() {
+            result = false;
+        }
+        if result {
+            match query.port {
+                Some(port) if rule.ports.is_empty() || rule.ports.contains(&port) => {}
+                None if rule.ports.is_empty() => {}
+                _ => result = false,
+            }
+        }
+        if result && !rule.source_cidrs.is_empty() {
+            result = match_source_cidrs(&rule.source_cidrs, query.source_ip);
+        }
+    }
+    if rule.invert {
+        !result
+    } else {
+        result
+    }
+}
+
 /// keyword > suffix > exact domain, broader CIDR > narrower, inside one rule.
 fn dedupe_within(rule: &mut Rule) {
-    // Normalise is the caller's business (the app lowercases before
-    // emitting); keep this pure to make the tests meaningful.
     let keywords = rule.keywords.clone();
     let hit_by_keyword = |value: &str| keywords.iter().any(|kw| value.contains(kw.as_str()));
 
-    // Compute against snapshots, then assign: retain() closures cannot hold
-    // a borrow of the same field they mutate.
     let suffixes_in = rule.suffixes.clone();
     let kept_suffixes: Vec<String> = suffixes_in
         .iter()
@@ -224,7 +454,6 @@ fn dedupe_within(rule: &mut Rule) {
             if hit_by_keyword(sfx) {
                 return false;
             }
-            // A broader sibling suffix subsumes a narrower one.
             !suffixes_in.iter().any(|other| {
                 other != *sfx
                     && other.len() < sfx.len()

@@ -9,10 +9,10 @@
 //! three).
 
 use aes_gcm::aead::generic_array::GenericArray;
-use hmac::Mac;
 use aes_gcm::aead::{AeadInPlace, KeyInit};
 use aes_gcm::Aes128Gcm;
 use chacha20poly1305::ChaCha20Poly1305;
+use hmac::Mac;
 
 pub const RECORD_HEADER_LEN: usize = 5;
 pub const MAX_RECORD_PAYLOAD: usize = 16_384;
@@ -125,7 +125,13 @@ impl CipherState {
         let nonce = self.nonce();
         payload.push(content_type); // RFC 8446 §5.2: real type rides inside
         let wire_len = payload.len() + RECORD_TAG_LEN;
-        let aad = [CONTENT_APP_DATA, 0x03, 0x03, (wire_len >> 8) as u8, wire_len as u8];
+        let aad = [
+            CONTENT_APP_DATA,
+            0x03,
+            0x03,
+            (wire_len >> 8) as u8,
+            wire_len as u8,
+        ];
         let buf = match self.suite {
             Suite::Aes128GcmSha256 => {
                 let cipher = Aes128Gcm::new_from_slice(&self.key).expect("key");
@@ -179,19 +185,34 @@ impl CipherState {
             Suite::Aes128GcmSha256 => {
                 let cipher = Aes128Gcm::new_from_slice(&self.key).expect("key");
                 cipher
-                    .decrypt_in_place_detached(GenericArray::from_slice(&nonce), header, &mut buf, GenericArray::from_slice(tag))
+                    .decrypt_in_place_detached(
+                        GenericArray::from_slice(&nonce),
+                        header,
+                        &mut buf,
+                        GenericArray::from_slice(tag),
+                    )
                     .map_err(|_| "decrypt failed".to_string())?
             }
             Suite::Aes256GcmSha384 => {
                 let cipher = aes_gcm::Aes256Gcm::new_from_slice(&self.key).expect("key");
                 cipher
-                    .decrypt_in_place_detached(GenericArray::from_slice(&nonce), header, &mut buf, GenericArray::from_slice(tag))
+                    .decrypt_in_place_detached(
+                        GenericArray::from_slice(&nonce),
+                        header,
+                        &mut buf,
+                        GenericArray::from_slice(tag),
+                    )
                     .map_err(|_| "decrypt failed".to_string())?
             }
             Suite::ChaCha20Poly1305Sha256 => {
                 let cipher = ChaCha20Poly1305::new_from_slice(&self.key).expect("key");
                 cipher
-                    .decrypt_in_place_detached(GenericArray::from_slice(&nonce), header, &mut buf, GenericArray::from_slice(tag))
+                    .decrypt_in_place_detached(
+                        GenericArray::from_slice(&nonce),
+                        header,
+                        &mut buf,
+                        GenericArray::from_slice(tag),
+                    )
                     .map_err(|_| "decrypt failed".to_string())?
             }
         };
@@ -233,19 +254,26 @@ impl KeySchedule {
         self.current.clone().expect("handshake secrets derived")
     }
 
-    pub(crate) fn hkdf_extract(&self, ikm: &[u8]) -> Vec<u8> {
+    #[cfg(test)]
+    pub(crate) fn hkdf_extract_for_test(&self, ikm: &[u8]) -> Vec<u8> {
+        self.hkdf_extract(ikm)
+    }
+
+    fn hkdf_extract(&self, ikm: &[u8]) -> Vec<u8> {
         let hk = hkdf::Hkdf::<sha2::Sha256>::new(Some(&self.salt), ikm);
         // Only used with SHA-384 suites too — rebuild per suite below.
         let _ = hk;
         match self.suite {
             Suite::Aes256GcmSha384 => {
                 // HMAC-Extract per RFC 5869.
-                let mut mac = <hmac::Hmac<sha2::Sha384> as hmac::Mac>::new_from_slice(&self.salt).expect("salt");
+                let mut mac = <hmac::Hmac<sha2::Sha384> as hmac::Mac>::new_from_slice(&self.salt)
+                    .expect("salt");
                 mac.update(ikm);
                 mac.finalize().into_bytes().to_vec()
             }
             _ => {
-                let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(&self.salt).expect("salt");
+                let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(&self.salt)
+                    .expect("salt");
                 mac.update(ikm);
                 mac.finalize().into_bytes().to_vec()
             }
@@ -300,7 +328,11 @@ impl KeySchedule {
     ///   early  = Extract(0, 0)
     ///   hs     = Extract(Derive-Secret(early, "derived", ""), shared)
     ///   master = Extract(Derive-Secret(hs, "derived", ""), 0)
-    pub fn handshake_secrets(&mut self, shared_key: &[u8], transcript_ch_sh: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    pub fn handshake_secrets(
+        &mut self,
+        shared_key: &[u8],
+        transcript_ch_sh: &[u8],
+    ) -> (Vec<u8>, Vec<u8>) {
         let zero = vec![0u8; self.suite.hash_len()];
         let early = self.hkdf_extract(&zero);
         self.advance(&early, shared_key); // salt := derived(early), extract shared
@@ -312,7 +344,11 @@ impl KeySchedule {
     }
 
     /// Application secrets after the full server flight is in the transcript.
-    pub fn application_secrets(&mut self, handshake_secret: &[u8], transcript: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    pub fn application_secrets(
+        &mut self,
+        handshake_secret: &[u8],
+        transcript: &[u8],
+    ) -> (Vec<u8>, Vec<u8>) {
         self.advance(handshake_secret, &vec![0u8; self.suite.hash_len()]);
         let master = self.hkdf_extract(&vec![0u8; self.suite.hash_len()]);
         let client = self.derive_secret(&master, "c ap traffic", transcript);
@@ -336,12 +372,14 @@ impl KeySchedule {
         let th = self.suite.hash(transcript);
         match self.suite {
             Suite::Aes256GcmSha384 => {
-                let mut mac = <hmac::Hmac<sha2::Sha384> as hmac::Mac>::new_from_slice(finished_key).expect("key");
+                let mut mac = <hmac::Hmac<sha2::Sha384> as hmac::Mac>::new_from_slice(finished_key)
+                    .expect("key");
                 mac.update(&th);
                 mac.finalize().into_bytes().to_vec()
             }
             _ => {
-                let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(finished_key).expect("key");
+                let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(finished_key)
+                    .expect("key");
                 mac.update(&th);
                 mac.finalize().into_bytes().to_vec()
             }
@@ -356,11 +394,12 @@ mod tests {
     /// RFC 8448 §3 (simplified TLS 1.3) handshake secrets.
     #[test]
     fn rfc8448_handshake_secret_chain() {
-        let shared: Vec<u8> = hex("8bd4054fb55b9d63fdfbacf9f04b9f0d35e6d63f537563efd46272900f89492d");
+        let shared: Vec<u8> =
+            hex("8bd4054fb55b9d63fdfbacf9f04b9f0d35e6d63f537563efd46272900f89492d");
         let mut ks = KeySchedule::new(Suite::Aes128GcmSha256);
         // early secret
         let zero = vec![0u8; 32];
-        let early = ks.hkdf_extract(&zero);
+        let early = ks.hkdf_extract_for_test(&zero);
         assert_eq!(
             hex_to_vec("33ad0a1c607ec03b09e6cd9893680ce210adf300aa1f2660e1b22e10f170f92a"),
             early
@@ -374,7 +413,7 @@ mod tests {
         );
         // handshake secret = Extract(derived, shared)
         ks.salt = derived;
-        let hs = ks.hkdf_extract(&shared);
+        let hs = ks.hkdf_extract_for_test(&shared);
         assert_eq!(
             hex_to_vec("1dc826e93606aa6fdc0aadc12f741b01046aa6b99f691ed221a9f0ca043fbeac"),
             hs
@@ -382,7 +421,8 @@ mod tests {
         // c hs traffic with the RFC transcript hash input — the RFC uses the
         // full transcript hash of CH..SH; we feed a stand-in transcript equal
         // to the RFC's transcript hash value.
-        let th: Vec<u8> = hex_to_vec("860c06edc079fd5e3205b648c55905f79579cfca5cab5c1d10078500ec538e1d");
+        let th: Vec<u8> =
+            hex_to_vec("860c06edc079fd5e3205b648c55905f79579cfca5cab5c1d10078500ec538e1d");
         let c_hs = ks.hkdf_expand_label(&hs, "c hs traffic", &th, 32);
         // Cross-checked against Python HKDF; the true end-to-end proof is the
         // Go/openssl interop test (examples/e2e.rs).

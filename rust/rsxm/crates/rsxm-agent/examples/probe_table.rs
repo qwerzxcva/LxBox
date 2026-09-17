@@ -7,7 +7,10 @@ fn main() {
         serde_json::from_value(slice.value.get("rules").unwrap().clone()).unwrap();
     println!("parsed rules: {}", rules.len());
     for r in &rules {
-        println!("  id={} suffixes={:?} target={:?}", r.id, r.suffixes, r.target);
+        println!(
+            "  id={} suffixes={:?} target={:?}",
+            r.id, r.suffixes, r.target
+        );
     }
     let table = rsxm_rules::RuleTable::build(rules);
     let q = rsxm_rules::Query {

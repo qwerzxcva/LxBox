@@ -3,6 +3,8 @@ package com.leadaxe.aibox.app
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -64,6 +66,22 @@ class MainActivity : ComponentActivity() {
         // Start cross-process state syncing before the first frame so the
         // Home dial reflects a tunnel that was already running.
         app.vpnRelay.startListening()
+        // Privacy gate (rsxm-security verdict): hide engine surfaces from
+        // the task switcher and screenshots while the user asks for it.
+        lifecycleScope.launch {
+            app.appStateStore.state.collect { st ->
+                window?.let { w ->
+                    if (st.blockScreenshots) {
+                        w.setFlags(
+                            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                        )
+                    } else {
+                        w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                }
+            }
+        }
         setContent {
             val state by app.appStateStore.state.collectAsState()
             LocalizedApp(language = state.language) {

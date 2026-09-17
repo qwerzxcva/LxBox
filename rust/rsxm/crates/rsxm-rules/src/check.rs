@@ -165,10 +165,7 @@ impl RouteChecker {
                 "route" | "reject" | "hijack-dns" => {
                     return CheckOutcome {
                         rule_index: Some(index),
-                        rule_label: rule
-                            .outbound
-                            .clone()
-                            .unwrap_or_else(|| format!("#{index}")),
+                        rule_label: rule.outbound.clone().unwrap_or_else(|| format!("#{index}")),
                         action: action.clone(),
                         outbound: rule.outbound.clone(),
                         reason: explain(rule),
@@ -193,7 +190,11 @@ impl RouteChecker {
     fn rule_matches(&self, rule: &CompiledRule, query: &CheckQuery) -> bool {
         if rule.r#type == "logical" {
             let want_or = rule.mode == "or";
-            let results: Vec<bool> = rule.rules.iter().map(|b| self.rule_matches(b, query)).collect();
+            let results: Vec<bool> = rule
+                .rules
+                .iter()
+                .map(|b| self.rule_matches(b, query))
+                .collect();
             let mut matched = if want_or {
                 results.iter().any(|hit| *hit)
             } else {
@@ -263,15 +264,14 @@ impl RouteChecker {
             if let Some(domain) = &query.domain {
                 let d = domain.to_lowercase();
                 satisfied = rule.domain.iter().any(|x| x.eq_ignore_ascii_case(&d))
+                    || rule.domain_suffix.iter().any(|s| {
+                        d == s.to_lowercase() || d.ends_with(&format!(".{}", s.to_lowercase()))
+                    })
                     || rule
-                        .domain_suffix
+                        .domain_keyword
                         .iter()
-                        .any(|s| d == s.to_lowercase() || d.ends_with(&format!(".{}", s.to_lowercase())))
-                    || rule.domain_keyword.iter().any(|k| d.contains(&k.to_lowercase()))
-                    || rule
-                        .domain_regex
-                        .iter()
-                        .any(|re| regex_hit(re, domain));
+                        .any(|k| d.contains(&k.to_lowercase()))
+                    || rule.domain_regex.iter().any(|re| regex_hit(re, domain));
             }
             if !satisfied && !rule.ip_cidr.is_empty() {
                 if let Some(ip) = query.destination_ip {
@@ -304,7 +304,9 @@ impl RouteChecker {
             let source_ok = (rule.source_port.is_empty() && rule.source_port_range.is_empty())
                 || match query.source_port {
                     Some(port) => {
-                        rule.source_port.iter().any(|p| value_as_u16(p) == Some(port))
+                        rule.source_port
+                            .iter()
+                            .any(|p| value_as_u16(p) == Some(port))
                             || rule.source_port_range.iter().any(|r| range_hit(r, port))
                     }
                     None => false,
@@ -315,7 +317,9 @@ impl RouteChecker {
         }
         // --- ip_version (AND) ---
         if let Some(version) = rule.ip_version {
-            let query_version = query.destination_ip.map(|ip| if ip.is_ipv4() { 4 } else { 6 });
+            let query_version = query
+                .destination_ip
+                .map(|ip| if ip.is_ipv4() { 4 } else { 6 });
             if query_version != Some(version) {
                 return false;
             }
@@ -395,7 +399,8 @@ fn range_hit(range: &str, port: u16) -> bool {
 }
 
 fn cidr_hit(raws: &[String], ip: IpAddr) -> bool {
-    raws.iter().any(|raw| parse_cidr(raw).is_some_and(|(net, prefix)| contains(net, prefix, ip)))
+    raws.iter()
+        .any(|raw| parse_cidr(raw).is_some_and(|(net, prefix)| contains(net, prefix, ip)))
 }
 
 fn source_cidr_hit(raws: &[String], ip: IpAddr) -> bool {
@@ -419,13 +424,21 @@ fn contains(net: IpAddr, prefix: u8, ip: IpAddr) -> bool {
         (IpAddr::V4(net), IpAddr::V4(ip)) => {
             let net = u32::from(net);
             let ip = u32::from(ip);
-            let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u32::MAX << (32 - prefix)
+            };
             (net & mask) == (ip & mask)
         }
         (IpAddr::V6(net), IpAddr::V6(ip)) => {
             let net = u128::from(net);
             let ip = u128::from(ip);
-            let mask = if prefix == 0 { 0 } else { u128::MAX << (128 - prefix) };
+            let mask = if prefix == 0 {
+                0
+            } else {
+                u128::MAX << (128 - prefix)
+            };
             (net & mask) == (ip & mask)
         }
         _ => false,
@@ -551,7 +564,10 @@ mod tests {
         q.port = Some(443);
         assert_eq!(c.check(&q).outbound.as_deref(), Some("proxy"));
         // IP + port: hit (OR inside the destination family).
-        let mut q = CheckQuery { port: Some(443), ..Default::default() };
+        let mut q = CheckQuery {
+            port: Some(443),
+            ..Default::default()
+        };
         q.destination_ip = Some("10.1.2.3".parse().unwrap());
         assert_eq!(c.check(&q).outbound.as_deref(), Some("proxy"));
         // Domain but wrong port: the port group fails.
@@ -602,7 +618,10 @@ mod tests {
                 "outbound":"direct"
             }]"#,
         );
-        assert_eq!(c.check(&query("mtalk.google.com")).outbound.as_deref(), Some("direct"));
+        assert_eq!(
+            c.check(&query("mtalk.google.com")).outbound.as_deref(),
+            Some("direct")
+        );
         let q = CheckQuery {
             port: Some(5229),
             ..Default::default()
@@ -626,19 +645,22 @@ mod tests {
 
     #[test]
     fn invert_flips_the_match() {
-        let c = checker(
-            r#"[{"domain_suffix":"example.com","invert":true,"outbound":"direct"}]"#,
-        );
+        let c = checker(r#"[{"domain_suffix":"example.com","invert":true,"outbound":"direct"}]"#);
         assert_eq!(c.check(&query("example.com")).rule_index, None);
-        assert_eq!(c.check(&query("other.org")).outbound.as_deref(), Some("direct"));
+        assert_eq!(
+            c.check(&query("other.org")).outbound.as_deref(),
+            Some("direct")
+        );
     }
 
     #[test]
     fn network_and_package_gate_the_match() {
-        let c = checker(
-            r#"[{"network":["udp"],"port":[53],"action":"hijack-dns"}]"#,
-        );
-        let mut q = CheckQuery { port: Some(53), network: Some("udp".into()), ..Default::default() };
+        let c = checker(r#"[{"network":["udp"],"port":[53],"action":"hijack-dns"}]"#);
+        let mut q = CheckQuery {
+            port: Some(53),
+            network: Some("udp".into()),
+            ..Default::default()
+        };
         assert_eq!(c.check(&q).action, "hijack-dns");
         q.network = Some("tcp".into());
         assert_eq!(c.check(&q).rule_index, None);
@@ -664,7 +686,10 @@ mod tests {
         let c = checker(r#"[{"domain_suffix":"example.com","outbound":"direct"}]"#);
         // "notexample.com" must not match the suffix.
         assert_eq!(c.check(&query("notexample.com")).rule_index, None);
-        assert_eq!(c.check(&query("example.com")).outbound.as_deref(), Some("direct"));
+        assert_eq!(
+            c.check(&query("example.com")).outbound.as_deref(),
+            Some("direct")
+        );
     }
 
     #[test]
@@ -673,9 +698,8 @@ mod tests {
         // domain regexes use (dots escaped, no character classes). Classes
         // like \d need the runtime crate's regex engine and are not
         // promised here — they fall back to a structural comparison.
-        let c = checker(
-            r#"[{"domain_regex":["^alt1\\.mtalk\\.google\\.com$"],"outbound":"direct"}]"#,
-        );
+        let c =
+            checker(r#"[{"domain_regex":["^alt1\\.mtalk\\.google\\.com$"],"outbound":"direct"}]"#);
         assert_eq!(
             c.check(&query("alt1.mtalk.google.com")).outbound.as_deref(),
             Some("direct")

@@ -14,8 +14,13 @@
 //!                                          replay the *compiled* sing-box
 //!                                          rule table (route-check engine)
 
-use rsxm_core::{ConfigEnvelope, Health, Query, Scheduler};
-use rsxm_rules::{Rule, RuleTable};
+use rsxm_core::{Conductor, ConfigEnvelope, Health};
+use rsxm_dialer::DialerModule;
+use rsxm_dns::DnsModule;
+use rsxm_power::PowerModule;
+use rsxm_rules::{Query, RulesModule};
+use rsxm_security::SecurityModule;
+use rsxm_stats::StatsModule;
 use rsxm_tun::{TunConfig, TunModule};
 use std::sync::Arc;
 
@@ -101,11 +106,23 @@ fn main() {
         return;
     }
 
-    let mut scheduler = Scheduler::new();
-    scheduler.register(Arc::new(TunModule::new(TunConfig::default())));
+    // ---- Boot the one-super-many-strong kernel --------------------------
+    // The Conductor owns lifecycle and supervision only; every leader gets
+    // its own opaque slice. Registration order is irrelevant: start order is
+    // derived from declared dependencies (tun waits for the dialer, dns
+    // waits for rules).
+    let rules_module = Arc::new(RulesModule::new());
+    let mut conductor = Conductor::new();
+    conductor.register(rules_module.clone() as Arc<dyn rsxm_core::Module>);
+    conductor.register(Arc::new(DnsModule::new()));
+    conductor.register(Arc::new(DialerModule::new()));
+    conductor.register(Arc::new(PowerModule::new()));
+    conductor.register(Arc::new(SecurityModule::new()));
+    conductor.register(Arc::new(StatsModule::new()));
+    conductor.register(Arc::new(TunModule::new(TunConfig::default())));
 
-    // The rules file (AppState-shaped) is split by rsxm-config; the envelope
-    // is distributed to the modules — the scheduler itself never reads it.
+    // The config file (AppState-shaped) is split by rsxm-config into opaque
+    // per-module slices; the Conductor itself never reads any content.
     let envelope: ConfigEnvelope = match &rules_path {
         Some(path) => match std::fs::read_to_string(path) {
             Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
@@ -130,22 +147,33 @@ fn main() {
         },
         None => ConfigEnvelope::default(),
     };
-    let table = envelope
-        .for_module("rsxm-rules")
-        .and_then(|slice| {
-            let rules: Vec<Rule> =
-                serde_json::from_value(slice.value.get("rules")?.clone()).ok()?;
-            Some(RuleTable::build(rules))
-        })
-        .unwrap_or_default();
-    scheduler.distribute(envelope);
+    conductor.distribute(envelope);
 
-    let report = scheduler.start_all();
+    // Surface what each leader said about its slice before starting.
+    for report in conductor.drain_reports() {
+        println!(
+            "{:>15} [{}] {}",
+            report.module,
+            report.kind.as_str(),
+            report.message
+        );
+    }
+
+    let report = conductor.start_all();
     for (name, result) in &report {
         match result {
             Ok(()) => println!("module {name}: started"),
             Err(err) => println!("module {name}: FAILED ({err})"),
         }
+    }
+    // Start reports land during start_all; drain them too.
+    for report in conductor.drain_reports() {
+        println!(
+            "{:>15} [{}] {}",
+            report.module,
+            report.kind.as_str(),
+            report.message
+        );
     }
 
     let probe = route_domain.clone().or_else(|| route_ip.clone());
@@ -154,14 +182,21 @@ fn main() {
             domain: route_domain.clone(),
             package: route_package,
             destination_ip: route_ip.and_then(|s| s.parse().ok()),
+            port: route_port,
+            network: route_network,
             ..Default::default()
         };
-        match table.match_query(&query) {
+        // The hot path takes a direct typed handle to the rules leader's
+        // compiled table — the Conductor is never on the decision path.
+        match rules_module
+            .table()
+            .and_then(|table| table.match_query(&query))
+        {
             Some(m) => println!("route {domain} -> {:?} (rule {})", m.target, m.rule_id),
             None => println!("route {domain} -> no match"),
         }
     } else {
-        for (name, health) in scheduler.health() {
+        for (name, health) in conductor.health() {
             let status = match health {
                 Health::Up => "up".to_string(),
                 other => other.to_string(),
@@ -170,5 +205,5 @@ fn main() {
         }
     }
 
-    scheduler.stop_all();
+    conductor.stop_all();
 }

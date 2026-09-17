@@ -244,6 +244,20 @@ data class AppState(
      * NATs drop ECN-marked packets, stalling QUIC sessions.
      */
     val quicDisableEcn: Boolean = false,
+
+    // ----- Privacy posture (consumed by rsxm-security kernel) -----
+    /**
+     * Blur/hide the app in the task switcher and block screenshots of
+     * engine surfaces (Android FLAG_SECURE). Kernel publishes the verdict;
+     * the activity applies it at attach time.
+     */
+    val blockScreenshots: Boolean = false,
+    /**
+     * Allow plaintext DNS upstreams (udp/tcp/dhcp). Off = the security
+     * kernel fails closed: plaintext upstreams are rejected with a report,
+     * protecting queried names from the local network.
+     */
+    val allowInsecureDns: Boolean = false,
     /** Persist rule-set / fake-IP caches to disk (experimental.cache_file). */
     val enableCacheFile: Boolean = true,
     /**

@@ -19,12 +19,8 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_snapshotFing
     input: JString,
 ) -> jstring {
     let result = (|| -> Result<String, String> {
-        let json: String = env
-            .get_string(&input)
-            .map_err(|e| e.to_string())?
-            .into();
-        let connections: Vec<ConnectionInfo> =
-            serde_json::from_str(&json).unwrap_or_default();
+        let json: String = env.get_string(&input).map_err(|e| e.to_string())?.into();
+        let connections: Vec<ConnectionInfo> = serde_json::from_str(&json).unwrap_or_default();
         let (out, fp) = crate::snapshot_json_and_fingerprint(&connections);
         Ok(format!("[{fp},{out}]"))
     })()

@@ -8,7 +8,12 @@ license.workspace = true
 rsxm-core = { path = "../rsxm-core" }
 rsxm-config = { path = "../rsxm-config" }
 rsxm-rules = { path = "../rsxm-rules" }
+rsxm-dns = { path = "../rsxm-dns" }
+rsxm-dialer = { path = "../rsxm-dialer" }
 rsxm-tun = { path = "../rsxm-tun" }
+rsxm-stats = { path = "../rsxm-stats" }
+rsxm-power = { path = "../rsxm-power" }
+rsxm-security = { path = "../rsxm-security" }
 serde_json = "1"
 
 [[bin]]

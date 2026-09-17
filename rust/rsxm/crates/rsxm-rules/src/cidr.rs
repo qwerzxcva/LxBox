@@ -1,3 +1,6 @@
+//! CIDR parsing and containment checks for the destination/source
+//! address matchers, plus the per-rule index built from them.
+
 use std::net::IpAddr;
 
 /// A parsed CIDR entry: network bytes + prefix length.
@@ -13,7 +16,10 @@ impl Cidr {
     /// surfaces them in the UI as invalid instead of silently ignoring).
     pub fn parse(text: &str) -> Option<Self> {
         let (addr_text, prefix_text) = text.trim().split_once('/')?;
-        let addr: IpAddr = addr_text.trim_matches(|c| c == '[' || c == ']').parse().ok()?;
+        let addr: IpAddr = addr_text
+            .trim_matches(|c| c == '[' || c == ']')
+            .parse()
+            .ok()?;
         let prefix: u8 = prefix_text.trim().parse().ok()?;
         let max = if addr.is_ipv4() { 32 } else { 128 };
         if prefix > max {
@@ -28,13 +34,21 @@ impl Cidr {
             (IpAddr::V4(net), IpAddr::V4(ip)) => {
                 let net = u32::from(net);
                 let ip = u32::from(ip);
-                let mask = if self.prefix == 0 { 0 } else { u32::MAX << (32 - self.prefix) };
+                let mask = if self.prefix == 0 {
+                    0
+                } else {
+                    u32::MAX << (32 - self.prefix)
+                };
                 (net & mask) == (ip & mask)
             }
             (IpAddr::V6(net), IpAddr::V6(ip)) => {
                 let net = u128::from(net);
                 let ip = u128::from(ip);
-                let mask = if self.prefix == 0 { 0 } else { u128::MAX << (128 - self.prefix) };
+                let mask = if self.prefix == 0 {
+                    0
+                } else {
+                    u128::MAX << (128 - self.prefix)
+                };
                 (net & mask) == (ip & mask)
             }
             _ => false,
@@ -53,12 +67,12 @@ impl Cidr {
     }
 }
 
-/// Compiled CIDs for one rule. Unparseable entries are not indexed for
+/// Compiled CIDRs for one rule. Unparseable entries are not indexed for
 /// matching (they can never contain an address); cross-rule dedupe handles
 /// them by raw-text identity during [`RuleTable::build`].
 #[derive(Debug, Default)]
 pub(crate) struct RuleCidrs {
-    nets: Vec<Cidr>,
+    pub(crate) nets: Vec<Cidr>,
 }
 
 impl RuleCidrs {
