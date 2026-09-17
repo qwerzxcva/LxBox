@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 31+ backup posture. AIBox stores subscription URLs, node parameters
+  and routing rules — credentials-adjacent data that must never leave the
+  device via cloud backup or device-transfer (mikuRay/xray-lineage posture).
+  In-app "Backup & restore" remains available: that export is an explicit,
+  user-initiated action over SAF.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

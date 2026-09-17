@@ -216,6 +216,7 @@
     <string name="dns_final_auto">自动</string>
     <string name="dns_final_exit_proxy">代理出口</string>
     <string name="dns_final_exit_direct">直连出口</string>
+    <string name="dns_final_overrides">%1$d modes overridden</string>
     <string name="dns_final_mode_default">跟随全局</string>
     <string name="dns_final_global_fallback">全局兜底（最后手段）</string>
     <string name="dns_group_members">成员服务器</string>
@@ -623,4 +624,9 @@
     <!-- 设置分区 -->
     <string name="settings_section_advanced">高级</string>
     <string name="settings_restart_hint">修改将在下次连接时生效。</string>
+    <string name="settings_section_privacy">Privacy &amp; security</string>
+    <string name="settings_privacy_screenshots">Block screenshots &amp; recents preview</string>
+    <string name="settings_privacy_screenshots_desc">Hide node lists, subscriptions and traffic in the task switcher and block screen recordings (FLAG_SECURE).</string>
+    <string name="settings_privacy_insecure_dns">Allow plaintext DNS</string>
+    <string name="settings_privacy_insecure_dns_desc">Permit unencrypted udp/tcp/dhcp DNS upstreams. Keep off unless your network forces its resolver — DoT/DoH/DoQ protect queried names.</string>
 </resources>

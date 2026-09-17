@@ -244,20 +244,6 @@ data class AppState(
      * NATs drop ECN-marked packets, stalling QUIC sessions.
      */
     val quicDisableEcn: Boolean = false,
-
-    // ----- Privacy posture (consumed by rsxm-security kernel) -----
-    /**
-     * Blur/hide the app in the task switcher and block screenshots of
-     * engine surfaces (Android FLAG_SECURE). Kernel publishes the verdict;
-     * the activity applies it at attach time.
-     */
-    val blockScreenshots: Boolean = false,
-    /**
-     * Allow plaintext DNS upstreams (udp/tcp/dhcp). Off = the security
-     * kernel fails closed: plaintext upstreams are rejected with a report,
-     * protecting queried names from the local network.
-     */
-    val allowInsecureDns: Boolean = false,
     /** Persist rule-set / fake-IP caches to disk (experimental.cache_file). */
     val enableCacheFile: Boolean = true,
     /**
@@ -268,6 +254,21 @@ data class AppState(
      */
     val tlsFragmentMode: String = "none",
     val tlsFragmentFallbackDelay: String = "",
+
+    // ------------------------------------------------------- privacy guards
+    /**
+     * Applies FLAG_SECURE to the engine surfaces: the recents thumbnail,
+     * screen recordings and non-system overlays cannot capture node lists,
+     * subscriptions or live traffic. Mirrors the rsxm-security slice
+     * (`blockScreenshots`); mikuRay-style fail-closed privacy posture.
+     */
+    val blockScreenshots: Boolean = false,
+    /**
+     * Allows plaintext DNS upstreams (udp/tcp/dhcp). Off by default so the
+     * rsxm-security leader keeps every DNS query encrypted (DoT/DoH/DoQ);
+     * flip on only when the local network requires its resolver.
+     */
+    val allowInsecureDns: Boolean = false,
     /**
      * SNTP sync inside the core. Reality and SS2022 both reject handshakes
      * outside a narrow clock window; a drifting device clock otherwise

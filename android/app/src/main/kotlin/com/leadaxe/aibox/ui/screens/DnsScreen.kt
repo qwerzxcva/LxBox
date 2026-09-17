@@ -1,15 +1,16 @@
 package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,20 +18,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +36,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,27 +47,19 @@ import androidx.compose.ui.unit.dp
 import com.leadaxe.aibox.AIBoxApp
 import com.leadaxe.aibox.R
 import com.leadaxe.aibox.app.AppState
+import com.leadaxe.aibox.app.ClashModeDirect
+import com.leadaxe.aibox.app.ClashModeGlobal
+import com.leadaxe.aibox.app.ClashModeRule
+import com.leadaxe.aibox.app.ClashModes
 import com.leadaxe.aibox.app.DirectOutboundTag
 import com.leadaxe.aibox.app.DnsDetourDirect
 import com.leadaxe.aibox.app.DnsDetourProxy
 import com.leadaxe.aibox.app.DnsFinalDirect
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRule
-import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionReject
-import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRoute
-import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActionRouteOptions
-import com.leadaxe.aibox.app.ClashModeDirect
-import com.leadaxe.aibox.app.ClashModeGlobal
-import com.leadaxe.aibox.app.ClashModeRule
-import com.leadaxe.aibox.app.ClashModes
-import com.leadaxe.aibox.app.DnsFinalDirect
-import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsRuleActions
 import com.leadaxe.aibox.app.DnsServerState
 import com.leadaxe.aibox.app.DnsServerTypes
@@ -88,9 +79,15 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     val relay = remember { app.vpnRelay }
     val boxState by relay.state.collectAsState()
 
-    var editingServer: DnsServerState? by remember { mutableStateOf(null) }
-    var creatingServer by remember { mutableStateOf(false) }
-    var editingRule: DnsRule? by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(null) }
+    // Server create/edit are inline expanding forms (no popup dialog):
+    // showAddForm renders a fresh form card under the section header;
+    // editingServerId swaps that server's card for the form in place.
+    var editingServerId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showAddForm by rememberSaveable { mutableStateOf(false) }
+    // Collapsed-by-default advanced DNS sections.
+    var strategyExpanded by rememberSaveable { mutableStateOf(false) }
+    var fallbackExpanded by rememberSaveable { mutableStateOf(false) }
+    var editingRule: DnsRule? by rememberSaveable { mutableStateOf(null) }
     var creatingRule by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.DisposableEffect(creatingRule, editingRule) {
         onEditorLock(creatingRule || editingRule != null)
@@ -135,28 +132,62 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
         // Title first, then the add action: the page reads as "DNS servers
         // — add one — the list", not "an action floating above a title".
         item { SectionHeader(stringResource(R.string.dns_section_servers, state.dnsServers.size)) }
+        // Add server: an inline expanding form, not a popup. The trigger is
+        // a quiet dashed-style row; tapping it unfolds the full editor card
+        // in the list where the new entry will live.
         item {
-            FilledTonalButton(onClick = { creatingServer = true }) {
-                Icon(Icons.Outlined.Add, contentDescription = null)
-                Text(stringResource(R.string.dns_add_server))
+            if (showAddForm) {
+                DnsServerFormCard(
+                    title = stringResource(R.string.dns_new_server),
+                    initial = null,
+                    state = state,
+                    onCancel = { showAddForm = false },
+                    onSave = { server ->
+                        store.update { st -> st.copy(dnsServers = st.dnsServers + server) }
+                        showAddForm = false
+                    },
+                )
+            } else {
+                AddServerRow(onClick = {
+                    editingServerId = null
+                    showAddForm = true
+                })
             }
         }
         items(state.dnsServers, key = { it.id }) { srv ->
-            DnsServerCard(
-                server = srv,
-                state = state,
-                onEdit = { editingServer = srv },
-                onDelete = {
-                    store.update { st -> st.copy(dnsServers = st.dnsServers.filterNot { it.id == srv.id }) }
-                },
-                onToggleEnabled = { enabled ->
-                    store.update { st ->
-                        st.copy(dnsServers = st.dnsServers.map {
-                            if (it.id == srv.id) it.copy(enabled = enabled) else it
-                        })
-                    }
-                },
-            )
+            if (editingServerId == srv.id) {
+                DnsServerFormCard(
+                    title = stringResource(R.string.dns_edit_server),
+                    initial = srv,
+                    state = state,
+                    onCancel = { editingServerId = null },
+                    onSave = { updated ->
+                        store.update { st ->
+                            st.copy(dnsServers = st.dnsServers.map { if (it.id == updated.id) updated else it })
+                        }
+                        editingServerId = null
+                    },
+                )
+            } else {
+                DnsServerCard(
+                    server = srv,
+                    state = state,
+                    onEdit = {
+                        showAddForm = false
+                        editingServerId = srv.id
+                    },
+                    onDelete = {
+                        store.update { st -> st.copy(dnsServers = st.dnsServers.filterNot { it.id == srv.id }) }
+                    },
+                    onToggleEnabled = { enabled ->
+                        store.update { st ->
+                            st.copy(dnsServers = st.dnsServers.map {
+                                if (it.id == srv.id) it.copy(enabled = enabled) else it
+                            })
+                        }
+                    },
+                )
+            }
         }
 
         // Rules live in a second-level page: the editor is a full-screen
@@ -255,129 +286,6 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                         checked = state.hijackDns,
                         onCheckedChange = { v -> store.update { it.copy(hijackDns = v) } },
                     )
-                    SingleChoiceChips(
-                        label = stringResource(R.string.dns_global_strategy),
-                        options = DnsStrategies,
-                        selected = state.dnsStrategy,
-                        onSelect = { v -> store.update { it.copy(dnsStrategy = v) } },
-                        display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
-                    )
-                    // Final resolver: intercept (block all residual
-                    // queries), a built-in shortcut (proxy exit / direct
-                    // exit), or a specific server. Two exit rows — proxy
-                    // and direct — map to the route fallback: when a
-                    // connection lands on the fallback exit, its row's
-                    // resolver applies. Each row also carries a
-                    // follow-global option; the global fallback below is
-                    // the last resort and lives in a collapsed section.
-                    val DnsFinalReject = "final:reject"
-                    val finalOptions = remember(state.dnsServers) {
-                        listOf("", DnsFinalProxy, DnsFinalDirect, DnsFinalReject) +
-                            state.dnsServers.map { it.tag }
-                    }
-                    Text(
-                        stringResource(R.string.dns_final_server),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    listOf("proxy", "direct").forEach { exit ->
-                        val exitValue = state.finalDnsServerByExit[exit].orEmpty()
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (exit == "proxy") stringResource(R.string.dns_final_exit_proxy)
-                                else stringResource(R.string.dns_final_exit_direct),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(0.28f),
-                            )
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
-                                modifier = Modifier.weight(0.72f),
-                            ) {
-                                finalOptions.forEach { option ->
-                                    FilterChip(
-                                        selected = option == exitValue,
-                                        onClick = {
-                                            store.update { st ->
-                                                val map = st.finalDnsServerByExit.toMutableMap()
-                                                if (option.isBlank()) map.remove(exit) else map[exit] = option
-                                                st.copy(finalDnsServerByExit = map)
-                                            }
-                                        },
-                                        label = {
-                                            Text(
-                                                when (option) {
-                                                    "" -> stringResource(R.string.dns_final_mode_default)
-                                                    DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
-                                                    DnsFinalDirect -> stringResource(R.string.dns_final_direct)
-                                                    DnsFinalReject -> stringResource(R.string.dns_final_reject)
-                                                    else -> state.dnsServers.firstOrNull { s -> s.tag == option }?.name?.ifBlank { option }
-                                                        ?: option
-                                                },
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    // Global fallback, collapsed: the last resort for exits
-                    // without their own pick.
-                    var globalFinalExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { globalFinalExpanded = !globalFinalExpanded },
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            stringResource(R.string.dns_final_global_fallback),
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = when (val g = state.finalDnsServer) {
-                                "" -> stringResource(R.string.dns_final_auto)
-                                DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
-                                DnsFinalDirect -> stringResource(R.string.dns_final_direct)
-                                DnsFinalReject -> stringResource(R.string.dns_final_reject)
-                                else -> state.dnsServers.firstOrNull { s -> s.tag == g }?.name?.ifBlank { g } ?: g
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Icon(
-                            if (globalFinalExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    AnimatedVisibility(visible = globalFinalExpanded) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SingleChoiceChips(
-                                label = stringResource(R.string.dns_final_global_fallback),
-                                options = finalOptions,
-                                selected = state.finalDnsServer,
-                                onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
-                                display = {
-                                    when (it) {
-                                        "" -> stringResource(R.string.dns_final_auto)
-                                        DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
-                                        DnsFinalDirect -> stringResource(R.string.dns_final_direct)
-                                        DnsFinalReject -> stringResource(R.string.dns_final_reject)
-                                        else -> state.dnsServers.firstOrNull { s -> s.tag == it }?.name?.ifBlank { it } ?: it
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    if (state.finalDnsServer == DnsFinalReject) {
-                        Text(
-                            stringResource(R.string.dns_final_reject_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                     SwitchRow(
                         label = stringResource(R.string.dns_independent_cache),
                         checked = state.dnsIndependentCache,
@@ -386,31 +294,108 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 }
             }
         }
-    }
 
-    if (creatingServer) {
-        DnsServerEditor(
-            initial = null,
-            state = state,
-            onDismiss = { creatingServer = false },
-            onSave = { server ->
-                store.update { st -> st.copy(dnsServers = st.dnsServers + server) }
-                creatingServer = false
-            },
-        )
-    }
-    editingServer?.let { srv ->
-        DnsServerEditor(
-            initial = srv,
-            state = state,
-            onDismiss = { editingServer = null },
-            onSave = { updated ->
-                store.update { st ->
-                    st.copy(dnsServers = st.dnsServers.map { if (it.id == updated.id) updated else it })
+        // Global strategy and the fallback resolver are advanced knobs:
+        // both are collapsed by default with the current choice shown in
+        // the subtitle, so the everyday list stays short (ClashFest-style
+        // quiet page, expand on demand).
+        // Plain computation (a handful of strings) — remember() is not
+        // available in the LazyListScope builder block.
+        val DnsFinalReject = "final:reject"
+        val finalOptions = listOf("", DnsFinalProxy, DnsFinalDirect, DnsFinalReject) +
+            state.dnsServers.map { it.tag }
+        item {
+            CollapsibleSection(
+                title = stringResource(R.string.dns_global_strategy),
+                expanded = strategyExpanded,
+                onToggle = { strategyExpanded = !strategyExpanded },
+                subtitle = if (state.dnsStrategy.isBlank()) {
+                    stringResource(R.string.dns_strategy_inherit)
+                } else {
+                    state.dnsStrategy
+                },
+            ) {
+                SingleChoiceChips(
+                    label = stringResource(R.string.dns_global_strategy),
+                    options = DnsStrategies,
+                    selected = state.dnsStrategy,
+                    onSelect = { v -> store.update { it.copy(dnsStrategy = v) } },
+                    display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
+                )
+            }
+        }
+        item {
+            val overrideCount = state.finalDnsServerByExit.values.count { it.isNotBlank() }
+            CollapsibleSection(
+                title = stringResource(R.string.dns_final_server),
+                expanded = fallbackExpanded,
+                onToggle = { fallbackExpanded = !fallbackExpanded },
+                subtitle = if (overrideCount == 0) {
+                    FinalOptionLabel(state.finalDnsServer, state)
+                } else {
+                    FinalOptionLabel(state.finalDnsServer, state) + " · " +
+                        stringResource(R.string.dns_final_overrides, overrideCount)
+                },
+            ) {
+                // Per-mode picks: Rule / Global / Direct can each pin their
+                // own fallback (e.g. Global resolves through the proxy exit
+                // while Rule follows the rules' servers). Empty means the
+                // global fallback below applies.
+                listOf("proxy", "direct").forEach { exit ->
+                    val exitValue = state.finalDnsServerByExit[exit].orEmpty()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (exit == "proxy") stringResource(R.string.dns_final_exit_proxy)
+                            else stringResource(R.string.dns_final_exit_direct),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(0.28f),
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier.weight(0.72f),
+                        ) {
+                            finalOptions.forEach { option ->
+                                FilterChip(
+                                    selected = option == exitValue,
+                                    onClick = {
+                                        store.update { st ->
+                                            val map = st.finalDnsServerByExit.toMutableMap()
+                                            if (option.isBlank()) map.remove(exit) else map[exit] = option
+                                            st.copy(finalDnsServerByExit = map)
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            when (option) {
+                                                "" -> stringResource(R.string.dns_final_mode_default)
+                                                else -> FinalOptionLabel(option, state)
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
-                editingServer = null
-            },
-        )
+                // Global fallback: used by modes without their own pick.
+                SingleChoiceChips(
+                    label = stringResource(R.string.dns_final_global_fallback),
+                    options = finalOptions,
+                    selected = state.finalDnsServer,
+                    onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
+                    display = { FinalOptionLabel(it, state) },
+                )
+                if (state.finalDnsServer == DnsFinalReject) {
+                    Text(
+                        stringResource(R.string.dns_final_reject_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -608,192 +593,245 @@ private fun detourLabel(detour: String, state: AppState): String = when (detour)
     }
 }
 
+/** Human label for one final-resolver option (shortcut, server tag, auto). */
 @Composable
-private fun DnsServerEditor(
+private fun FinalOptionLabel(option: String, state: AppState): String = when (option) {
+    "" -> stringResource(R.string.dns_final_auto)
+    DnsFinalProxy -> stringResource(R.string.dns_final_proxy)
+    DnsFinalDirect -> stringResource(R.string.dns_final_direct)
+    "final:reject" -> stringResource(R.string.dns_final_reject)
+    else -> state.dnsServers.firstOrNull { it.tag == option }?.name?.ifBlank { option } ?: option
+}
+
+/**
+ * Quiet full-width "add" affordance: a tinted card row that unfolds the
+ * inline server form in place instead of opening a popup.
+ */
+@Composable
+private fun AddServerRow(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = androidx.compose.material3.CardDefaults.outlinedCardColors(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                Icons.Outlined.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                stringResource(R.string.dns_add_server),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+/**
+ * Inline expanding server editor (used both for create and edit). The outer
+ * LazyColumn owns scrolling, so the form is a plain Column inside a card —
+ * no dialog, no clipped viewport. [formKey] resets the fields when the
+ * target switches between "new" and a different server id.
+ */
+@Composable
+private fun DnsServerFormCard(
+    title: String,
     initial: DnsServerState?,
     state: AppState,
-    onDismiss: () -> Unit,
+    onCancel: () -> Unit,
     onSave: (DnsServerState) -> Unit,
 ) {
-    var name by remember { mutableStateOf(initial?.name.orEmpty()) }
-    var type by remember { mutableStateOf(initial?.type ?: "https") }
-    var address by remember { mutableStateOf(initial?.address.orEmpty()) }
-    var detour by remember { mutableStateOf(initial?.detour ?: DnsDetourProxy) }
-    var strategy by remember { mutableStateOf(initial?.strategy.orEmpty()) }
-    var domainResolver by remember { mutableStateOf(initial?.domainResolver.orEmpty()) }
-    var clientSubnet by remember { mutableStateOf(initial?.clientSubnet.orEmpty()) }
-    var tlsServerName by remember { mutableStateOf(initial?.tlsServerName.orEmpty()) }
-    var insecure by remember { mutableStateOf(initial?.insecure ?: false) }
-    var groupServers by remember { mutableStateOf(initial?.groupServers ?: emptyList()) }
-    var hostsEntries by remember { mutableStateOf(initial?.hostsEntries ?: emptyList()) }
-    var groupMode by remember { mutableStateOf(initial?.groupMode ?: com.leadaxe.aibox.app.DnsGroupStable) }
-    var groupErrorTtl by remember { mutableStateOf(initial?.groupErrorTtl.orEmpty()) }
-    var groupWinTtl by remember { mutableStateOf(initial?.groupWinTtl.orEmpty()) }
+    val formKey = initial?.id ?: "__new_dns_server__"
+    var name by remember(formKey) { mutableStateOf(initial?.name.orEmpty()) }
+    var type by remember(formKey) { mutableStateOf(initial?.type ?: "https") }
+    var address by remember(formKey) { mutableStateOf(initial?.address.orEmpty()) }
+    var detour by remember(formKey) { mutableStateOf(initial?.detour ?: DnsDetourProxy) }
+    var strategy by remember(formKey) { mutableStateOf(initial?.strategy.orEmpty()) }
+    var domainResolver by remember(formKey) { mutableStateOf(initial?.domainResolver.orEmpty()) }
+    var clientSubnet by remember(formKey) { mutableStateOf(initial?.clientSubnet.orEmpty()) }
+    var tlsServerName by remember(formKey) { mutableStateOf(initial?.tlsServerName.orEmpty()) }
+    var insecure by remember(formKey) { mutableStateOf(initial?.insecure ?: false) }
+    var groupServers by remember(formKey) { mutableStateOf(initial?.groupServers ?: emptyList()) }
+    var hostsEntries by remember(formKey) { mutableStateOf(initial?.hostsEntries ?: emptyList()) }
+    var groupMode by remember(formKey) {
+        mutableStateOf(initial?.groupMode ?: com.leadaxe.aibox.app.DnsGroupStable)
+    }
+    var groupErrorTtl by remember(formKey) { mutableStateOf(initial?.groupErrorTtl.orEmpty()) }
+    var groupWinTtl by remember(formKey) { mutableStateOf(initial?.groupWinTtl.orEmpty()) }
 
     val detourOptions = remember(state.outbounds) {
         listOf(DnsDetourDirect, DnsDetourProxy) + state.outbounds.map { it.tag }
     }
     // Candidate members for a group: every concrete (non-group) server
     // except this one — groups cannot nest groups.
-    val groupCandidates = remember(state.dnsServers, initial) {
+    val groupCandidates = remember(state.dnsServers, formKey) {
         state.dnsServers
             .filter { it.id != initial?.id && it.type != "group" }
             .map { it.tag }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
+    val save: () -> Unit = {
+        onSave(
+            (initial ?: DnsServerState(id = UUID.randomUUID().toString(), name = "")).copy(
+                name = name.ifBlank { address.ifBlank { type } },
+                type = type,
+                address = address,
+                detour = detour,
+                strategy = strategy,
+                domainResolver = domainResolver,
+                clientSubnet = clientSubnet,
+                tlsServerName = tlsServerName,
+                insecure = insecure,
+                groupServers = groupServers,
+                hostsEntries = hostsEntries,
+                groupMode = groupMode,
+                groupErrorTtl = groupErrorTtl,
+                groupWinTtl = groupWinTtl,
+            ),
+        )
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                stringResource(
-                    if (initial == null) R.string.dns_new_server else R.string.dns_edit_server,
-                ),
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
             )
-        },
-        text = {
-            FormBody {
-                StringField(
-                    label = stringResource(R.string.dns_name),
-                    value = name,
-                    onValueChange = { name = it },
-                )
-                SingleChoiceChips(
-                    label = stringResource(R.string.dns_type),
-                    options = DnsServerTypes,
-                    selected = type,
-                    onSelect = { type = it },
-                    display = { t -> if (t == "group") stringResource(R.string.dns_type_group) else t },
-                )
-                if (type == "hosts") {
-                    ListField(
-                        label = stringResource(R.string.dns_hosts_entries),
-                        values = hostsEntries,
-                        onValuesChange = { hostsEntries = it },
-                        placeholder = "example.com=1.2.3.4",
-                        supporting = stringResource(R.string.dns_hosts_hint),
-                    )
-                }
-                if (type != "local" && type != "direct" && type != "group" && type != "hosts") {
-                    StringField(
-                        label = stringResource(R.string.dns_address),
-                        value = address,
-                        onValueChange = { address = it },
-                        placeholder = "1.1.1.1",
-                    )
-                }
-                if (type == "group") {
-                    Text(
-                        stringResource(R.string.dns_group_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    MultiChoiceChips(
-                        label = stringResource(R.string.dns_group_members),
-                        options = groupCandidates,
-                        selected = groupServers,
-                        onToggle = { tag ->
-                            groupServers = if (tag in groupServers) groupServers - tag else groupServers + tag
-                        },
-                        display = { tag ->
-                            state.dnsServers.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
-                        },
-                    )
-                    SingleChoiceChips(
-                        label = stringResource(R.string.dns_group_mode),
-                        options = com.leadaxe.aibox.app.DnsGroupModes,
-                        selected = groupMode,
-                        onSelect = { groupMode = it },
-                        display = {
-                            when (it) {
-                                com.leadaxe.aibox.app.DnsGroupFastest -> stringResource(R.string.dns_group_fastest)
-                                com.leadaxe.aibox.app.DnsGroupParallel -> stringResource(R.string.dns_group_parallel)
-                                else -> stringResource(R.string.dns_group_stable)
-                            }
-                        },
-                    )
-                    StringField(
-                        label = stringResource(R.string.dns_group_error_ttl),
-                        value = groupErrorTtl,
-                        onValueChange = { groupErrorTtl = it },
-                        placeholder = stringResource(R.string.dns_group_error_ttl_hint),
-                    )
-                    if (groupMode == com.leadaxe.aibox.app.DnsGroupFastest) {
-                        StringField(
-                            label = stringResource(R.string.dns_group_win_ttl),
-                            value = groupWinTtl,
-                            onValueChange = { groupWinTtl = it },
-                            placeholder = stringResource(R.string.dns_group_win_ttl_hint),
-                        )
-                    }
-                } else {
-                    DetourPicker(
-                        label = stringResource(R.string.dns_detour),
-                        options = detourOptions,
-                        selected = detour,
-                        state = state,
-                        onSelect = { detour = it },
-                    )
-                }
-                SingleChoiceChips(
-                    label = stringResource(R.string.dns_strategy),
-                    options = DnsStrategies,
-                    selected = strategy,
-                    onSelect = { strategy = it },
-                    display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
-                )
-                ResolverPicker(
-                    label = stringResource(R.string.dns_domain_resolver),
-                    servers = state.dnsServers,
-                    selected = domainResolver,
-                    onSelect = { domainResolver = it },
-                )
-                if (type == "tls" || type == "https" || type == "quic" || type == "h3") {
-                    StringField(
-                        label = stringResource(R.string.dns_tls_server_name),
-                        value = tlsServerName,
-                        onValueChange = { tlsServerName = it },
-                        placeholder = "dns.example.com",
-                    )
-                    SwitchRow(
-                        label = stringResource(R.string.dns_insecure),
-                        checked = insecure,
-                        onCheckedChange = { insecure = it },
-                    )
-                }
-                StringField(
-                    label = stringResource(R.string.dns_client_subnet),
-                    value = clientSubnet,
-                    onValueChange = { clientSubnet = it },
-                    placeholder = "1.2.3.0/24",
+            StringField(
+                label = stringResource(R.string.dns_name),
+                value = name,
+                onValueChange = { name = it },
+            )
+            SingleChoiceChips(
+                label = stringResource(R.string.dns_type),
+                options = DnsServerTypes,
+                selected = type,
+                onSelect = { type = it },
+                display = { t -> if (t == "group") stringResource(R.string.dns_type_group) else t },
+            )
+            if (type == "hosts") {
+                ListField(
+                    label = stringResource(R.string.dns_hosts_entries),
+                    values = hostsEntries,
+                    onValuesChange = { hostsEntries = it },
+                    placeholder = "example.com=1.2.3.4",
+                    supporting = stringResource(R.string.dns_hosts_hint),
                 )
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(
-                        (initial ?: DnsServerState(id = UUID.randomUUID().toString(), name = "")).copy(
-                            name = name.ifBlank { address.ifBlank { type } },
-                            type = type,
-                            address = address,
-                            detour = detour,
-                            strategy = strategy,
-                            domainResolver = domainResolver,
-                            clientSubnet = clientSubnet,
-                            tlsServerName = tlsServerName,
-                            insecure = insecure,
-                            groupServers = groupServers,
-                            hostsEntries = hostsEntries,
-                            groupMode = groupMode,
-                            groupErrorTtl = groupErrorTtl,
-                            groupWinTtl = groupWinTtl,
-                        ),
+            if (type != "local" && type != "direct" && type != "group" && type != "hosts") {
+                StringField(
+                    label = stringResource(R.string.dns_address),
+                    value = address,
+                    onValueChange = { address = it },
+                    placeholder = "1.1.1.1",
+                )
+            }
+            if (type == "group") {
+                Text(
+                    stringResource(R.string.dns_group_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                MultiChoiceChips(
+                    label = stringResource(R.string.dns_group_members),
+                    options = groupCandidates,
+                    selected = groupServers,
+                    onToggle = { tag ->
+                        groupServers = if (tag in groupServers) groupServers - tag else groupServers + tag
+                    },
+                    display = { tag ->
+                        state.dnsServers.firstOrNull { it.tag == tag }?.name?.ifBlank { tag } ?: tag
+                    },
+                )
+                SingleChoiceChips(
+                    label = stringResource(R.string.dns_group_mode),
+                    options = com.leadaxe.aibox.app.DnsGroupModes,
+                    selected = groupMode,
+                    onSelect = { groupMode = it },
+                    display = {
+                        when (it) {
+                            com.leadaxe.aibox.app.DnsGroupFastest -> stringResource(R.string.dns_group_fastest)
+                            com.leadaxe.aibox.app.DnsGroupParallel -> stringResource(R.string.dns_group_parallel)
+                            else -> stringResource(R.string.dns_group_stable)
+                        }
+                    },
+                )
+                StringField(
+                    label = stringResource(R.string.dns_group_error_ttl),
+                    value = groupErrorTtl,
+                    onValueChange = { groupErrorTtl = it },
+                    placeholder = stringResource(R.string.dns_group_error_ttl_hint),
+                )
+                if (groupMode == com.leadaxe.aibox.app.DnsGroupFastest) {
+                    StringField(
+                        label = stringResource(R.string.dns_group_win_ttl),
+                        value = groupWinTtl,
+                        onValueChange = { groupWinTtl = it },
+                        placeholder = stringResource(R.string.dns_group_win_ttl_hint),
                     )
-                },
-            ) { Text(stringResource(R.string.common_save)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
+                }
+            } else {
+                DetourPicker(
+                    label = stringResource(R.string.dns_detour),
+                    options = detourOptions,
+                    selected = detour,
+                    state = state,
+                    onSelect = { detour = it },
+                )
+            }
+            SingleChoiceChips(
+                label = stringResource(R.string.dns_strategy),
+                options = DnsStrategies,
+                selected = strategy,
+                onSelect = { strategy = it },
+                display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
+            )
+            ResolverPicker(
+                label = stringResource(R.string.dns_domain_resolver),
+                servers = state.dnsServers,
+                selected = domainResolver,
+                onSelect = { domainResolver = it },
+            )
+            if (type == "tls" || type == "https" || type == "quic" || type == "h3") {
+                StringField(
+                    label = stringResource(R.string.dns_tls_server_name),
+                    value = tlsServerName,
+                    onValueChange = { tlsServerName = it },
+                    placeholder = "dns.example.com",
+                )
+                SwitchRow(
+                    label = stringResource(R.string.dns_insecure),
+                    checked = insecure,
+                    onCheckedChange = { insecure = it },
+                )
+            }
+            StringField(
+                label = stringResource(R.string.dns_client_subnet),
+                value = clientSubnet,
+                onValueChange = { clientSubnet = it },
+                placeholder = "1.2.3.0/24",
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
+                Spacer(Modifier.padding(horizontal = 4.dp))
+                Button(onClick = save) { Text(stringResource(R.string.common_save)) }
+            }
+        }
+    }
 }
 
 @Composable
