@@ -45,12 +45,17 @@ class AIVpnService : VpnService() {
     private val screenLockReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
             when (intent?.action) {
-                android.content.Intent.ACTION_SCREEN_ON ->
+                android.content.Intent.ACTION_SCREEN_ON -> {
                     engine.recordPowerState(screenOn = true, deviceLocked = false)
-                android.content.Intent.ACTION_SCREEN_OFF ->
+                    forwardPowerToRustKernel(screenOn = true)
+                }
+                android.content.Intent.ACTION_SCREEN_OFF -> {
                     engine.recordPowerState(screenOn = false, deviceLocked = true)
+                    forwardPowerToRustKernel(screenOn = false)
+                }
                 android.content.Intent.ACTION_USER_PRESENT -> {
                     engine.recordPowerState(screenOn = true, deviceLocked = false)
+                    forwardPowerToRustKernel(screenOn = true)
                     // Wake recovery: Doze/screen-off leaves stale sockets; a
                     // wake without network reset re-arms the kernel timers
                     // and lets the next push re-evaluate.
@@ -307,6 +312,28 @@ class AIVpnService : VpnService() {
             // previously failed downloads).
             runCatching { fetcher.refreshStaleRuleSets(state.ruleSets) }
             observeState()
+        }
+    }
+
+    /**
+     * Relays a screen edge to the Rust power leader so its battery-saving
+     * throttle can actually engage. Charging state comes from the sticky
+     * BATTERY_CHANGED broadcast (no registration needed). The Go engine gets
+     * the same edge via [BoxEngine.recordPowerState]; this is the rsxm twin.
+     * Returns the directive only for observability — no Kotlin consumer yet.
+     */
+    private fun forwardPowerToRustKernel(screenOn: Boolean) {
+        scope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                val bat = registerReceiver(
+                    null,
+                    android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED),
+                )
+                val status = bat?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == android.os.BatteryManager.BATTERY_STATUS_FULL
+                com.leadaxe.aibox.engine.rust.AiboxCore.kernelPowerEvent(screenOn, charging)
+            }
         }
     }
 

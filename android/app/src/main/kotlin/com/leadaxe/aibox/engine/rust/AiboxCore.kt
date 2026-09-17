@@ -84,6 +84,19 @@ object AiboxCore {
         runCatching { nativeKernelHealth() }.getOrNull()
     }
 
+    /**
+     * Forwards a screen / charging edge to the Rust power leader and returns
+     * the directive the other leaders should follow now ("run" | "throttle" |
+     * "deep_pause"), or null when the kernel is not running. This is the only
+     * path the battery-saving throttle has — the conductor owns no platform
+     * hooks, so the screen-broadcast receiver must call this.
+     */
+    fun kernelPowerEvent(screenOn: Boolean, charging: Boolean): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelPowerEvent(screenOn, charging) }.getOrNull()
+    }
+
     private external fun nativeSnapshotFingerprint(snapshotJson: String): String
 
     private external fun nativeRouteCheck(rulesJson: String, queryJson: String): String
@@ -95,4 +108,6 @@ object AiboxCore {
     private external fun nativeKernelDrainReports(): String
 
     private external fun nativeKernelHealth(): String
+
+    private external fun nativeKernelPowerEvent(screenOn: Boolean, charging: Boolean): String
 }

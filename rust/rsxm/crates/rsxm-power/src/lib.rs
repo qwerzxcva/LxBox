@@ -62,6 +62,16 @@ pub enum Directive {
     DeepPause,
 }
 
+impl Directive {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Directive::Run => "run",
+            Directive::Throttle => "throttle",
+            Directive::DeepPause => "deep_pause",
+        }
+    }
+}
+
 impl PowerState {
     pub fn directive(self) -> Directive {
         match self {

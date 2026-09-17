@@ -13,7 +13,7 @@
 //!  - statsRecord*/statsSnapshot: wire the rsxm-stats counters.
 
 use jni::objects::{JClass, JString};
-use jni::sys::jstring;
+use jni::sys::{jboolean, jstring};
 use jni::JNIEnv;
 use std::sync::{Arc, OnceLock};
 
@@ -23,6 +23,7 @@ use crate::ConnectionInfo;
 /// (the :vpn process), so one global instance matches the Conductor model.
 static KERNEL: OnceLock<Arc<std::sync::Mutex<rsxm_core::Conductor>>> = OnceLock::new();
 static STATS: OnceLock<Arc<rsxm_stats::StatsModule>> = OnceLock::new();
+static POWER: OnceLock<Arc<rsxm_power::PowerModule>> = OnceLock::new();
 
 fn kernel() -> Option<&'static Arc<std::sync::Mutex<rsxm_core::Conductor>>> {
     KERNEL.get()
@@ -150,11 +151,13 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStart(
 
         let stats = Arc::new(rsxm_stats::StatsModule::new());
         let _ = STATS.set(stats.clone());
+        let power = Arc::new(rsxm_power::PowerModule::new());
+        let _ = POWER.set(power.clone());
         let mut conductor = rsxm_core::Conductor::new();
         conductor.register(Arc::new(rsxm_rules::RulesModule::new()));
         conductor.register(Arc::new(rsxm_dns::DnsModule::new()));
         conductor.register(Arc::new(rsxm_dialer::DialerModule::new()));
-        conductor.register(Arc::new(rsxm_power::PowerModule::new()));
+        conductor.register(power);
         conductor.register(Arc::new(rsxm_security::SecurityModule::new()));
         conductor.register(stats);
         conductor.register(Arc::new(rsxm_tun::TunModule::new(
@@ -190,6 +193,29 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStop(
         (),
     );
     to_jstring(&env, "ok".into())
+}
+
+/// Host reports a screen / charging edge. Returns the power directive the
+/// rest of the leaders should follow now ("run" | "throttle" | "deep_pause"),
+/// or "off" when the kernel is not running. This is the only entry point the
+/// Android screen-broadcast receiver needs: the conductor itself owns no
+/// platform hooks, so without this bridge the power leader never saw a screen
+/// event and the battery-saving throttle never engaged.
+#[no_mangle]
+pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelPowerEvent(
+    env: JNIEnv,
+    _class: JClass,
+    screen_on: jboolean,
+    charging: jboolean,
+) -> jstring {
+    let out = match POWER.get() {
+        Some(p) => {
+            let directive = p.record_screen(screen_on != 0, charging != 0);
+            directive.as_str().to_string()
+        }
+        None => "off".to_string(),
+    };
+    to_jstring(&env, out)
 }
 
 /// Drains queued Conductor reports as a JSON array:
