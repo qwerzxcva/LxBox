@@ -1,6 +1,8 @@
 package com.leadaxe.aibox.ui.screens
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -278,7 +280,16 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
-                        .clickable { builtinSectionExpanded = !builtinSectionExpanded },
+                        .clickable {
+                            // Master toggle: expand collapses/opens the three
+                            // built-in children together, so the section
+                            // header is not a dead control.
+                            val next = !builtinSectionExpanded
+                            builtinSectionExpanded = next
+                            builtinSniffExpanded = next
+                            builtinIpv6Expanded = next
+                            builtinHijackExpanded = next
+                        },
                 )
             }
         }
@@ -386,39 +397,65 @@ private fun PresetCard(
     onAdd: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    // Collapsible (user request): the header row always shows; the long
+    // description and the add/remove action fold away so the list of
+    // built-in presets stays short. Installed state is visible at a glance.
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable(
+        preset.id,
+    ) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.animateContentSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(preset.titleRes),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                if (installed) {
                     Text(
-                        stringResource(preset.titleRes),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        stringResource(R.string.preset_installed),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 4.dp),
                     )
+                }
+                Icon(
+                    if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = stringResource(preset.titleRes),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
                     Text(
                         stringResource(preset.descriptionRes),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-                if (installed) {
-                    TextButton(onClick = onRemove) {
-                        Text(stringResource(R.string.common_delete))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        if (installed) {
+                            TextButton(onClick = onRemove) {
+                                Text(stringResource(R.string.common_delete))
+                            }
+                        } else {
+                            FilterChip(
+                                selected = false,
+                                onClick = onAdd,
+                                label = { Text(stringResource(R.string.preset_add)) },
+                            )
+                        }
                     }
-                } else {
-                    FilterChip(
-                        selected = false,
-                        onClick = onAdd,
-                        label = { Text(stringResource(R.string.preset_add)) },
-                    )
                 }
-            }
-            if (installed) {
-                Text(
-                    stringResource(R.string.preset_installed),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
             }
         }
     }
