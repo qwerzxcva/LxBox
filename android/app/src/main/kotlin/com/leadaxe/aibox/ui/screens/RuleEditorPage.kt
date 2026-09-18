@@ -282,39 +282,79 @@ fun RuleEditorPage(
                                         modifier = Modifier.clickable { filterExpanded = !filterExpanded },
                                     )
                                     if (filterExpanded) {
+                                        // Group by the leading flag emoji so
+                                        // one row = one country/region. Tap the
+                                        // flag to select/clear the whole group;
+                                        // tap the chevron to pick single nodes.
                                         val groups = state.outbounds.groupBy { n ->
-                                            n.name.substringBeforeLast(' ').ifBlank { n.name }
+                                            NodeFlags.flagOf(n.name)
                                         }
-                                        groups.forEach { (region, nodes) ->
-                                            Text(
-                                                "$region (${nodes.size})",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.padding(top = 6.dp),
-                                            )
-                                            nodes.forEach { node ->
-                                                val picked = node.tag in nodeFilter
+                                        groups.forEach { (flag, nodes) ->
+                                            var regionOpen by remember(flag) { mutableStateOf(false) }
+                                            val pickedTags = nodes.map { it.tag }.filter { it in nodeFilter }
+                                            val allPicked = pickedTags.size == nodes.size
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                // Flag chip: toggles the whole region.
                                                 Row(
                                                     modifier = Modifier
-                                                        .fillMaxWidth()
+                                                        .weight(1f)
                                                         .clickable {
-                                                            nodeFilter = if (picked) nodeFilter - node.tag
-                                                            else nodeFilter + node.tag
+                                                            nodeFilter = if (allPicked) {
+                                                                nodeFilter - nodes.map { it.tag }.toSet()
+                                                            } else {
+                                                                (nodeFilter + nodes.map { it.tag }).distinct()
+                                                            }
                                                         }
                                                         .padding(vertical = 4.dp),
                                                     verticalAlignment = Alignment.CenterVertically,
                                                 ) {
                                                     Text(
-                                                        node.name.ifBlank { node.tag },
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        modifier = Modifier.weight(1f),
+                                                        NodeFlags.labelOf(flag, "\uD83C\uDF10"),
+                                                        style = MaterialTheme.typography.titleMedium,
                                                     )
-                                                    if (picked) {
-                                                        Icon(
-                                                            Icons.Outlined.CheckCircle,
-                                                            contentDescription = null,
-                                                            tint = MaterialTheme.colorScheme.primary,
+                                                    Text(
+                                                        " ${pickedTags.size}/${nodes.size}",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(start = 6.dp),
+                                                    )
+                                                }
+                                                // Chevron: expands single-node picks.
+                                                Icon(
+                                                    if (regionOpen) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.clickable { regionOpen = !regionOpen },
+                                                )
+                                            }
+                                            if (regionOpen) {
+                                                nodes.forEach { node ->
+                                                    val picked = node.tag in nodeFilter
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable {
+                                                                nodeFilter = if (picked) nodeFilter - node.tag
+                                                                else nodeFilter + node.tag
+                                                            }
+                                                            .padding(start = 28.dp, top = 4.dp, bottom = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        Text(
+                                                            node.name.ifBlank { node.tag },
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            modifier = Modifier.weight(1f),
                                                         )
+                                                        if (picked) {
+                                                            Icon(
+                                                                Icons.Outlined.CheckCircle,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
