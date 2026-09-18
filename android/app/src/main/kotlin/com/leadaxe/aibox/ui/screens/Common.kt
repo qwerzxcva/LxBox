@@ -121,12 +121,22 @@ fun CollapsibleSection(
  * height *and* a scrollbar, so every field stays reachable.
  */
 @Composable
-fun FormBody(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
+fun FormBody(scroll: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    // When [scroll] is true the form lives in a bounded dialog: cap the
+    // height and give it a scrollbar. When false the caller already scrolls
+    // (an inline card inside a LazyColumn): measuring a verticalScroll under
+    // the LazyColumn's infinite height constraint throws, so we must NOT add
+    // another scrollable — the column just lays out at its natural height.
+    val modifier = if (scroll) {
+        Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.85f)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+    } else {
+        Modifier.fillMaxWidth()
+    }
+    Column(
+        modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(10.dp),
         content = content,
     )

@@ -1006,7 +1006,10 @@ private fun AddSubscriptionFormCard(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
-            FormBody {
+            // Inline card inside the outer LazyColumn: the LazyColumn already
+            // scrolls, so this form must not add its own verticalScroll (it
+            // would be measured with infinite height and crash on open).
+            FormBody(scroll = false) {
                 StringField(
                     label = stringResource(R.string.subs_name_optional),
                     value = name,
