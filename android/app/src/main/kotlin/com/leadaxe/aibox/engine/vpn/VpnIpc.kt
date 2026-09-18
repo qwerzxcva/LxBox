@@ -118,6 +118,28 @@ class VpnRelay(context: Context) {
     private val _state = MutableStateFlow<BoxState?>(null)
     val state: StateFlow<BoxState?> = _state.asStateFlow()
 
+    /**
+     * Optimistic connecting state (user request: the dial must react
+     * immediately). Starting the VPN service is cross-process — the first
+     * real state broadcast can lag seconds behind the tap while :vpn cold
+     * starts, and during that window the UI sat on Idle as if the tap did
+     * nothing. Setting Starting locally closes the gap; every genuine
+     * broadcast from the service overwrites it, and a failed start delivers
+     * Error through the same channel.
+     */
+    fun optimisticStarting() {
+        if (_state.value !is BoxState.Starting && _state.value !is BoxState.Connected) {
+            _state.value = BoxState.Starting
+        }
+    }
+
+    /** Optimistic stopping state for disconnect taps; see [optimisticStarting]. */
+    fun optimisticStopping() {
+        if (_state.value is BoxState.Connected || _state.value is BoxState.Starting) {
+            _state.value = BoxState.Stopping
+        }
+    }
+
     private val _runtime = MutableStateFlow(BoxRuntimeSnapshot())
     val runtime: StateFlow<BoxRuntimeSnapshot> = _runtime.asStateFlow()
 

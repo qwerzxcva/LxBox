@@ -85,7 +85,6 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
     var builtinSniffExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var builtinIpv6Expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var builtinUnknownExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    var builtinHijackExpanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val store = remember { (context.applicationContext as AIBoxApp).appStateStore }
     val state by store.state.collectAsState()
@@ -288,7 +287,6 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                             builtinSectionExpanded = next
                             builtinSniffExpanded = next
                             builtinIpv6Expanded = next
-                            builtinHijackExpanded = next
                         },
                 )
             }
@@ -320,22 +318,9 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 )
             }
         }
-        item {
-            CollapsibleSection(
-                title = stringResource(R.string.routes_builtin_hijack_dns),
-                expanded = builtinHijackExpanded,
-                onToggle = { builtinHijackExpanded = !builtinHijackExpanded },
-                subtitle = if (state.hijackDns) stringResource(R.string.routes_builtin_on)
-                else stringResource(R.string.routes_builtin_off),
-            ) {
-                SwitchRow(
-                    label = stringResource(R.string.routes_builtin_hijack_dns_enable),
-                    supporting = stringResource(R.string.routes_builtin_hijack_dns_desc),
-                    checked = state.hijackDns,
-                    onCheckedChange = { v -> store.update { it.copy(hijackDns = v) } },
-                )
-            }
-        }
+        // (Hijack DNS used to have a card here too; it lives on the DNS tab
+        // now — one setting, one home. The built-in master toggle covers the
+        // remaining sniffer / reject-ipv6 children.)
 
         // Fallback rule: the tail of the rules list — traffic that matched
         // NO rule above. Strictly separate from unknown traffic (app

@@ -594,4 +594,7 @@
     <string name="node_edit_transport_tcp">TCP（无）</string>
     <string name="node_edit_transport_custom">自定义传输</string>
     <string name="routes_protocol_custom">自定义协议</string>
+    <string name="node_edit_reality_pk">Reality 公钥</string>
+    <string name="node_edit_reality_pk_hint">服务商提供的 Base64 公钥（pbk）。</string>
+    <string name="node_edit_reality_sid">Reality 短 ID</string>
 </resources>

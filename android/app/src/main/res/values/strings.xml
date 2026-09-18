@@ -596,4 +596,7 @@
     <string name="node_edit_transport_tcp">TCP (none)</string>
     <string name="node_edit_transport_custom">Custom transport</string>
     <string name="routes_protocol_custom">Custom protocols</string>
+    <string name="node_edit_reality_pk">Reality public key</string>
+    <string name="node_edit_reality_pk_hint">Base64 key from the provider (pbk).</string>
+    <string name="node_edit_reality_sid">Reality short ID</string>
 </resources>

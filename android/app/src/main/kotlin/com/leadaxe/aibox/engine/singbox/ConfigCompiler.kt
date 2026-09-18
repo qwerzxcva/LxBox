@@ -1096,10 +1096,14 @@ object ConfigCompiler {
             }
         }
         // Injected: sniff (visual sniffer settings) — before hijack-dns like AsteriskBOX.
-        // Sniff only over TCP; UDP packets are tiny and re-running the
-        // sniffer on every QUIC/DNS hop chews CPU without buying anything
-        // (the sniffer mostly exists to attach SNI/HTTPHost to outbound
-        // connections, which are TCP by definition).
+        // Two sniff rules: TCP for the usual SNI/HTTP-host attachment, and a
+        // second one for UDP restricted to the dns sniffer. UDP QUIC sniffing
+        // is expensive and not wanted; but plain DNS on a NONSTANDARD udp
+        // port (apps dodging :53 hijacks) is only recognisable by sniffing
+        // the packet, and the dns packet sniffer is a cheap header check.
+        // When the master sniffer switch is off the DNS-hijack rules below
+        // still work — port 53 is matched by destination, not by sniffing —
+        // but nonstandard-port DNS then flows as generic UDP.
         if (state.enableSniffer) {
             add(buildJsonObject {
                 put("action", "sniff")
@@ -1109,12 +1113,43 @@ object ConfigCompiler {
                 }
                 put("timeout", state.snifferTimeout.ifBlank { "1s" })
             })
+            if (state.hijackDns && "dns" !in state.snifferProtocols) {
+                add(buildJsonObject {
+                    put("action", "sniff")
+                    putJsonArray("network") { add("udp") }
+                    putJsonArray("sniffer") { add("dns") }
+                    put("timeout", state.snifferTimeout.ifBlank { "1s" })
+                })
+            }
         }
-        // Injected: DNS hijack for anything still speaking plain :53.
+        // Injected: DNS hijack. Three layers, tightest first:
+        //  1. any packet the sniffer has already identified as DNS — catches
+        //     plain DNS on nonstandard ports (some apps hardcode :5353/:853
+        //     plaintext or port-scramble to dodge :53 rules);
+        //  2. any packet TO port 53 — the classic catch-all, protocol and
+        //     destination IP unrestricted (8.8.8.8, the ISP resolver, the
+        //     router, anything);
+        //  3. DoT/DoQ on :853 — these are ENCRYPTED, so the sniffer cannot
+        //     identify them and hijacking is impossible; they are rejected
+        //     outright instead. Without this, an app (or the OS) with a
+        //     hardcoded DoT resolver walks straight past the hijack and the
+        //     user's DNS setup silently does not apply.
+        // "入口 IP" is covered by design: rules 1-2 match destination
+        // regardless of address — the tun sees every packet the OS sends,
+        // so there is no inbound-interface filter to miss.
         if (state.hijackDns) {
+            add(buildJsonObject {
+                put("protocol", "dns")
+                put("action", "hijack-dns")
+            })
             add(buildJsonObject {
                 put("port", 53)
                 put("action", "hijack-dns")
+            })
+            add(buildJsonObject {
+                put("port", 853)
+                put("action", "reject")
+                put("method", "default")
             })
         }
         // No extra fallback rule is emitted: sing-box's route.final already

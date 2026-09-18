@@ -90,6 +90,9 @@ fun HomeScreen(
         PowerDome(
             state = boxState,
             onConnect = {
+                // React to the tap before :vpn cold-starts (seconds); the
+                // real Starting/Connected/Error broadcast overwrites this.
+                relay.optimisticStarting()
                 val intent = controller.prepareVpn(activity ?: return@PowerDome)
                 if (intent != null) {
                     onRequestVpnConsent(intent)
@@ -97,7 +100,10 @@ fun HomeScreen(
                     controller.startFromBackground()
                 }
             },
-            onDisconnect = { controller.stop() },
+            onDisconnect = {
+                relay.optimisticStopping()
+                controller.stop()
+            },
         )
 
         ClashModeRow(

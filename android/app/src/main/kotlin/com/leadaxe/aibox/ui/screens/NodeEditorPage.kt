@@ -124,6 +124,23 @@ fun NodeEditorPage(
         )
     }
     var flow by remember { mutableStateOf(field("flow")) }
+    // REALITY knobs (asteriskng-style pbk/sid): the two fields that change
+    // when a provider rotates their reality server. SNI/fingerprint are in
+    // the TLS card; these live with the pq switch on the reality node.
+    var realityPublicKey by remember {
+        mutableStateOf(
+            (((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
+                ?.get("reality") as? kotlinx.serialization.json.JsonObject)
+                ?.get("public_key") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty(),
+        )
+    }
+    var realityShortId by remember {
+        mutableStateOf(
+            (((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
+                ?.get("reality") as? kotlinx.serialization.json.JsonObject)
+                ?.get("short_id") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty(),
+        )
+    }
     var error by remember { mutableStateOf<String?>(null) }
     val realityOn = ((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
         ?.get("reality") as? kotlinx.serialization.json.JsonObject)
@@ -166,6 +183,8 @@ fun NodeEditorPage(
                     alpn = alpn,
                     utlsFingerprint = utlsFingerprint,
                     flow = flow,
+                    realityPublicKey = realityPublicKey,
+                    realityShortId = realityShortId,
                 )
                 when (built) {
                     is OverrideBuild.Invalid -> error = built.reason
@@ -269,6 +288,17 @@ fun NodeEditorPage(
                             supporting = stringResource(R.string.node_edit_pq_hint),
                             checked = pqEnabled,
                             onCheckedChange = { pqEnabled = it },
+                        )
+                        StringField(
+                            label = stringResource(R.string.node_edit_reality_pk),
+                            value = realityPublicKey,
+                            onValueChange = { realityPublicKey = it },
+                            supporting = stringResource(R.string.node_edit_reality_pk_hint),
+                        )
+                        StringField(
+                            label = stringResource(R.string.node_edit_reality_sid),
+                            value = realityShortId,
+                            onValueChange = { realityShortId = it },
                         )
                     }
                     // Flow (vless only): xtls-rprx-vision etc.
@@ -458,6 +488,8 @@ private fun buildOverride(
     alpn: String,
     utlsFingerprint: String,
     flow: String,
+    realityPublicKey: String,
+    realityShortId: String,
 ): OverrideBuild {
     fun field(key: String): String =
         (base?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
@@ -559,6 +591,19 @@ private fun buildOverride(
             existingUtls.remove("pq_enabled")
         }
         tlsOverride["utls"] = kotlinx.serialization.json.JsonObject(existingUtls)
+        // reality pbk/sid: same layering as utls — preserve every other
+        // reality key the node already carries.
+        val existingReality = (existingTls["reality"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf()
+        if (realityPublicKey.isNotBlank()) {
+            existingReality["public_key"] = kotlinx.serialization.json.JsonPrimitive(realityPublicKey.trim())
+        }
+        if (realityShortId.isNotBlank()) {
+            existingReality["short_id"] = kotlinx.serialization.json.JsonPrimitive(realityShortId.trim())
+        }
+        if (existingReality.isNotEmpty()) {
+            tlsOverride["reality"] = kotlinx.serialization.json.JsonObject(existingReality)
+        }
         mutable["tls"] = kotlinx.serialization.json.JsonObject(tlsOverride)
     }
     var merged = kotlinx.serialization.json.JsonObject(mutable)

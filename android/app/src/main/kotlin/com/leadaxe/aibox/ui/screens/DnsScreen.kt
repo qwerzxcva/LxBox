@@ -530,6 +530,11 @@ private fun DnsServerCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
+    // Collapsible like the rule cards: the header always shows name +
+    // type · address, and the expanded body shows the resolver details
+    // (detour / ECS / domain resolver / address fields) so the list of
+    // servers stays scannable.
+    var expanded by remember(server.id) { mutableStateOf(false) }
     SwipeToDeleteRow(
         item = server,
         key = server.id,
@@ -539,8 +544,14 @@ private fun DnsServerCard(
         modifier = Modifier.fillMaxWidth(),
         colors = androidx.compose.material3.CardDefaults.outlinedCardColors(),
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.animateContentSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         server.name.ifBlank { server.tag },
@@ -559,6 +570,44 @@ private fun DnsServerCard(
                 )
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
+                }
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = stringResource(
+                            if (expanded) R.string.common_collapse else R.string.common_expand,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (server.detour.isNotBlank()) {
+                        MatcherRow("detour", listOf(server.detour), 1)
+                    }
+                    if (server.clientSubnet.isNotBlank()) {
+                        MatcherRow("client_subnet", listOf(server.clientSubnet), 1)
+                    }
+                    if (server.domainResolver.isNotBlank()) {
+                        MatcherRow("domain_resolver", listOf(server.domainResolver), 1)
+                    }
+                    if (server.strategy.isNotBlank()) {
+                        MatcherRow("strategy", listOf(server.strategy), 1)
+                    }
+                    if (server.tlsServerName.isNotBlank()) {
+                        MatcherRow("tls_server_name", listOf(server.tlsServerName), 1)
+                    }
+                    if (server.address.isNotBlank() && server.type != "local") {
+                        Text(
+                            server.address,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -863,7 +912,7 @@ private fun DnsRuleCard(
     onDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
-    var collapsed by remember { mutableStateOf(true) }
+    var collapsed by remember(rule.id) { mutableStateOf(true) }
     SwipeToDeleteRow(
         item = rule,
         key = rule.id,
@@ -912,11 +961,18 @@ private fun DnsRuleCard(
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
                 }
-                Icon(
-                    if (collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                // The chevron is its own button: tapping it must toggle even
+                // when it lands near the edit icon, and it mirrors the row
+                // tap so both affordances work.
+                IconButton(onClick = { collapsed = !collapsed }) {
+                    Icon(
+                        if (collapsed) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                        contentDescription = stringResource(
+                            if (collapsed) R.string.common_expand else R.string.common_collapse,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             // Expanded body: one row per populated matcher group, showing
             // the actual values (not just counts) — but still compact so
