@@ -73,6 +73,8 @@ fun RuleEditorPage(
     onDismiss: () -> Unit,
     onSave: (RouteRule) -> Unit,
 ) {
+    // Back gesture closes the editor (never the app).
+    androidx.activity.compose.BackHandler { onDismiss() }
     // ----- top-level identity + action (hoisted out of the branches)
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var kind by remember { mutableStateOf(initial?.kind ?: RouteRule.KindInline) }
@@ -629,6 +631,7 @@ private fun MatchFields(
         values = rule.domain,
         onValuesChange = { onChange(rule.copy(domain = it)) },
         supporting = stringResource(R.string.hint_domain),
+        collapsible = true,
     )
     ListField(
         label = stringResource(R.string.routes_field_domain_suffix),
@@ -636,30 +639,35 @@ private fun MatchFields(
         onValuesChange = { onChange(rule.copy(domainSuffix = it)) },
         placeholder = "google.com, openai.com",
         supporting = stringResource(R.string.hint_domain_suffix),
+        collapsible = true,
     )
     ListField(
         label = stringResource(R.string.routes_field_domain_keyword),
         values = rule.domainKeyword,
         onValuesChange = { onChange(rule.copy(domainKeyword = it)) },
         supporting = stringResource(R.string.hint_domain_keyword),
+        collapsible = true,
     )
     ListField(
         label = stringResource(R.string.routes_field_ip_cidr),
         values = rule.ipCidr,
         onValuesChange = { onChange(rule.copy(ipCidr = it)) },
         supporting = stringResource(R.string.hint_ip_cidr),
+        collapsible = true,
     )
     ListField(
         label = stringResource(R.string.routes_field_package),
         values = rule.packageName,
         onValuesChange = { onChange(rule.copy(packageName = it)) },
         supporting = stringResource(R.string.hint_package_name),
+        collapsible = true,
     )
     ListField(
         label = stringResource(R.string.routes_field_rule_set),
         values = rule.ruleSet,
         onValuesChange = { onChange(rule.copy(ruleSet = it)) },
         supporting = stringResource(R.string.hint_rule_set),
+        collapsible = true,
     )
     TextButton(onClick = { expanded = !expanded }) {
         Text(

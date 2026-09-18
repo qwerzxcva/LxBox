@@ -226,6 +226,18 @@ class VpnRelay(context: Context) {
 
     /** Asks the service to probe one node; the result arrives via broadcast. */
     fun requestPing(nodeId: String, nodeTag: String, url: String) {
+        // No tunnel, no prober: without the :vpn process there is no
+        // receiver to answer, and the node would spin "testing" forever.
+        // Fail it locally with the reason instead.
+        if (_state.value !is BoxState.Connected && _state.value !is BoxState.Starting) {
+            _pings.value = _pings.value + (
+                nodeId to PingResult(
+                    delayMillis = null,
+                    error = "engine not running",
+                )
+            )
+            return
+        }
         _pings.value = _pings.value + (nodeId to PingResult(null, null))
         send(VpnIpc.ACTION_PING) {
             putExtra(VpnIpc.EXTRA_PING_NODE_ID, nodeId)

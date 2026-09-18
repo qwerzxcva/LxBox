@@ -172,6 +172,13 @@ private fun RootScaffold(
             }
         }
 
+        // Back gate (user report): with a second-level editor open the
+        // back gesture went straight through the Activity and killed the
+        // app. When the pager is locked an editor is on top — swallow the
+        // back press; the editor's own close button (or its BackHandler if
+        // it adds one) is the exit path.
+        androidx.activity.compose.BackHandler(enabled = pagerLocked) { }
+
         // True floating bar: overlaid on the pager (not docked in a
         // Scaffold slot), lifted off the very bottom by the navigation-bar
         // inset plus a margin, so it reads as a layer above the content.

@@ -159,6 +159,7 @@ fun ListField(
     placeholder: String = "",
     supporting: String = "",
     modifier: Modifier = Modifier,
+    collapsible: Boolean = false,
 ) {
     // One entry per line. The raw text is kept locally while typing —
     // normalising on every keystroke (filtering blank lines) would eat the
@@ -173,7 +174,14 @@ fun ListField(
         lastExternal = values.joinToString("\n")
         text = lastExternal
     }
-    Column(modifier = modifier.fillMaxWidth()) {
+    // Collapsible (user request): long matchers (a dozen IP CIDRs, a full
+    // package list) stretched every card forever. The header row shows the
+    // label with an entry count and a chevron; the field itself unfolds
+    // below it. Starts collapsed when empty, expanded when there is
+    // something to show — so a fresh rule reads compact, a filled one never
+    // hides its content by surprise.
+    var open by remember(values.isNotEmpty()) { mutableStateOf(values.isNotEmpty()) }
+    val body: @Composable () -> Unit = {
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
@@ -197,6 +205,39 @@ fun ListField(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 16.dp, top = 2.dp),
             )
+        }
+    }
+    if (!collapsible) {
+        Column(modifier = modifier.fillMaxWidth()) { body() }
+    } else {
+        Column(modifier = modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { open = !open }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                if (values.isNotEmpty()) {
+                    Text(
+                        values.size.toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 4.dp),
+                    )
+                }
+                Icon(
+                    if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            androidx.compose.animation.AnimatedVisibility(visible = open) { body() }
         }
     }
 }

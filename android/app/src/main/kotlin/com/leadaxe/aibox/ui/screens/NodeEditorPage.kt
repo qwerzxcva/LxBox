@@ -54,6 +54,8 @@ fun NodeEditorPage(
     onSave: (OutboundProfile) -> Unit,
     onDuplicate: ((OutboundProfile) -> Unit)? = null,
 ) {
+    // Back gesture closes the editor (never the app).
+    androidx.activity.compose.BackHandler { onDismiss() }
     val base = remember(initial) {
         runCatching {
             kotlinx.serialization.json.Json.parseToJsonElement(initial.config)

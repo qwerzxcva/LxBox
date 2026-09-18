@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -100,16 +101,19 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     }
     var creatingGroup by remember { mutableStateOf(false) }
 
-    // Remote ping answers (from the :vpn process) fold into the local map.
+    // Remote ping answers (from the :vpn process) fold into the local
+    // map — only entries with an actual outcome, so the optimistic
+    // Triggered state written on tap is never clobbered by a duplicate
+    // fold of the same table.
     androidx.compose.runtime.LaunchedEffect(remotePings) {
-        val mapped = remotePings.mapValues { (_, r) ->
+        val settled = remotePings.mapNotNull { (id, r) ->
             when {
-                r.delayMillis != null -> PingState.Ok(r.delayMillis)
-                r.error != null -> PingState.Failed(r.error)
-                else -> PingState.Triggered
+                r.delayMillis != null -> id to (PingState.Ok(r.delayMillis) as PingState)
+                r.error != null -> id to (PingState.Failed(r.error) as PingState)
+                else -> null
             }
-        }
-        pingResults = pingResults + mapped
+        }.toMap()
+        if (settled.isNotEmpty()) pingResults = pingResults + settled
     }
     // Prune results of nodes that are gone (deleted subscription / removed
     // node): the map must not grow with every refresh cycle.
@@ -957,10 +961,19 @@ private fun NodeRow(
                 onClick = onPing,
                 enabled = pingState !is PingState.Running,
             ) {
-                Icon(
-                    Icons.Outlined.Speed,
-                    contentDescription = stringResource(R.string.subs_ping),
-                )
+                if (pingState is PingState.Running || pingState is PingState.Triggered) {
+                    // In-flight spinner: the badge alone proved easy to
+                    // miss; the button itself now shows the probe is live.
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.Speed,
+                        contentDescription = stringResource(R.string.subs_ping),
+                    )
+                }
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
