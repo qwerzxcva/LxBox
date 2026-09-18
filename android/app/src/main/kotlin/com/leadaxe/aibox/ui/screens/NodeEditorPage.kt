@@ -85,6 +85,41 @@ fun NodeEditorPage(
                 as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()),
         )
     }
+    // Transport knobs (throne/nekobox-style): the part of the node's
+    // transport object users actually touch — path/host/service-name.
+    fun transportField(key: String): String =
+        ((base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.get(key)
+            as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+    val transportType = transportField("type")
+    var transportPath by remember { mutableStateOf(transportField("path")) }
+    var transportHost by remember {
+        mutableStateOf(
+            transportField("host").ifBlank {
+                // ws / httpupgrade keep the host under headers.Host.
+                (((base?.get("transport") as? kotlinx.serialization.json.JsonObject)
+                    ?.get("headers") as? kotlinx.serialization.json.JsonObject)
+                    ?.get("Host") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+            },
+        )
+    }
+    var transportServiceName by remember { mutableStateOf(transportField("service_name")) }
+    // TLS knobs: ALPN + uTLS fingerprint, the two every panel exposes.
+    fun tlsObj(): kotlinx.serialization.json.JsonObject? =
+        base?.get("tls") as? kotlinx.serialization.json.JsonObject
+    var alpn by remember {
+        mutableStateOf(
+            (tlsObj()?.get("alpn") as? kotlinx.serialization.json.JsonArray)
+                ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                ?.joinToString(",").orEmpty(),
+        )
+    }
+    var utlsFingerprint by remember {
+        mutableStateOf(
+            ((tlsObj()?.get("utls") as? kotlinx.serialization.json.JsonObject)
+                ?.get("fingerprint") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty(),
+        )
+    }
+    var flow by remember { mutableStateOf(field("flow")) }
     var error by remember { mutableStateOf<String?>(null) }
     val realityOn = ((base?.get("tls") as? kotlinx.serialization.json.JsonObject)
         ?.get("reality") as? kotlinx.serialization.json.JsonObject)
@@ -120,6 +155,13 @@ fun NodeEditorPage(
                     realityOn = realityOn,
                     wsPingInterval = wsPingInterval,
                     domainStrategy = domainStrategy,
+                    transportType = transportType,
+                    transportPath = transportPath,
+                    transportHost = transportHost,
+                    transportServiceName = transportServiceName,
+                    alpn = alpn,
+                    utlsFingerprint = utlsFingerprint,
+                    flow = flow,
                 )
                 when (built) {
                     is OverrideBuild.Invalid -> error = built.reason
@@ -225,6 +267,87 @@ fun NodeEditorPage(
                             onCheckedChange = { pqEnabled = it },
                         )
                     }
+                    // Flow (vless only): xtls-rprx-vision etc.
+                    if (base?.get("type")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content } == "vless") {
+                        StringField(
+                            label = stringResource(R.string.node_edit_flow),
+                            value = flow,
+                            onValueChange = { flow = it },
+                            placeholder = "xtls-rprx-vision",
+                        )
+                    }
+                }
+            }
+
+            // Transport card (throne-style): only the fields the node's own
+            // transport uses. ws/httpupgrade → path+host, grpc → service name,
+            // http → path+host. Shown only when the node has a transport.
+            if (transportType.isNotBlank()) {
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.node_edit_transport, transportType),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (transportType == "ws" || transportType == "http" || transportType == "httpupgrade") {
+                            StringField(
+                                label = stringResource(R.string.node_edit_path),
+                                value = transportPath,
+                                onValueChange = { transportPath = it },
+                                placeholder = "/",
+                            )
+                        }
+                        if (transportType == "ws" || transportType == "http" || transportType == "httpupgrade") {
+                            StringField(
+                                label = stringResource(R.string.node_edit_host),
+                                value = transportHost,
+                                onValueChange = { transportHost = it },
+                                placeholder = "cdn.example.com",
+                            )
+                        }
+                        if (transportType == "grpc") {
+                            StringField(
+                                label = stringResource(R.string.node_edit_service_name),
+                                value = transportServiceName,
+                                onValueChange = { transportServiceName = it },
+                                placeholder = "grpc-service",
+                            )
+                        }
+                    }
+                }
+            }
+
+            // TLS card: ALPN + uTLS fingerprint, shown when the node uses TLS.
+            if (tlsObj() != null) {
+                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.node_edit_tls),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        StringField(
+                            label = stringResource(R.string.node_edit_alpn),
+                            value = alpn,
+                            onValueChange = { alpn = it },
+                            placeholder = "h2,http/1.1",
+                            supporting = stringResource(R.string.node_edit_alpn_hint),
+                        )
+                        StringField(
+                            label = stringResource(R.string.node_edit_utls),
+                            value = utlsFingerprint,
+                            onValueChange = { utlsFingerprint = it },
+                            placeholder = "chrome",
+                            supporting = stringResource(R.string.node_edit_utls_hint),
+                        )
+                    }
                 }
             }
 
@@ -293,6 +416,13 @@ private fun buildOverride(
     realityOn: Boolean,
     wsPingInterval: String,
     domainStrategy: String,
+    transportType: String,
+    transportPath: String,
+    transportHost: String,
+    transportServiceName: String,
+    alpn: String,
+    utlsFingerprint: String,
+    flow: String,
 ): OverrideBuild {
     fun field(key: String): String =
         (base?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
@@ -321,6 +451,62 @@ private fun buildOverride(
             ?: mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
         existingTransport["ping_interval"] = kotlinx.serialization.json.JsonPrimitive(wsPingInterval.trim())
         mutable["transport"] = kotlinx.serialization.json.JsonObject(existingTransport)
+    }
+    // Transport path/host/service-name: layered onto the existing transport
+    // (or the one we just touched for ping_interval) so type stays intact.
+    if (transportType.isNotBlank() &&
+        (transportPath.isNotBlank() || transportHost.isNotBlank() || transportServiceName.isNotBlank())
+    ) {
+        val t = ((mutable["transport"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: (base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf())
+        if (transportPath.isNotBlank()) {
+            t["path"] = kotlinx.serialization.json.JsonPrimitive(transportPath.trim())
+        }
+        if (transportServiceName.isNotBlank()) {
+            t["service_name"] = kotlinx.serialization.json.JsonPrimitive(transportServiceName.trim())
+        }
+        if (transportHost.isNotBlank()) {
+            if (transportType == "http") {
+                // http keeps host as a list.
+                t["host"] = kotlinx.serialization.json.buildJsonArray {
+                    add(kotlinx.serialization.json.JsonPrimitive(transportHost.trim()))
+                }
+            } else if (transportType == "httpupgrade") {
+                t["host"] = kotlinx.serialization.json.JsonPrimitive(transportHost.trim())
+            } else {
+                // ws: host rides in headers.Host.
+                val headers = (t["headers"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+                    ?: mutableMapOf()
+                headers["Host"] = kotlinx.serialization.json.JsonPrimitive(transportHost.trim())
+                t["headers"] = kotlinx.serialization.json.JsonObject(headers)
+            }
+        }
+        mutable["transport"] = kotlinx.serialization.json.JsonObject(t)
+    }
+    if (flow.isNotBlank() && flow != field("flow")) {
+        mutable["flow"] = kotlinx.serialization.json.JsonPrimitive(flow.trim())
+    }
+    // TLS: ALPN list + uTLS fingerprint, layered on existing tls override.
+    if (alpn.isNotBlank() || utlsFingerprint.isNotBlank()) {
+        val tls = ((mutable["tls"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: (base?.get("tls") as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+            ?: mutableMapOf())
+        tls["enabled"] = kotlinx.serialization.json.JsonPrimitive(true)
+        if (alpn.isNotBlank()) {
+            tls["alpn"] = kotlinx.serialization.json.buildJsonArray {
+                alpn.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    .forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
+            }
+        }
+        if (utlsFingerprint.isNotBlank()) {
+            val utls = (tls["utls"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
+                ?: mutableMapOf()
+            utls["enabled"] = kotlinx.serialization.json.JsonPrimitive(true)
+            utls["fingerprint"] = kotlinx.serialization.json.JsonPrimitive(utlsFingerprint.trim())
+            tls["utls"] = kotlinx.serialization.json.JsonObject(utls)
+        }
+        mutable["tls"] = kotlinx.serialization.json.JsonObject(tls)
     }
     if (realityOn) {
         // pq_enabled lives under tls.utls; keep any existing utls override

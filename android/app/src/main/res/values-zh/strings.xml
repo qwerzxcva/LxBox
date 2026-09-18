@@ -579,4 +579,14 @@
     <string name="settings_privacy_insecure_dns">Allow plaintext DNS</string>
     <string name="settings_privacy_insecure_dns_desc">Permit unencrypted udp/tcp/dhcp DNS upstreams. Keep off unless your network forces its resolver — DoT/DoH/DoQ protect queried names.</string>
     <string name="dns_cache_capacity_desc">内存中保留的 DNS 应答数量。留空使用内核默认值。</string>
+    <string name="node_edit_transport">传输（%s）</string>
+    <string name="node_edit_path">路径</string>
+    <string name="node_edit_host">Host</string>
+    <string name="node_edit_service_name">服务名</string>
+    <string name="node_edit_tls">TLS</string>
+    <string name="node_edit_alpn">ALPN</string>
+    <string name="node_edit_alpn_hint">逗号分隔，如 h2,http/1.1。留空保持节点默认。</string>
+    <string name="node_edit_utls">uTLS 指纹</string>
+    <string name="node_edit_utls_hint">chrome / firefox / safari / edge / random。留空保持节点默认。</string>
+    <string name="node_edit_flow">流控（Flow）</string>
 </resources>
