@@ -597,4 +597,25 @@
     <string name="node_edit_reality_pk">Reality 公钥</string>
     <string name="node_edit_reality_pk_hint">服务商提供的 Base64 公钥（pbk）。</string>
     <string name="node_edit_reality_sid">Reality 短 ID</string>
+    <string name="settings_section_experimental">实验性功能</string>
+    <string name="settings_exp_master">启用实验性功能</string>
+    <string name="settings_exp_master_desc">关闭时下列所有开关均不生效，任何页面无变化。</string>
+    <string name="settings_exp_per_app">分应用代理</string>
+    <string name="settings_exp_per_app_desc">TUN 应用黑白名单（v2rayNG/FlClash 风格）。开启后设置页出现应用选择器。</string>
+    <string name="settings_exp_quick_tile">快捷设置磁贴</string>
+    <string name="settings_exp_quick_tile_desc">下拉通知栏一键连断（FlClash 风格）。</string>
+    <string name="settings_exp_batch_speed">批量测速</string>
+    <string name="settings_exp_batch_speed_desc">一键对所有节点测延迟并排序（v2rayNG 风格）。开启后订阅页出现按钮。</string>
+    <string name="settings_exp_latency_history">延迟历史</string>
+    <string name="settings_exp_latency_history_desc">按节点持久化延迟记录（karing/nekobox cache-file 风格）。</string>
+    <string name="per_app_title">分应用代理</string>
+    <string name="per_app_whitelist">白名单</string>
+    <string name="per_app_blacklist">黑名单</string>
+    <string name="per_app_mode_desc">白名单=仅所选应用走代理；黑名单=除所选外全走。</string>
+    <string name="per_app_select_all">全选</string>
+    <string name="per_app_clear">清空</string>
+    <string name="per_app_summary_off">未配置</string>
+    <string name="per_app_summary_whitelist">白名单 · %1$d 个应用</string>
+    <string name="per_app_summary_blacklist">黑名单 · %1$d 个应用</string>
+    <string name="tile_label">AIBox VPN</string>
 </resources>

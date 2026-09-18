@@ -269,18 +269,24 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                                 Icon(Icons.Outlined.Link, contentDescription = null)
                                 Text(stringResource(R.string.subs_speed_url_title))
                             }
-                            FilledTonalButton(onClick = {
-                                // Parallel probes (karing-style test panel):
-                                // all requests fire at once; the :vpn process
-                                // multiplexes them and snapshots stream back
-                                // per group.
-                                scope.launch {
-                                    state.outbounds.forEach { node ->
-                                        pingResults = pingResults + (node.id to PingState.Triggered)
-                                        relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                            // Batch speed test (v2rayNG-style "test all").
+                            // Gated behind the experimental flag: hidden
+                            // entirely until the user opts in on Settings,
+                            // per the feature-flag contract.
+                            if (state.experimental.enabled && state.experimental.batchSpeedTest) {
+                                FilledTonalButton(onClick = {
+                                    // Parallel probes (karing-style test panel):
+                                    // all requests fire at once; the :vpn process
+                                    // multiplexes them and snapshots stream back
+                                    // per group.
+                                    scope.launch {
+                                        state.outbounds.forEach { node ->
+                                            pingResults = pingResults + (node.id to PingState.Triggered)
+                                            relay.requestPing(node.id, node.tag, state.speedTestUrl)
+                                        }
                                     }
-                                }
-                            }) { Text(stringResource(R.string.subs_ping_all)) }
+                                }) { Text(stringResource(R.string.subs_ping_all)) }
+                            }
                         }
                         if (showSpeedUrl) {
                             StringField(

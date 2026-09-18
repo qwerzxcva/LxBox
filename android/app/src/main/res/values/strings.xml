@@ -599,4 +599,25 @@
     <string name="node_edit_reality_pk">Reality public key</string>
     <string name="node_edit_reality_pk_hint">Base64 key from the provider (pbk).</string>
     <string name="node_edit_reality_sid">Reality short ID</string>
+    <string name="settings_section_experimental">Experimental features</string>
+    <string name="settings_exp_master">Enable experimental features</string>
+    <string name="settings_exp_master_desc">Off = every flag below is dormant, nothing changes anywhere.</string>
+    <string name="settings_exp_per_app">Per-app proxy</string>
+    <string name="settings_exp_per_app_desc">TUN include/exclude package lists, v2rayNG/FlClash style. Adds the app picker to Settings.</string>
+    <string name="settings_exp_quick_tile">Quick settings tile</string>
+    <string name="settings_exp_quick_tile_desc">Connect/disconnect from the notification shade, FlClash style.</string>
+    <string name="settings_exp_batch_speed">Batch speed test</string>
+    <string name="settings_exp_batch_speed_desc">One-tap url-test across every node, v2rayNG style. Adds the button to Subscriptions.</string>
+    <string name="settings_exp_latency_history">Latency history</string>
+    <string name="settings_exp_latency_history_desc">Persist per-node latency across restarts (karing/nekobox cache-file style).</string>
+    <string name="per_app_title">Per-app proxy</string>
+    <string name="per_app_whitelist">Whitelist</string>
+    <string name="per_app_blacklist">Blacklist</string>
+    <string name="per_app_mode_desc">Whitelist = only picked apps use the proxy; blacklist = everyone except them.</string>
+    <string name="per_app_select_all">All</string>
+    <string name="per_app_clear">None</string>
+    <string name="per_app_summary_off">Not configured</string>
+    <string name="per_app_summary_whitelist">Whitelist · %1$d apps</string>
+    <string name="per_app_summary_blacklist">Blacklist · %1$d apps</string>
+    <string name="tile_label">AIBox VPN</string>
 </resources>

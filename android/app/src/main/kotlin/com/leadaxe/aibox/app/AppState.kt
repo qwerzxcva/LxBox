@@ -291,6 +291,16 @@ data class AppState(
     val perAppProxyWhitelist: Boolean = false,
     val perAppProxyPackages: Set<String> = emptySet(),
 
+    // ------------------------------------------------- experimental flags
+    /**
+     * Feature flags ported from the reference clients (v2rayNG, FlClash,
+     * karing, nekobox, CMFA, throne, mikuRay). Each stays dormant until
+     * enabled here — nothing applies to any page or to the compiled config
+     * unless both [ExperimentalFeatures.enabled] and the per-feature flag
+     * are on. The gates live in the compiler / UI call sites, not here.
+     */
+    val experimental: ExperimentalFeatures = ExperimentalFeatures(),
+
     // ----------------------------------------------------------------- ui
     val colorMode: Int = ColorModeSystem,
     /** "" = follow system, otherwise a BCP-47-ish tag: "en", "zh". */
@@ -986,3 +996,28 @@ val DnsDetourProxy = ProxySelectorTag
 
 /** Common cache-file path used by sing-box `experimental.cache_file`. */
 const val CacheFileName = "cache.db"
+
+/**
+ * Feature gates ported from the reference clients (v2rayNG, FlClash,
+ * karing, nekobox, CMFA, throne, mikuRay). Each stays dormant until the
+ * user enables it here — nothing applies to any page or to the compiled
+ * config unless both [enabled] and the per-feature flag are on. Gates are
+ * checked at the compiler / UI call sites, never inside the data model.
+ */
+@kotlinx.serialization.Serializable
+data class ExperimentalFeatures(
+    /** Master switch: when false every individual flag is ignored. */
+    val enabled: Boolean = false,
+
+    /** v2rayNG/FlClash/CMFA: TUN per-app include/exclude package lists. */
+    val perAppProxy: Boolean = false,
+
+    /** FlClash/CMFA/v2rayNG: quick-settings tile to connect/disconnect. */
+    val quickTile: Boolean = false,
+
+    /** v2rayNG: one-tap url-test over every node, sorted by latency. */
+    val batchSpeedTest: Boolean = false,
+
+    /** nekobox/karing: persistent per-node latency history (cache file). */
+    val latencyHistory: Boolean = false,
+)

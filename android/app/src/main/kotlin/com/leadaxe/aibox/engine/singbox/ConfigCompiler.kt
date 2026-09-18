@@ -701,6 +701,21 @@ object ConfigCompiler {
             }
         }
         put("auto_route", true)
+        // Per-app proxy (experimental, v2rayNG/FlClash style): the tun
+        // include/exclude package lists. Whitelist = only the picked apps
+        // enter the tun; blacklist = everyone except them. The fields are
+        // gated on the experimental master + per-app flags so the list is
+        // inert until the user opted in on the Settings page.
+        if (state.experimental.enabled && state.experimental.perAppProxy &&
+            state.perAppProxyEnabled && state.perAppProxyPackages.isNotEmpty()
+        ) {
+            val pkgs = state.perAppProxyPackages.sorted()
+            if (state.perAppProxyWhitelist) {
+                putJsonArray("include_package") { pkgs.forEach(::add) }
+            } else {
+                putJsonArray("exclude_package") { pkgs.forEach(::add) }
+            }
+        }
         // The `stack` option is deprecated in sing-box 1.15 and the legacy
         // system/gvisor/mixed implementations are on the removal path;
         // omitting it selects sing-tun's own Go stack (slab pools, splice,

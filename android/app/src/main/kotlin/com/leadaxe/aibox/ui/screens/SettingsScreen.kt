@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.Card
@@ -410,6 +411,76 @@ fun SettingsScreen() {
                         style = MaterialTheme.typography.bodySmall,
                         color = if (backupError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
+                }
+            }
+        }
+
+        // Experimental features (user request): reference-client ports that
+        // stay dormant until enabled here. The per-feature switches only
+        // matter while the master switch is on; every consumer gates on both.
+        item {
+            SettingsSection(stringResource(R.string.settings_section_experimental)) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_exp_master),
+                    supporting = stringResource(R.string.settings_exp_master_desc),
+                    checked = state.experimental.enabled,
+                    onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(enabled = v)) } },
+                )
+                AnimatedVisibility(visible = state.experimental.enabled) {
+                    Column {
+                        SwitchRow(
+                            label = stringResource(R.string.settings_exp_per_app),
+                            supporting = stringResource(R.string.settings_exp_per_app_desc),
+                            checked = state.experimental.perAppProxy,
+                            onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(perAppProxy = v)) } },
+                        )
+                        if (state.experimental.perAppProxy) {
+                            var showPicker by remember { mutableStateOf(false) }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showPicker = true }
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(stringResource(R.string.per_app_title), style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        if (state.perAppProxyEnabled) {
+                                            val n = state.perAppProxyPackages.size
+                                            (if (state.perAppProxyWhitelist) stringResource(R.string.per_app_summary_whitelist, n)
+                                            else stringResource(R.string.per_app_summary_blacklist, n))
+                                        } else stringResource(R.string.per_app_summary_off),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Icon(Icons.Outlined.ChevronRight, contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (showPicker) {
+                                PerAppPickerPage(store = store, onDismiss = { showPicker = false })
+                            }
+                        }
+                        SwitchRow(
+                            label = stringResource(R.string.settings_exp_quick_tile),
+                            supporting = stringResource(R.string.settings_exp_quick_tile_desc),
+                            checked = state.experimental.quickTile,
+                            onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(quickTile = v)) } },
+                        )
+                        SwitchRow(
+                            label = stringResource(R.string.settings_exp_batch_speed),
+                            supporting = stringResource(R.string.settings_exp_batch_speed_desc),
+                            checked = state.experimental.batchSpeedTest,
+                            onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(batchSpeedTest = v)) } },
+                        )
+                        SwitchRow(
+                            label = stringResource(R.string.settings_exp_latency_history),
+                            supporting = stringResource(R.string.settings_exp_latency_history_desc),
+                            checked = state.experimental.latencyHistory,
+                            onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(latencyHistory = v)) } },
+                        )
+                    }
                 }
             }
         }
