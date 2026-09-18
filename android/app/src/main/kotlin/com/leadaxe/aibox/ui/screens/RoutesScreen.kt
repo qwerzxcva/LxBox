@@ -332,6 +332,9 @@ fun RoutesScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 onPickMode = { mode ->
                     store.update { it.copy(fallbackRouteMode = mode) }
                 },
+                onFallbackEcs = { v ->
+                    store.update { it.copy(fallbackEcsDirect = v.trim()) }
+                },
             )
         }
 
@@ -768,6 +771,7 @@ private fun FallbackRuleCard(
     state: AppState,
     mode: String,
     onPickMode: (String) -> Unit,
+    onFallbackEcs: (String) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -814,6 +818,21 @@ private fun FallbackRuleCard(
                         },
                     )
                 }
+            }
+            // Direct-mode fixed ECS (user request): a direct fallback
+            // lookup reports the user's chosen region, decoupled from
+            // rule-level ECS — a rule that pins its own subnet always wins,
+            // and proxy-mode fallback keeps the exit node's locality. The
+            // compiler emits it on the direct shadow DNS server, so it
+            // never leaks into proxied queries.
+            if (mode == FallbackRouteDirect) {
+                StringField(
+                    label = stringResource(R.string.routes_fallback_ecs),
+                    value = state.fallbackEcsDirect,
+                    onValueChange = onFallbackEcs,
+                    placeholder = "1.2.3.0/24",
+                    supporting = stringResource(R.string.routes_fallback_ecs_desc),
+                )
             }
         }
     }

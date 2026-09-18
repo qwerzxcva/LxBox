@@ -4,6 +4,7 @@ import com.leadaxe.aibox.app.AppState
 import com.leadaxe.aibox.app.BlockOutboundTag
 import com.leadaxe.aibox.app.ClashModeRule
 import com.leadaxe.aibox.app.DnsFinalProxy
+import com.leadaxe.aibox.app.DnsFinalDirect
 import com.leadaxe.aibox.app.FallbackRouteDirect
 import com.leadaxe.aibox.app.FallbackRouteProxy
 import com.leadaxe.aibox.app.LoadBalanceTag
@@ -12,6 +13,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.File
@@ -109,5 +112,54 @@ class ConfigCompilerFallbackTest {
         val sanitized = com.leadaxe.aibox.app.sanitizeAppStateReferences(state)
         // Before the fix the shortcut was wiped as a dangling server tag.
         assertEquals(DnsFinalProxy, sanitized.finalDnsServer)
+    }
+
+    @Test
+    fun `fallback direct ECS rides the shadow resolver`() {
+        val state = AppState(
+            fallbackRouteMode = FallbackRouteDirect,
+            fallbackEcsDirect = "1.2.3.0/24",
+            // The shadow server only materialises when the fallback DNS is
+            // the direct shortcut; that is the row our ECS rides on.
+            finalDnsServer = DnsFinalDirect,
+        )
+        val config = compile(state)
+        val servers = config["dns"]!!.jsonObject["servers"]!!.jsonArray
+        val shadow = servers.map { it.jsonObject }
+            .firstOrNull { it["tag"]?.jsonPrimitive?.content == "dns-final-direct" }
+        assertNotNull("final-direct shadow server expected", shadow)
+        assertEquals(
+            "1.2.3.0/24",
+            shadow!!["client_subnet"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `rule ECS wins over the direct fallback ECS`() {
+        // DNS-side: a DNS rule that pins its own subnet keeps it — the
+        // fallback subnet lives on the shadow server only and never
+        // overrides rule-level choices.
+        val dnsRule = com.leadaxe.aibox.app.DnsRule(
+            id = "ecs-dns-rule",
+            domainSuffix = listOf("example.com"),
+            server = "dns-https-1",
+            clientSubnet = "9.9.9.0/24",
+        )
+        val state = AppState(
+            fallbackRouteMode = FallbackRouteDirect,
+            fallbackEcsDirect = "1.2.3.0/24",
+            dnsRules = listOf(dnsRule),
+        )
+        val config = compile(state)
+        val dnsRules = config["dns"]!!.jsonObject["rules"]!!.jsonArray.map { it.jsonObject }
+        val mine = dnsRules.firstOrNull {
+            it["client_subnet"]?.jsonPrimitive?.content == "9.9.9.0/24"
+        }
+        assertNotNull("the rule's own subnet must survive", mine)
+        assertTrue(
+            dnsRules.none {
+                it["client_subnet"]?.jsonPrimitive?.content == "1.2.3.0/24"
+            },
+        )
     }
 }

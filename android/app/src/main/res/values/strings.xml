@@ -642,4 +642,6 @@
     <string name="settings_lb_hash_port_desc">Split traffic per service (443 vs 53 land on different nodes).</string>
     <string name="settings_lb_hash_proto">Include protocol (TCP/UDP)</string>
     <string name="settings_lb_hash_proto_desc">Same destination on TCP and UDP may land on different nodes.</string>
+    <string name="routes_fallback_ecs">Fixed ECS (direct fallback)</string>
+    <string name="routes_fallback_ecs_desc">Subnet reported by direct lookups that fall through the rules table. A rule with its own ECS overrides this.</string>
 </resources>

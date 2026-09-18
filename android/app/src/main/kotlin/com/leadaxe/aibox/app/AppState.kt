@@ -187,6 +187,14 @@ data class AppState(
      * client subnet so geo-aware answers match the exit location.
      */
     val autoEcsFromNode: Boolean = true,
+    /**
+     * Fixed ECS for direct-bound lookups when the rules table ends in the
+     * fallback (direct mode). Rule-level and global subnets win over it, so
+     * a rule that pins its own ECS never collides; empty = no fixed subnet
+     * and the global/node chain applies. Proxy-mode fallback keeps the
+     * node-address ECS from [autoEcsFromNode] — the exit's locality.
+     */
+    val fallbackEcsDirect: String = "",
     /** Node address resolved at connect time, used by [autoEcsFromNode]. */
     val nodeEcsAddress: String = "",
     val tunMtu: Int = 9000,

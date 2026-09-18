@@ -640,4 +640,6 @@
     <string name="settings_lb_hash_port_desc">按服务拆分（443 与 53 可落不同节点）。</string>
     <string name="settings_lb_hash_proto">包含协议（TCP/UDP）</string>
     <string name="settings_lb_hash_proto_desc">同一目标的 TCP 与 UDP 可落不同节点。</string>
+    <string name="routes_fallback_ecs">固定 ECS（直连兜底）</string>
+    <string name="routes_fallback_ecs_desc">兜底直连查询上报的子网。规则自带 ECS 时以规则为准。</string>
 </resources>

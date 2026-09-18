@@ -222,6 +222,12 @@ object ConfigCompiler {
                 name = "Final (direct)",
                 type = "local",
                 detour = DirectOutboundTag,
+                // The fixed fallback ECS rides on the shadow server: every
+                // direct-mode lookup that lands here reports the user's
+                // chosen region. Rule-level subnets still win (they are
+                // emitted per-rule), and the server-level default never
+                // touches proxied queries.
+                clientSubnet = state.fallbackEcsDirect.trim(),
             )
         }
         putJsonArray("servers") {
@@ -1418,16 +1424,29 @@ object ConfigCompiler {
     private fun takeNodeFilterGroups(): List<JsonObject> = nodeFilterGroups.toList()
 
     /**
-     * ECS resolution, in priority order: the rule's explicit subnet, then
-     * the global default, then (auto mode) the exit node's address so proxy
-     * lookups carry the exit's locality instead of the user's. Empty = no
-     * client_subnet is emitted at all.
+     * ECS resolution. A rule that pins its own subnet always wins — the
+     * per-rule choice must never collide with any fallback. Otherwise the
+     * exit decides:
+     *  - direct-bound rules: the fixed direct fallback subnet
+     *    ([AppState.fallbackEcsDirect]) when set — a direct lookup carries
+     *    the user's chosen region, not whatever the ISP assigns;
+     *  - proxy-bound rules: the exit node's address (auto-ECS), so proxy
+     *    lookups carry the exit's locality;
+     *  - neither applies: the global subnet. Empty = no client_subnet.
      */
     private fun effectiveClientSubnet(rule: RouteRule, state: AppState): String {
         rule.clientSubnet.trim().let { if (it.isNotBlank()) return it }
+        val proxyBound = rule.outbound.ifBlank { ProxySelectorTag } != DirectOutboundTag
+        if (!proxyBound) {
+            // Direct exit: the fixed fallback subnet is authoritative for
+            // the whole direct path — it is exactly what the user set it
+            // for. It does not collide with rules: anything pinned at rule
+            // level was already returned above.
+            state.fallbackEcsDirect.trim().let { if (it.isNotBlank()) return it }
+        }
         val global = state.dnsClientSubnet.trim()
         if (global.isNotBlank()) return global
-        if (state.autoEcsFromNode && rule.outbound.ifBlank { ProxySelectorTag } != DirectOutboundTag) {
+        if (proxyBound && state.autoEcsFromNode) {
             val node = state.nodeEcsAddress.trim()
             if (node.isNotBlank()) {
                 // ECS wants a subnet: a bare address becomes a /24 (v4) or
