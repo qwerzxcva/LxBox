@@ -772,6 +772,15 @@ object ConfigCompiler {
             put("interval", defaultUrlTestInterval())
             put("strategy", state.lbStrategy.ifBlank { LbStrategyRoundRobin })
             if (state.lbTtl.isNotBlank()) put("ttl", state.lbTtl)
+            // Hash dimensions (consistent-hashing / sticky-sessions only):
+            // the kernel always hashes the destination; these opt-in
+            // switches add the source IP and/or the port to the key.
+            if (state.lbStrategy != LbStrategyRoundRobin) {
+                if (state.lbHashSourceIp) put("hash_source_ip", true)
+                if (state.lbHashDestinationIp) put("hash_destination_ip", true)
+                if (state.lbHashPort) put("hash_port", true)
+                if (state.lbHashProtocol) put("hash_protocol", true)
+            }
             // Top-N cap: members are ordered by urltest latency, so the head
             // is the fastest N. Excluded nodes are absent, so the next
             // fastest fills the slot.

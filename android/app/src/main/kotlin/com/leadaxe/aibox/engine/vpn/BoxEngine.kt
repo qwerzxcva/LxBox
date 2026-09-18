@@ -385,7 +385,7 @@ class BoxEngine internal constructor(
             val items = group.items
             while (items.hasNext()) {
                 val item = items.next()
-                pendingPingReply?.invoke(item.tag, item.urlTestDelay)
+                pendingPingReplies.remove(item.tag)?.invoke(item.urlTestDelay)
             }
         }
     }
@@ -393,16 +393,19 @@ class BoxEngine internal constructor(
     override fun writeOutbounds(outbounds: io.nekohasekai.libbox.OutboundGroupItemIterator) {
         while (outbounds.hasNext()) {
             val item = outbounds.next()
-            pendingPingReply?.invoke(item.tag, item.getURLTestDelay())
+            pendingPingReplies.remove(item.tag)?.invoke(item.getURLTestDelay())
         }
     }
 
     /**
-     * Set by [awaitPingResult]: receives (tag, delayMillis) for every
-     * outbound snapshot tick until the wait is satisfied or times out.
+     * Pending single-node probes, keyed by the outbound tag (multi-slot:
+     * the batch "test all" fires N probes at once and the kernel streams
+     * their delays back on the same outbounds snapshot, so a single
+     * callback slot made every concurrent waiter but one starve — the
+     * button appeared to do nothing at all).
      */
-    @Volatile
-    private var pendingPingReply: ((String, Int) -> Unit)? = null
+    private val pendingPingReplies =
+        java.util.concurrent.ConcurrentHashMap<String, (Int) -> Unit>()
 
     /**
      * Blocking variant of [pingOutbound] for the VPN process: triggers the
@@ -413,27 +416,27 @@ class BoxEngine internal constructor(
     fun pingOutboundAwaiting(tag: String, timeoutMillis: Long = 8_000): Result<Int> {
         val c = client ?: return Result.failure(IllegalStateException("engine not running"))
         val latch = java.util.concurrent.CountDownLatch(1)
-        var measured = -1
-        var errored: String? = null
-        val previous = pendingPingReply
-        pendingPingReply = { receivedTag, delay ->
-            if (receivedTag == tag && delay > 0) {
-                measured = delay
-                latch.countDown()
-            }
+        val delayBox = java.util.concurrent.atomic.AtomicInteger(-1)
+        // Register BEFORE firing the RPC: the snapshot that answers it can
+        // land on any thread, and a late registration would miss it.
+        pendingPingReplies[tag] = { delay ->
+            if (delay > 0) delayBox.set(delay)
+            latch.countDown()
         }
-        try {
-            runCatching { c.urlTest(tag) }.onFailure {
+        return try {
+            runCatching { c.urlTest(tag) }.getOrElse {
                 return Result.failure(it)
             }
             if (!latch.await(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) {
-                errored = "probe timed out"
+                Result.failure(IllegalStateException("probe timed out"))
+            } else {
+                val measured = delayBox.get()
+                if (measured > 0) Result.success(measured)
+                else Result.failure(IllegalStateException("no delay reported"))
             }
         } finally {
-            pendingPingReply = previous
+            pendingPingReplies.remove(tag)
         }
-        return if (measured > 0) Result.success(measured)
-        else Result.failure(IllegalStateException(errored ?: "no delay reported"))
     }
 
     override fun writeConnectionEvents(events: io.nekohasekai.libbox.ConnectionEvents) {

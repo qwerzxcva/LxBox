@@ -533,7 +533,20 @@ fun SettingsScreen() {
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             if (showPicker) {
-                                PerAppPickerPage(store = store, onDismiss = { showPicker = false })
+                                // Dialog, not an inline page: the picker's
+                                // own LazyColumn inside this section's
+                                // LazyColumn item would be measured with an
+                                // infinite max-height and crash on open
+                                // (the same trap the add-subscription form
+                                // hit). A dialog gives it bounded space.
+                                androidx.compose.ui.window.Dialog(
+                                    onDismissRequest = { showPicker = false },
+                                    properties = androidx.compose.ui.window.DialogProperties(
+                                        usePlatformDefaultWidth = false,
+                                    ),
+                                ) {
+                                    PerAppPickerPage(store = store, onDismiss = { showPicker = false })
+                                }
                             }
                         }
                         SwitchRow(
@@ -859,6 +872,41 @@ private fun LoadBalanceSection(store: com.leadaxe.aibox.app.AppStateStore) {
             placeholder = "1h",
             supporting = stringResource(R.string.settings_lb_ttl_desc),
         )
+        // Hash dimensions (consistent-hashing / sticky-sessions): which
+        // parts of a connection shape the mapping key. The destination is
+        // always hashed (eTLD+1 domain first, else the resolved IP) — that
+        // is the kernel's default and matches lxbox; the extra dimensions
+        // opt in. Inert under round-robin, which hashes nothing.
+        if (state.lbStrategy != com.leadaxe.aibox.app.LbStrategyRoundRobin) {
+            Text(
+                stringResource(R.string.settings_lb_hash_dim),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            SwitchRow(
+                label = stringResource(R.string.settings_lb_hash_src),
+                supporting = stringResource(R.string.settings_lb_hash_src_desc),
+                checked = state.lbHashSourceIp,
+                onCheckedChange = { v -> store.update { it.copy(lbHashSourceIp = v) } },
+            )
+            SwitchRow(
+                label = stringResource(R.string.settings_lb_hash_dst),
+                supporting = stringResource(R.string.settings_lb_hash_dst_desc),
+                checked = state.lbHashDestinationIp,
+                onCheckedChange = { v -> store.update { it.copy(lbHashDestinationIp = v) } },
+            )
+            SwitchRow(
+                label = stringResource(R.string.settings_lb_hash_port),
+                supporting = stringResource(R.string.settings_lb_hash_port_desc),
+                checked = state.lbHashPort,
+                onCheckedChange = { v -> store.update { it.copy(lbHashPort = v) } },
+            )
+            SwitchRow(
+                label = stringResource(R.string.settings_lb_hash_proto),
+                supporting = stringResource(R.string.settings_lb_hash_proto_desc),
+                checked = state.lbHashProtocol,
+                onCheckedChange = { v -> store.update { it.copy(lbHashProtocol = v) } },
+            )
+        }
     }
 }
 

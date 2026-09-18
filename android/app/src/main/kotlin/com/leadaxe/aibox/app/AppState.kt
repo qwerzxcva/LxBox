@@ -57,6 +57,14 @@ data class AppState(
     val lbStrategy: String = "round-robin",
     val lbTopN: Int = 1,
     val lbTtl: String = "",
+    // Hash dimensions for consistent-hashing / sticky-sessions (the
+    // kernel's loadbalance outbound hash_key). Destination is always part
+    // of the key (eTLD+1 domain first, else the resolved IP); these extend
+    // it. Inert under round-robin, which hashes nothing.
+    val lbHashSourceIp: Boolean = false,
+    val lbHashDestinationIp: Boolean = false,
+    val lbHashPort: Boolean = false,
+    val lbHashProtocol: Boolean = false,
     /**
      * Reject broken IPv6 (built-in): when the default interface has no
      * public IPv6 (2000::/3), reject all IPv6-destined connections instead

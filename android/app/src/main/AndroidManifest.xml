@@ -19,6 +19,12 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Per-app proxy picker (experimental): listing launchable apps
+         requires the broad visibility grant on Android 11+. Play policy
+         exempts VPN clients for this exact use. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <application
         android:name=".AIBoxApp"
         android:allowBackup="false"

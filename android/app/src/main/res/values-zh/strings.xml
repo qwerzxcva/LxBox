@@ -631,4 +631,13 @@
     <string name="settings_update_newer">发现新版本：%1$s</string>
     <string name="settings_update_failed">检查失败：%1$s</string>
     <string name="settings_update_open">打开发布页</string>
+    <string name="settings_lb_hash_dim">哈希维度</string>
+    <string name="settings_lb_hash_src">包含源 IP</string>
+    <string name="settings_lb_hash_src_desc">同一应用/UID 固定走同一节点。</string>
+    <string name="settings_lb_hash_dst">包含目标 IP</string>
+    <string name="settings_lb_hash_dst_desc">同时存在域名与解析 IP 时按解析 IP 参与哈希。</string>
+    <string name="settings_lb_hash_port">包含目标端口</string>
+    <string name="settings_lb_hash_port_desc">按服务拆分（443 与 53 可落不同节点）。</string>
+    <string name="settings_lb_hash_proto">包含协议（TCP/UDP）</string>
+    <string name="settings_lb_hash_proto_desc">同一目标的 TCP 与 UDP 可落不同节点。</string>
 </resources>
