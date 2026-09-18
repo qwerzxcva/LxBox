@@ -97,8 +97,12 @@ class AIVpnService : VpnService() {
                             )
                         }
                         result.fold(
-                            onSuccess = { reply.putExtra(VpnIpc.EXTRA_PING_DELAY, it) },
+                            onSuccess = {
+                                Log.d(TAG, "ping ok: $nodeTag ${it}ms")
+                                reply.putExtra(VpnIpc.EXTRA_PING_DELAY, it)
+                            },
                             onFailure = {
+                                Log.w(TAG, "ping failed: $nodeTag: ${it.message}")
                                 reply.putExtra(VpnIpc.EXTRA_PING_ERROR, it.message ?: "failed")
                             },
                         )
@@ -267,6 +271,14 @@ class AIVpnService : VpnService() {
                 return
             }
         }
+        // Observe engine state BEFORE start: broadcastState is the only path
+        // the UI sees BoxState through, and Starting is emitted the instant
+        // runStart begins. observeState used to sit behind a slow rule-set
+        // download, so the Starting broadcast (and on a stalled fetch, every
+        // state) never reached the UI — the home dial jumped Idle→Connected
+        // with no "connecting" phase. It re-cancels stateJob internally, so
+        // calling it again later is safe.
+        observeState()
         engine.start(state)
         // Boot the Rust micro-kernel conductor alongside the Go engine. It
         // registers every leader (rules / dns / dialer / power / security /
@@ -309,9 +321,10 @@ class AIVpnService : VpnService() {
         scope.launch {
             val fetcher = SubscriptionFetcher(this@AIVpnService)
             // First pass: cache missing rule sets (freshly materialised or
-            // previously failed downloads).
+            // previously failed downloads). State observation is already
+            // running (started just before engine.start), so a slow or
+            // absent network here can no longer delay the UI's state feed.
             runCatching { fetcher.refreshStaleRuleSets(state.ruleSets) }
-            observeState()
         }
     }
 

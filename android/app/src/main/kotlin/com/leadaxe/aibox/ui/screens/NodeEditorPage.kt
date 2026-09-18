@@ -90,7 +90,11 @@ fun NodeEditorPage(
     fun transportField(key: String): String =
         ((base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.get(key)
             as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
-    val transportType = transportField("type")
+    // Transport protocol is EDITABLE (user request): pick from the common
+    // set or type a custom one. tcp/"" means no transport object. Changing
+    // it rebuilds the transport block rather than only editing fields.
+    var transportType by remember { mutableStateOf(transportField("type")) }
+    var transportCustom by remember { mutableStateOf("") }
     var transportPath by remember { mutableStateOf(transportField("path")) }
     var transportHost by remember {
         mutableStateOf(
@@ -279,44 +283,75 @@ fun NodeEditorPage(
                 }
             }
 
-            // Transport card (throne-style): only the fields the node's own
-            // transport uses. ws/httpupgrade → path+host, grpc → service name,
-            // http → path+host. Shown only when the node has a transport.
-            if (transportType.isNotBlank()) {
-                OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.node_edit_transport, transportType),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+            // Transport card (throne-style): the protocol is selectable —
+            // common presets plus a custom entry — and the path/host/service
+            // fields follow the chosen protocol. tcp (or empty) means the
+            // node dials raw TCP with no transport wrapper.
+            OutlinedCard(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.node_edit_transport_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    SingleChoiceChips(
+                        label = stringResource(R.string.node_edit_transport_proto),
+                        options = NodeTransportOptions,
+                        selected = when {
+                            transportCustom.isNotBlank() -> NodeTransportCustom
+                            transportType.isBlank() -> NodeTransportTcp
+                            transportType in NodeTransportOptions -> transportType
+                            else -> NodeTransportCustom
+                        },
+                        onSelect = { pick ->
+                            if (pick == NodeTransportCustom) {
+                                transportCustom = if (transportType in NodeTransportOptions) "" else transportType
+                            } else {
+                                transportCustom = ""
+                                transportType = if (pick == NodeTransportTcp) "" else pick
+                            }
+                        },
+                        display = {
+                            when (it) {
+                                NodeTransportTcp -> stringResource(R.string.node_edit_transport_tcp)
+                                NodeTransportCustom -> stringResource(R.string.node_edit_transport_custom)
+                                else -> it
+                            }
+                        },
+                    )
+                    if (transportCustom.isNotBlank() || (transportType.isNotBlank() && transportType !in NodeTransportOptions)) {
+                        StringField(
+                            label = stringResource(R.string.node_edit_transport_custom),
+                            value = if (transportCustom.isNotBlank()) transportCustom else transportType,
+                            onValueChange = { transportCustom = it; transportType = it },
+                            placeholder = "httpupgrade",
                         )
-                        if (transportType == "ws" || transportType == "http" || transportType == "httpupgrade") {
-                            StringField(
-                                label = stringResource(R.string.node_edit_path),
-                                value = transportPath,
-                                onValueChange = { transportPath = it },
-                                placeholder = "/",
-                            )
-                        }
-                        if (transportType == "ws" || transportType == "http" || transportType == "httpupgrade") {
-                            StringField(
-                                label = stringResource(R.string.node_edit_host),
-                                value = transportHost,
-                                onValueChange = { transportHost = it },
-                                placeholder = "cdn.example.com",
-                            )
-                        }
-                        if (transportType == "grpc") {
-                            StringField(
-                                label = stringResource(R.string.node_edit_service_name),
-                                value = transportServiceName,
-                                onValueChange = { transportServiceName = it },
-                                placeholder = "grpc-service",
-                            )
-                        }
+                    }
+                    val effTransport = if (transportCustom.isNotBlank()) transportCustom else transportType
+                    if (effTransport == "ws" || effTransport == "http" || effTransport == "httpupgrade") {
+                        StringField(
+                            label = stringResource(R.string.node_edit_path),
+                            value = transportPath,
+                            onValueChange = { transportPath = it },
+                            placeholder = "/",
+                        )
+                        StringField(
+                            label = stringResource(R.string.node_edit_host),
+                            value = transportHost,
+                            onValueChange = { transportHost = it },
+                            placeholder = "cdn.example.com",
+                        )
+                    }
+                    if (effTransport == "grpc") {
+                        StringField(
+                            label = stringResource(R.string.node_edit_service_name),
+                            value = transportServiceName,
+                            onValueChange = { transportServiceName = it },
+                            placeholder = "grpc-service",
+                        )
                     }
                 }
             }
@@ -446,41 +481,41 @@ private fun buildOverride(
             put("server_name", sni.trim())
         }
     }
-    if (wsPingInterval.isNotBlank()) {
-        val existingTransport = (base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
-            ?: mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
-        existingTransport["ping_interval"] = kotlinx.serialization.json.JsonPrimitive(wsPingInterval.trim())
-        mutable["transport"] = kotlinx.serialization.json.JsonObject(existingTransport)
-    }
-    // Transport path/host/service-name: layered onto the existing transport
-    // (or the one we just touched for ping_interval) so type stays intact.
-    if (transportType.isNotBlank() &&
-        (transportPath.isNotBlank() || transportHost.isNotBlank() || transportServiceName.isNotBlank())
-    ) {
-        val t = ((mutable["transport"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
-            ?: (base?.get("transport") as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
-            ?: mutableMapOf())
+    // Transport: the protocol is editable, so when it changed we rebuild the
+    // transport object for the new type (dropping keys that only made sense
+    // for the old one); when it is unchanged we just layer edited fields on.
+    val origTransport = base?.get("transport") as? kotlinx.serialization.json.JsonObject
+    val origType = (origTransport?.get("type") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+    val newType = transportType.trim()
+    val typeChanged = newType != origType
+    if (newType.isBlank()) {
+        // tcp / no transport: drop the transport block entirely (override
+        // carries an explicit removal marker the merge honours via absence).
+        if (origTransport != null) mutable["transport"] = kotlinx.serialization.json.JsonObject(emptyMap())
+    } else if (typeChanged || transportPath.isNotBlank() || transportHost.isNotBlank() || transportServiceName.isNotBlank() || wsPingInterval.isNotBlank()) {
+        val t = mutableMapOf<String, kotlinx.serialization.json.JsonElement>()
+        t["type"] = kotlinx.serialization.json.JsonPrimitive(newType)
         if (transportPath.isNotBlank()) {
             t["path"] = kotlinx.serialization.json.JsonPrimitive(transportPath.trim())
+        } else if (newType == "ws" || newType == "http" || newType == "httpupgrade") {
+            t["path"] = kotlinx.serialization.json.JsonPrimitive("/")
         }
-        if (transportServiceName.isNotBlank()) {
+        if (newType == "grpc" && transportServiceName.isNotBlank()) {
             t["service_name"] = kotlinx.serialization.json.JsonPrimitive(transportServiceName.trim())
         }
         if (transportHost.isNotBlank()) {
-            if (transportType == "http") {
-                // http keeps host as a list.
-                t["host"] = kotlinx.serialization.json.buildJsonArray {
+            when (newType) {
+                "http" -> t["host"] = kotlinx.serialization.json.buildJsonArray {
                     add(kotlinx.serialization.json.JsonPrimitive(transportHost.trim()))
                 }
-            } else if (transportType == "httpupgrade") {
-                t["host"] = kotlinx.serialization.json.JsonPrimitive(transportHost.trim())
-            } else {
-                // ws: host rides in headers.Host.
-                val headers = (t["headers"] as? kotlinx.serialization.json.JsonObject)?.toMutableMap()
-                    ?: mutableMapOf()
-                headers["Host"] = kotlinx.serialization.json.JsonPrimitive(transportHost.trim())
-                t["headers"] = kotlinx.serialization.json.JsonObject(headers)
+                "httpupgrade" -> t["host"] = kotlinx.serialization.json.JsonPrimitive(transportHost.trim())
+                "ws" -> t["headers"] = kotlinx.serialization.json.buildJsonObject {
+                    put("Host", transportHost.trim())
+                }
             }
+        }
+        if (wsPingInterval.isNotBlank() && newType == "ws") {
+            t["ping_interval"] = kotlinx.serialization.json.JsonPrimitive(wsPingInterval.trim())
         }
         mutable["transport"] = kotlinx.serialization.json.JsonObject(t)
     }
@@ -556,3 +591,15 @@ private fun mergeJson(
 
 /** Generates a fresh id (used when duplicating nodes). */
 fun newOutboundId(): String = UUID.randomUUID().toString()
+
+/** Transport protocols the kernel supports for vless/ss nodes. */
+const val NodeTransportTcp = "tcp"
+const val NodeTransportCustom = "__custom__"
+val NodeTransportOptions = listOf(
+    NodeTransportTcp,
+    "ws",
+    "grpc",
+    "http",
+    "httpupgrade",
+    NodeTransportCustom,
+)

@@ -223,17 +223,9 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
             // groups (routing rules now filter nodes directly), so the group
             // editor UI is gone — its load-balance settings moved to
             // Settings -> Load balancing.
-            // Paste link lives with the groups: a pasted source becomes a
-            // subscription entry grouped with the panel imports.
-            item {
-                FilledTonalButton(onClick = { pasteDialog = true }) {
-                    Icon(Icons.Outlined.ContentPaste, contentDescription = null)
-                    Text(stringResource(R.string.subs_paste_link))
-                }
-            }
-
-
             // ----- multiplex, next to the nodes it affects
+            // (The second paste button that used to sit here was a duplicate:
+            // the actions row at the top already carries one.)
             item {
                 CollapsibleSection(
                     title = stringResource(R.string.settings_section_mux),

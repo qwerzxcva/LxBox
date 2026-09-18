@@ -682,12 +682,36 @@ private fun MatchFields(
                 onValuesChange = { onChange(rule.copy(port = it)) },
                 supporting = stringResource(R.string.hint_port),
             )
-            ListField(
+            // Protocol matchers as chips (user request): the nine sniffed
+            // protocols the kernel supports are one tap each; anything beyond
+            // the preset list goes through the custom input.
+            MultiChoiceChips(
                 label = stringResource(R.string.routes_field_protocol),
-                values = rule.protocol,
-                onValuesChange = { onChange(rule.copy(protocol = it)) },
-                supporting = stringResource(R.string.hint_protocol),
+                options = RuleProtocolOptions,
+                selected = rule.protocol,
+                onToggle = { p ->
+                    onChange(rule.copy(protocol = if (p in rule.protocol) rule.protocol - p else rule.protocol + p))
+                },
             )
+            val customProtocols = rule.protocol.filter { it !in RuleProtocolOptions }
+            var showCustomProtocol by remember { mutableStateOf(customProtocols.isNotEmpty()) }
+            androidx.compose.material3.TextButton(onClick = { showCustomProtocol = !showCustomProtocol }) {
+                Text(
+                    stringResource(
+                        if (showCustomProtocol) R.string.common_collapse else R.string.routes_protocol_custom,
+                    ) + if (customProtocols.isNotEmpty()) " (${customProtocols.joinToString("/")})" else "",
+                )
+            }
+            if (showCustomProtocol) {
+                ListField(
+                    label = stringResource(R.string.node_edit_transport_custom),
+                    values = customProtocols,
+                    onValuesChange = { extras ->
+                        onChange(rule.copy(protocol = rule.protocol.filter { it in RuleProtocolOptions } + extras))
+                    },
+                    supporting = stringResource(R.string.hint_protocol),
+                )
+            }
             MultiChoiceChips(
                 label = stringResource(R.string.routes_field_network),
                 options = listOf("tcp", "udp", "icmp"),
@@ -810,3 +834,12 @@ internal fun subRuleSummary(rule: RouteRule): String {
     }
     return parts.joinToString(" · ")
 }
+
+/**
+ * Protocols the kernel's sniffer can detect (constant/protocol.go), offered
+ * as one-tap chips in the rule editor. Anything else the user types lands in
+ * the custom list and is emitted as-is.
+ */
+val RuleProtocolOptions = listOf(
+    "http", "tls", "quic", "dns", "stun", "bittorrent", "dtls", "ssh", "rdp",
+)

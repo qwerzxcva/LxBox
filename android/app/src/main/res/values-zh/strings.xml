@@ -589,4 +589,9 @@
     <string name="node_edit_utls">uTLS 指纹</string>
     <string name="node_edit_utls_hint">chrome / firefox / safari / edge / random。留空保持节点默认。</string>
     <string name="node_edit_flow">流控（Flow）</string>
+    <string name="node_edit_transport_title">传输</string>
+    <string name="node_edit_transport_proto">协议</string>
+    <string name="node_edit_transport_tcp">TCP（无）</string>
+    <string name="node_edit_transport_custom">自定义传输</string>
+    <string name="routes_protocol_custom">自定义协议</string>
 </resources>

@@ -591,4 +591,9 @@
     <string name="node_edit_utls">uTLS fingerprint</string>
     <string name="node_edit_utls_hint">chrome / firefox / safari / edge / random. Empty keeps the node default.</string>
     <string name="node_edit_flow">Flow</string>
+    <string name="node_edit_transport_title">Transport</string>
+    <string name="node_edit_transport_proto">Protocol</string>
+    <string name="node_edit_transport_tcp">TCP (none)</string>
+    <string name="node_edit_transport_custom">Custom transport</string>
+    <string name="routes_protocol_custom">Custom protocols</string>
 </resources>
