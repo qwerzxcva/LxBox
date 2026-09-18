@@ -459,6 +459,14 @@ data class Subscription(
     val url: String,
     val lastUpdatedEpochMillis: Long = 0,
     val groupId: String? = null,
+    // Panel traffic accounting (the standard `subscription-userinfo`
+    // response header, ClashMeta/v2rayNG style). All zero = the panel did
+    // not report; the card then hides the usage row entirely.
+    val uploadBytes: Long = 0,
+    val downloadBytes: Long = 0,
+    val totalBytes: Long = 0,
+    /** Epoch millis when the plan expires; 0 = unknown/unlimited. */
+    val expireEpochMillis: Long = 0,
     /**
      * How to reach the subscription endpoint.
      * "direct" / "proxy" / "auto" (try direct, fall back to proxy).

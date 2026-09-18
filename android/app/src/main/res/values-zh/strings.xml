@@ -618,4 +618,17 @@
     <string name="per_app_summary_whitelist">白名单 · %1$d 个应用</string>
     <string name="per_app_summary_blacklist">黑名单 · %1$d 个应用</string>
     <string name="tile_label">AIBox VPN</string>
+    <string name="subs_expire_in">到期 %1$s（剩 %2$d 天）</string>
+    <string name="subs_expire_past">已过期 %1$s（%2$d 天前）</string>
+    <string name="node_edit_duplicate">复制节点</string>
+    <string name="node_edit_copy_suffix">副本</string>
+    <string name="home_exit_ip">出口：%1$s</string>
+    <string name="settings_section_about">关于</string>
+    <string name="settings_about_version">版本 %1$s</string>
+    <string name="settings_update_check">检查更新</string>
+    <string name="settings_update_checking">检查中…</string>
+    <string name="settings_update_latest">已是最新版本。</string>
+    <string name="settings_update_newer">发现新版本：%1$s</string>
+    <string name="settings_update_failed">检查失败：%1$s</string>
+    <string name="settings_update_open">打开发布页</string>
 </resources>

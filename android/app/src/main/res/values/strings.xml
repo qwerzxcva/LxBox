@@ -620,4 +620,17 @@
     <string name="per_app_summary_whitelist">Whitelist · %1$d apps</string>
     <string name="per_app_summary_blacklist">Blacklist · %1$d apps</string>
     <string name="tile_label">AIBox VPN</string>
+    <string name="subs_expire_in">Expires %1$s (%2$d d left)</string>
+    <string name="subs_expire_past">Expired %1$s (%2$d d ago)</string>
+    <string name="node_edit_duplicate">Duplicate node</string>
+    <string name="node_edit_copy_suffix">copy</string>
+    <string name="home_exit_ip">Exit: %1$s</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_about_version">Version %1$s</string>
+    <string name="settings_update_check">Check for updates</string>
+    <string name="settings_update_checking">Checking…</string>
+    <string name="settings_update_latest">You are on the latest version.</string>
+    <string name="settings_update_newer">New version available: %1$s</string>
+    <string name="settings_update_failed">Update check failed: %1$s</string>
+    <string name="settings_update_open">Open releases page</string>
 </resources>

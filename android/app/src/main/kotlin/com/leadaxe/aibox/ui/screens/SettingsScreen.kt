@@ -24,9 +24,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -418,6 +421,77 @@ fun SettingsScreen() {
         // Experimental features (user request): reference-client ports that
         // stay dormant until enabled here. The per-feature switches only
         // matter while the master switch is on; every consumer gates on both.
+        // About + in-app update check (v2rayNG/nekobox style): shows the
+        // running version and asks GitHub for the newest release tag. The
+        // comparison is plain semantic on the v-prefixed tag; a newer one
+        // deep-links to the releases page. No auto-download — the user
+        // stays in control of what gets installed.
+        item {
+            SettingsSection(stringResource(R.string.settings_section_about)) {
+                val scope = rememberCoroutineScope()
+                val version = remember {
+                    runCatching {
+                        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                    }.getOrNull() ?: "?"
+                }
+                Text(
+                    stringResource(R.string.settings_about_version, version),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                var updateState by remember { mutableStateOf("") }
+                var updateUrl by remember { mutableStateOf<String?>(null) }
+                TextButton(onClick = {
+                    updateState = context.getString(R.string.settings_update_checking)
+                    scope.launch {
+                        val result = runCatching {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val conn = java.net.URL(
+                                    "https://api.github.com/repos/qwerzxcva/LxBox/releases/latest",
+                                ).openConnection() as java.net.HttpURLConnection
+                                conn.connectTimeout = 8_000
+                                conn.readTimeout = 8_000
+                                conn.setRequestProperty("Accept", "application/vnd.github+json")
+                                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                                conn.disconnect()
+                                val obj = kotlinx.serialization.json.Json.parseToJsonElement(body)
+                                    .let { it as? kotlinx.serialization.json.JsonObject }
+                                (obj?.get("tag_name") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                            }
+                        }.getOrElse { "error: ${it.message}" }
+                        updateState = when {
+                            result.startsWith("error:") -> context.getString(
+                                R.string.settings_update_failed, result.removePrefix("error:"),
+                            )
+                            isNewerTag(result, version) -> context.getString(R.string.settings_update_newer, result)
+                            else -> context.getString(R.string.settings_update_latest)
+                        }
+                        if (isNewerTag(result, version)) {
+                            updateUrl = "https://github.com/qwerzxcva/LxBox/releases/latest"
+                        }
+                    }
+                }) { Text(stringResource(R.string.settings_update_check)) }
+                if (updateState.isNotBlank()) {
+                    Text(
+                        updateState,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                updateUrl?.let { url ->
+                    TextButton(onClick = {
+                        runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(url),
+                                ),
+                            )
+                        }
+                    }) { Text(stringResource(R.string.settings_update_open)) }
+                }
+            }
+        }
+
         item {
             SettingsSection(stringResource(R.string.settings_section_experimental)) {
                 SwitchRow(
@@ -786,4 +860,25 @@ private fun LoadBalanceSection(store: com.leadaxe.aibox.app.AppStateStore) {
             supporting = stringResource(R.string.settings_lb_ttl_desc),
         )
     }
+}
+
+/**
+ * Plain semantic comparison of two v-prefixed release tags ("v1.2" vs
+ * "v1.10"): numeric components right-padded with zeros. Non-conforming
+ * tags never compare newer, so a branch-name ref can't trigger the prompt.
+ */
+internal fun isNewerTag(candidate: String, current: String): Boolean {
+    val parse = { tag: String ->
+        tag.removePrefix("v").split('.').map { it.toIntOrNull() ?: -1 }
+    }
+    val a = parse(candidate)
+    val b = parse(current)
+    if (a.any { it < 0 } || b.any { it < 0 }) return false
+    val n = maxOf(a.size, b.size)
+    for (i in 0 until n) {
+        val x = a.getOrElse(i) { 0 }
+        val y = b.getOrElse(i) { 0 }
+        if (x != y) return x > y
+    }
+    return false
 }

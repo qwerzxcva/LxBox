@@ -60,7 +60,13 @@ class AIBoxApp : Application() {
                             st.copy(
                                 outbounds = st.outbounds.filterNot { it.subscriptionId == sub.id } + r.outbounds,
                                 subscriptions = st.subscriptions.map {
-                                    if (it.id == sub.id) it.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) else it
+                                    if (it.id != sub.id) it else it.copy(
+                                        lastUpdatedEpochMillis = System.currentTimeMillis(),
+                                        uploadBytes = r.quota?.uploadBytes ?: it.uploadBytes,
+                                        downloadBytes = r.quota?.downloadBytes ?: it.downloadBytes,
+                                        totalBytes = r.quota?.totalBytes ?: it.totalBytes,
+                                        expireEpochMillis = r.quota?.expireEpochMillis ?: it.expireEpochMillis,
+                                    )
                                 },
                             )
                         }

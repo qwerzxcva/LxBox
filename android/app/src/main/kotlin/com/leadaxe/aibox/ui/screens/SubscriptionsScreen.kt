@@ -131,6 +131,14 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 }
                 editingNode = null
             },
+            onDuplicate = { copyNode ->
+                // Clone lands as an extra node next to the original and the
+                // editor stays open on the copy for immediate tweaks.
+                store.update { st ->
+                    st.copy(outbounds = st.outbounds + copyNode)
+                }
+                editingNode = copyNode
+            },
         )
         return
     }
@@ -406,7 +414,15 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                                             store.update { st ->
                                                 st.copy(
                                                     outbounds = (st.outbounds.filterNot { it.subscriptionId == sub.id } + r.outbounds),
-                                                    subscriptions = st.subscriptions.map { it.takeIf { s -> s.id != sub.id } ?: sub.copy(lastUpdatedEpochMillis = System.currentTimeMillis()) },
+                                                    subscriptions = st.subscriptions.map {
+                                                        if (it.id != sub.id) it else sub.copy(
+                                                            lastUpdatedEpochMillis = System.currentTimeMillis(),
+                                                            uploadBytes = r.quota?.uploadBytes ?: it.uploadBytes,
+                                                            downloadBytes = r.quota?.downloadBytes ?: it.downloadBytes,
+                                                            totalBytes = r.quota?.totalBytes ?: it.totalBytes,
+                                                            expireEpochMillis = r.quota?.expireEpochMillis ?: it.expireEpochMillis,
+                                                        )
+                                                    },
                                                 )
                                             }
                                             snackbar.showSnackbar(context.getString(R.string.subs_nodes_added, sub.name, r.outbounds.size))
@@ -637,6 +653,44 @@ private fun SubscriptionRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Panel traffic row (subscription-userinfo, ClashMeta/
+                // v2rayNG style): used/total with a thin progress bar, and
+                // the expiry date. Hidden entirely when the panel did not
+                // report — an all-zero quota renders nothing.
+                if (sub.totalBytes > 0) {
+                    val used = sub.uploadBytes + sub.downloadBytes
+                    val frac = (used.toFloat() / sub.totalBytes).coerceIn(0f, 1f)
+                    val pct = (frac * 100).toInt()
+                    Text(
+                        subFormatBytes(used) + " / " + subFormatBytes(sub.totalBytes) + " · " + pct + "%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = when {
+                            frac > 0.9f -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { frac },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        color = if (frac > 0.9f) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (sub.expireEpochMillis > 0) {
+                    val days = java.util.concurrent.TimeUnit.MILLISECONDS.toDays(
+                        sub.expireEpochMillis - System.currentTimeMillis(),
+                    )
+                    Text(
+                        stringResource(
+                            if (days >= 0) R.string.subs_expire_in else R.string.subs_expire_past,
+                            android.text.format.DateFormat.format("yyyy-MM-dd", sub.expireEpochMillis).toString(),
+                            days,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (days in 0..3) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.common_edit))
@@ -1530,4 +1584,18 @@ private fun GroupEditor(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
+}
+
+/** Human byte size: B/KB/MB/GB/TB, one decimal below GB (v2rayNG style). */
+internal fun subFormatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = listOf("KB", "MB", "GB", "TB", "PB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024 && unit < units.lastIndex) {
+        value /= 1024
+        unit++
+    }
+    return if (value >= 100) String.format("%.0f %s", value, units[unit])
+    else String.format("%.1f %s", value, units[unit])
 }

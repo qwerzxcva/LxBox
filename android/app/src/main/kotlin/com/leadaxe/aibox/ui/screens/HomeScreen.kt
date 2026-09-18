@@ -60,6 +60,9 @@ import com.leadaxe.aibox.app.MainActivity
 import com.leadaxe.aibox.engine.vpn.BoxController
 import com.leadaxe.aibox.engine.vpn.BoxRuntimeSnapshot
 import com.leadaxe.aibox.engine.vpn.BoxState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 @Composable
 fun HomeScreen(
@@ -167,6 +170,10 @@ fun HomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // Exit-IP check (v2rayNG/FlClash style): while the tunnel is up,
+            // ping a plain-JSON echo endpoint THROUGH the tun and show
+            // country + IP. Auto-refreshes every 5 min while connected.
+            ExitIpLine()
         }
 
         StatusCard(state = boxState, runtime = runtime ?: BoxRuntimeSnapshot())
@@ -446,4 +453,57 @@ private fun formatDuration(ms: Long): String {
     val m = (totalSec % 3600) / 60
     val s = totalSec % 60
     return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%02d:%02d", m, s)
+}
+
+/**
+ * The exit IP + country of the current tunnel, v2rayNG/FlClash style. Two
+ * free JSON echo endpoints are tried in order; the request rides the tun so
+ * the answer reflects the proxy exit, not the local network. Refreshes every
+ * five minutes while the tunnel stays connected; silently hides on failure.
+ */
+@Composable
+private fun ExitIpLine() {
+    var label by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            label = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val endpoints = listOf(
+                        "https://api.ip.sb/geoip" to { obj: kotlinx.serialization.json.JsonObject ->
+                            val country = (obj["country"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                            val ip = (obj["ip"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                            listOf(country, ip).filter { it.isNotBlank() }.joinToString(" · ")
+                        },
+                        "https://ipapi.co/json/" to { obj: kotlinx.serialization.json.JsonObject ->
+                            val country = (obj["country_name"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                            val ip = (obj["ip"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                            listOf(country, ip).filter { it.isNotBlank() }.joinToString(" · ")
+                        },
+                    )
+                    for ((url, extract) in endpoints) {
+                        runCatching {
+                            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                            conn.connectTimeout = 5_000
+                            conn.readTimeout = 5_000
+                            conn.setRequestProperty("User-Agent", "aibox/1.0")
+                            val body = conn.inputStream.bufferedReader().use { it.readText() }
+                            conn.disconnect()
+                            val obj = kotlinx.serialization.json.Json.parseToJsonElement(body)
+                                .let { it as? kotlinx.serialization.json.JsonObject }
+                            obj?.let(extract)?.takeIf { it.isNotBlank() }
+                        }.getOrNull()?.let { return@withContext it }
+                    }
+                    null
+                }
+            }.getOrNull()
+            kotlinx.coroutines.delay(5 * 60_000L)
+        }
+    }
+    label?.let {
+        Text(
+            text = stringResource(R.string.home_exit_ip, it),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

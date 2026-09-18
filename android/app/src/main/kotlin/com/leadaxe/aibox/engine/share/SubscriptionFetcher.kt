@@ -71,6 +71,8 @@ class SubscriptionFetcher(private val context: Context) {
         val suggestedName: String? = null,
         /** Panel-provided homepage URL (profile-web-page-url header), if any. */
         val suggestedHomePage: String? = null,
+        /** Panel traffic accounting from subscription-userinfo; null = absent. */
+        val quota: UserQuota? = null,
     )
 
     /**
@@ -116,6 +118,21 @@ class SubscriptionFetcher(private val context: Context) {
             ?.removeSurrounding("\"")
             ?.takeIf { it.isNotBlank() && it != "Subscription" && it != "subscription" }
         val suggestedHomePage = headers["profile-web-page-url"]?.trim()?.takeIf { it.isNotBlank() }
+        // subscription-userinfo: upload=…; download=…; total=…; expire=…
+        // (epoch seconds). ClashMeta/v2rayNG/karing all honour it; a panel
+        // that omits it simply yields null and the card hides the row.
+        val quota = headers["subscription-userinfo"]?.let { raw ->
+            val fields = raw.split(";").mapNotNull { part ->
+                val kv = part.split("=", limit = 2)
+                if (kv.size == 2) kv[0].trim().lowercase() to kv[1].trim() else null
+            }.toMap()
+            UserQuota(
+                uploadBytes = fields["upload"]?.toLongOrNull() ?: 0,
+                downloadBytes = fields["download"]?.toLongOrNull() ?: 0,
+                totalBytes = fields["total"]?.toLongOrNull() ?: 0,
+                expireEpochMillis = (fields["expire"]?.toLongOrNull() ?: 0) * 1000,
+            ).takeIf { it.totalBytes > 0 || it.expireEpochMillis > 0 }
+        }
         val parsed = ShareLinkParser.parseMany(body)
         val decoded = parsed.mapNotNull { res ->
             when (res) {
@@ -151,7 +168,7 @@ class SubscriptionFetcher(private val context: Context) {
  }
 
         if (!subscription.deduplicate) {
-            return@withContext FetchResult(inherited, errors, 0, suggestedName, suggestedHomePage)
+            return@withContext FetchResult(inherited, errors, 0, suggestedName, suggestedHomePage, quota)
         }
         // Fingerprint = the outbound JSON minus volatile fields (tag/id) plus
         // the type. Same server + port + credentials collapses to one node,
@@ -168,7 +185,7 @@ class SubscriptionFetcher(private val context: Context) {
             }
             kept += node
         }
-        FetchResult(kept, errors, dropped, suggestedName, suggestedHomePage)
+        FetchResult(kept, errors, dropped, suggestedName, suggestedHomePage, quota)
     }
 
     /** Refresh every subscription, collapsing duplicates across the batch. */
@@ -509,7 +526,7 @@ class SubscriptionFetcher(private val context: Context) {
             }
             if (text.isBlank()) error("empty response")
             val meta = conn.headerFields
-                ?.filterKeys { it != null && it.startsWith("profile-", ignoreCase = true) }
+                ?.filterKeys { it != null && (it.startsWith("profile-", ignoreCase = true) || it.equals("subscription-userinfo", ignoreCase = true)) }
                 ?.mapKeys { it.key.lowercase() }
                 ?.mapValues { it.value.firstOrNull().orEmpty() }
                 ?.filterValues { it.isNotBlank() }
@@ -592,4 +609,19 @@ class SubscriptionFetcher(private val context: Context) {
         @Volatile
         var downloadAidsProvider: (() -> Pair<String, String>)? = null
     }
+}
+
+/**
+ * Panel traffic accounting from the standard `subscription-userinfo`
+ * response header. Bytes as served; expire is already converted to millis.
+ */
+data class UserQuota(
+    val uploadBytes: Long = 0,
+    val downloadBytes: Long = 0,
+    val totalBytes: Long = 0,
+    val expireEpochMillis: Long = 0,
+) {
+    val usedBytes: Long get() = uploadBytes + downloadBytes
+    /** 0..1 of the plan; null when the panel did not report a total. */
+    val fraction: Float? get() = if (totalBytes > 0) usedBytes.toFloat() / totalBytes else null
 }

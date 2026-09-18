@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +52,7 @@ fun NodeEditorPage(
     initial: OutboundProfile,
     onDismiss: () -> Unit,
     onSave: (OutboundProfile) -> Unit,
+    onDuplicate: ((OutboundProfile) -> Unit)? = null,
 ) {
     val base = remember(initial) {
         runCatching {
@@ -162,6 +164,23 @@ fun NodeEditorPage(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
+            if (onDuplicate != null) {
+                val copySuffix = stringResource(R.string.node_edit_copy_suffix)
+                IconButton(onClick = {
+                    // Clone (v2rayNG/nekobox style): a fresh id with a
+                    // "copy" suffix on the name; the override JSON carries
+                    // over untouched so the twin dials the same server.
+                    val copyName = (initial.name.ifBlank { initial.tag }) + " " + copySuffix
+                    onDuplicate(
+                        initial.copy(
+                            id = newOutboundId(),
+                            name = copyName,
+                        ),
+                    )
+                }) {
+                    Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.node_edit_duplicate))
+                }
+            }
             TextButton(onClick = {
                 val built = buildOverride(
                     initial = initial,
