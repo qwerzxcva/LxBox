@@ -130,6 +130,10 @@ private fun RootScaffold(
     var pagerLocked by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // "Blue sky / white cloud" canvas (theme doc promises it; the plain
+        // background colour alone read as near-white). A vertical sky
+        // gradient plus a few soft cloud puffs behind the frosted cards.
+        SkyBackdrop()
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -187,5 +191,53 @@ private fun RootScaffold(
                         .calculateBottomPadding() + 12.dp,
                 ),
         )
+    }
+}
+/**
+ * The "blue sky / white cloud" backdrop the theme documentation promises.
+ * Drawn as the bottom layer of the root Box, behind every frosted card.
+ *
+ * Light mode: daylight sky — a cyan-to-pale-blue vertical gradient with
+ * soft white cloud puffs. Dark mode: deep twilight — navy gradient with
+ * faint moon-lit clouds (never pure black, matching the SeedDark palette).
+ * Pure Canvas, no assets, so it costs nothing to render and scales to any
+ * screen without a bitmap.
+ */
+@Composable
+private fun SkyBackdrop() {
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val topColor = if (dark) androidx.compose.ui.graphics.Color(0xFF0A1E33)
+    else androidx.compose.ui.graphics.Color(0xFF7EC4F2)
+    val midColor = if (dark) androidx.compose.ui.graphics.Color(0xFF12314F)
+    else androidx.compose.ui.graphics.Color(0xFFAEDCFA)
+    val bottomColor = if (dark) androidx.compose.ui.graphics.Color(0xFF1A3E60)
+    else androidx.compose.ui.graphics.Color(0xFFE4F4FF)
+    val cloudColor = if (dark) androidx.compose.ui.graphics.Color(0xFF2C4A66).copy(alpha = 0.55f)
+    else androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f)
+    val cloudShade = if (dark) androidx.compose.ui.graphics.Color(0xFF24405A).copy(alpha = 0.5f)
+    else androidx.compose.ui.graphics.Color(0xFFF0F8FF).copy(alpha = 0.85f)
+
+    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+        // Sky gradient.
+        drawRect(
+            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(topColor, midColor, bottomColor),
+            ),
+        )
+        // Cloud puffs: each cloud is 3 overlapping circles (two bright lobes
+        // + one shaded base) for a soft, rounded silhouette. Positions are
+        // fractions of the canvas so they sit naturally on any aspect ratio.
+        fun cloud(cx: Float, cy: Float, r: Float) {
+            drawCircle(cloudShade, radius = r * 1.05f, center = androidx.compose.ui.geometry.Offset(cx + r * 0.55f, cy + r * 0.18f))
+            drawCircle(cloudColor, radius = r, center = androidx.compose.ui.geometry.Offset(cx, cy))
+            drawCircle(cloudColor, radius = r * 0.78f, center = androidx.compose.ui.geometry.Offset(cx + r * 1.1f, cy + r * 0.12f))
+            drawCircle(cloudColor, radius = r * 0.62f, center = androidx.compose.ui.geometry.Offset(cx - r * 0.9f, cy + r * 0.22f))
+        }
+        val w = size.width
+        val h = size.height
+        // Cloud radii as a fraction of width, so they scale with the device.
+        cloud(w * 0.22f, h * 0.12f, w * 0.11f)
+        cloud(w * 0.78f, h * 0.22f, w * 0.085f)
+        cloud(w * 0.45f, h * 0.34f, w * 0.07f)
     }
 }
