@@ -38,4 +38,12 @@ type LoadBalanceOutboundOptions struct {
 	IdleTimeout badoption.Duration `json:"idle_timeout,omitempty"`
 	TTL         badoption.Duration `json:"ttl,omitempty"`
 	Strategy    string             `json:"strategy,omitempty"`
+	// AIBox: hash-dimension switches for consistent-hashing and
+	// sticky-sessions. The legacy hash key is the destination only
+	// (eTLD+1 domain preferred, else the resolved IP); source-IP and
+	// port dimensions are opt-in so defaults match upstream behaviour.
+	HashSourceIP      bool               `json:"hash_source_ip,omitempty"`
+	HashDestinationIP bool               `json:"hash_destination_ip,omitempty"`
+	HashPort          bool               `json:"hash_port,omitempty"`
+	HashProtocol      bool               `json:"hash_protocol,omitempty"`
 }

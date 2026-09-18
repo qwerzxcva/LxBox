@@ -1,6 +1,8 @@
 package group
 
 import (
+	"strconv"
+	"strings"
 	"context"
 	"fmt"
 	"maps"
@@ -61,6 +63,10 @@ type LoadBalance struct {
 	ttl                 time.Duration
 	group               *LoadBalanceGroup
 	strategy            string
+	hashSourceIP        bool
+	hashDestinationIP   bool
+	hashPort            bool
+	hashProtocol        bool
 	providerAccess      sync.Mutex
 	providerUpdateCheck providerUpdateCheckScheduler
 
@@ -97,6 +103,10 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		ttl:         time.Duration(options.TTL),
 		idleTimeout: time.Duration(options.IdleTimeout),
 		strategy:    strategy,
+		hashSourceIP:      options.HashSourceIP,
+		hashDestinationIP: options.HashDestinationIP,
+		hashPort:          options.HashPort,
+		hashProtocol:      options.HashProtocol,
 
 		provider:       service.FromContext[adapter.ProviderManager](ctx),
 		providers:      make(map[string]adapter.Provider),
@@ -146,7 +156,7 @@ func (s *LoadBalance) Start() error {
 		s.tags = append(s.tags, detour.Tag())
 		outbounds = append(outbounds, detour)
 	}
-	group, err := NewLoadBalanceGroup(s.ctx, s.outbound, s.logger, outbounds, s.link, s.interval, s.idleTimeout, s.ttl, s.strategy)
+	group, err := NewLoadBalanceGroup(s.ctx, s.outbound, s.logger, outbounds, s.link, s.interval, s.idleTimeout, s.ttl, s.strategy, s.hashSourceIP, s.hashDestinationIP, s.hashPort, s.hashProtocol)
 	if err != nil {
 		return err
 	}
@@ -335,6 +345,10 @@ type LoadBalanceGroup struct {
 	ttl             time.Duration
 	history         *urltest.HistoryStorage
 	checking        sync.Mutex
+	hashSourceIP      bool
+	hashDestinationIP bool
+	hashPort          bool
+	hashProtocol      bool
 	fallbackIdx     atomic.Uint32
 	fallbackAccess  sync.Mutex
 	interruptGroup  *interrupt.Group
@@ -346,7 +360,7 @@ type LoadBalanceGroup struct {
 	strategyFn      strategyFn
 }
 
-func NewLoadBalanceGroup(ctx context.Context, outboundManager adapter.OutboundManager, logger log.Logger, outbounds []adapter.Outbound, link string, interval time.Duration, idleTimeout time.Duration, ttl time.Duration, strategy string) (*LoadBalanceGroup, error) {
+func NewLoadBalanceGroup(ctx context.Context, outboundManager adapter.OutboundManager, logger log.Logger, outbounds []adapter.Outbound, link string, interval time.Duration, idleTimeout time.Duration, ttl time.Duration, strategy string, hashSourceIP, hashDestinationIP, hashPort, hashProtocol bool) (*LoadBalanceGroup, error) {
 	if interval == 0 {
 		interval = C.DefaultURLTestInterval
 	}
@@ -378,6 +392,10 @@ func NewLoadBalanceGroup(ctx context.Context, outboundManager adapter.OutboundMa
 		close:          make(chan struct{}),
 		pause:          service.FromContext[pause.Manager](ctx),
 		interruptGroup: interrupt.NewGroup(),
+		hashSourceIP:      hashSourceIP,
+		hashDestinationIP: hashDestinationIP,
+		hashPort:          hashPort,
+		hashProtocol:      hashProtocol,
 	}
 	loadBalanceGroup.storeOutbounds(outbounds)
 	switch strategy {
@@ -612,6 +630,29 @@ func (g *LoadBalanceGroup) storeOutbounds(outbounds []adapter.Outbound) {
 	g.outboundsAccess.Unlock()
 }
 
+// hashKey builds the mapping key honouring the per-outbound dimension
+// switches. Base is always the destination (eTLD+1 domain preferred, else
+// the resolved IP) so defaults match upstream; source-IP and port
+// dimensions extend it only when enabled. consistent-hashing and
+// sticky-sessions both hash this; round-robin ignores the key entirely.
+func (g *LoadBalanceGroup) hashKey(metadata *adapter.InboundContext) string {
+	base := getKey(metadata)
+	if !g.hashSourceIP && !g.hashPort && !g.hashProtocol {
+		return base
+	}
+	var sb strings.Builder
+	sb.WriteString(base)
+	if g.hashSourceIP && metadata != nil {
+		sb.WriteByte('|')
+		sb.WriteString(metadata.Source.Addr.String())
+	}
+	if g.hashPort && metadata != nil {
+		sb.WriteByte(':')
+		sb.WriteString(strconv.Itoa(int(metadata.Destination.Port)))
+	}
+	return sb.String()
+}
+
 func getKey(metadata *adapter.InboundContext) string {
 	if metadata == nil {
 		return ""
@@ -708,7 +749,7 @@ func strategyConsistentHashing(g *LoadBalanceGroup, url string) strategyFn {
 	hash := maphash.NewHasher[string]()
 	return func(metadata *adapter.InboundContext, touch bool, matcher outboundMatcher) adapter.Outbound {
 		outbounds := g.loadOutbounds()
-		key := hash.Hash(getKey(metadata))
+		key := hash.Hash(g.hashKey(metadata))
 		buckets := int32(len(outbounds))
 		for i := 0; i < maxRetry; i, key = i+1, key+1 {
 			idx := jumpHash(key, buckets)
@@ -748,7 +789,7 @@ func strategyStickySessionsWithIndex(g *LoadBalanceGroup, selectIndex func(key u
 	hash := maphash.NewHasher[string]()
 	return func(metadata *adapter.InboundContext, touch bool, matcher outboundMatcher) adapter.Outbound {
 		outbounds := g.loadOutbounds()
-		key := hash.Hash(getKeyWithSrcAndDst(metadata))
+		key := hash.Hash(g.hashKey(metadata))
 		length := len(outbounds)
 		var (
 			idx int
