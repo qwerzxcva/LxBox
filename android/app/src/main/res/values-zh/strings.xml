@@ -641,4 +641,6 @@
     <string name="settings_lb_hash_proto_desc">同一目标的 TCP 与 UDP 可落不同节点。</string>
     <string name="routes_fallback_ecs">固定 ECS（直连兜底）</string>
     <string name="routes_fallback_ecs_desc">兜底直连查询上报的子网。规则自带 ECS 时以规则为准。</string>
+    <string name="subs_added">已添加：%1$s，正在获取节点…</string>
+    <string name="subs_updated">已更新：%1$s</string>
 </resources>

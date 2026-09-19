@@ -643,4 +643,6 @@
     <string name="settings_lb_hash_proto_desc">Same destination on TCP and UDP may land on different nodes.</string>
     <string name="routes_fallback_ecs">Fixed ECS (direct fallback)</string>
     <string name="routes_fallback_ecs_desc">Subnet reported by direct lookups that fall through the rules table. A rule with its own ECS overrides this.</string>
+    <string name="subs_added">Added: %1$s — fetching nodes…</string>
+    <string name="subs_updated">Updated: %1$s</string>
 </resources>

@@ -148,10 +148,27 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     }
 
     fun addSubscription(sub: com.leadaxe.aibox.app.Subscription) {
+        // Idempotent on URL: saving the same subscription twice replaces the
+        // existing entry instead of duplicating it (a second tap of Save, a
+        // paste of the same link — both common).
+        val exists = state.subscriptions.any { it.url == sub.url }
         store.update { st ->
+            val replaced = st.subscriptions.any { it.url == sub.url }
             st.copy(
-                subscriptions = st.subscriptions + sub,
+                subscriptions = if (replaced) {
+                    st.subscriptions.map { if (it.url == sub.url) sub else it }
+                } else {
+                    st.subscriptions + sub
+                },
                 routeRules = st.routeRules.withSubscriptionRule(sub),
+            )
+        }
+        scope.launch {
+            snackbar.showSnackbar(
+                context.getString(
+                    if (exists) R.string.subs_updated else R.string.subs_added,
+                    sub.name.ifBlank { sub.url },
+                ),
             )
         }
         scope.launch {
@@ -224,7 +241,15 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                             showAddForm = false
                             addDialogFolderId = null
                         },
-                        onAdd = { sub -> addSubscription(sub) },
+                        onAdd = { sub ->
+                            addSubscription(sub)
+                            // Close the form on save: the user is done
+                            // authoring, the list shows the new entry (and
+                            // the snackbar confirms it) — leaving a blank
+                            // form open reads as "did it save?".
+                            showAddForm = false
+                            addDialogFolderId = null
+                        },
                     )
                 }
             }
@@ -315,8 +340,12 @@ fun SubscriptionsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     // Region grouping (karing-style): nodes sharing a base
                     // name (flag+region prefix before trailing counters) fold
                     // into one header row "region ×N"; tapping unfolds them.
+                    // Group by flag emoji, not name prefix: panels vary
+                    // their naming between siblings ("日本 02" / "JP-03",
+                    // full-width spaces), so the flag is the only stable
+                    // region key — same flag always folds together.
                     val groups = displayNodes
-                        .groupBy { it.name.substringBeforeLast(' ').ifBlank { it.name } }
+                        .groupBy { NodeFlags.flagOf(it.name).ifBlank { it.name.substringBeforeLast(' ').ifBlank { it.name } } }
                     groups.forEach { (region, nodes) ->
                         var regionOpen by remember(region) { mutableStateOf(false) }
                         if (nodes.size == 1) {
