@@ -188,9 +188,7 @@ impl rsxm_core::Module for TunModule {
         // as the main call above.
         unsafe {
             if let Ok(lib) = libloading::Library::new("libhev_tun.so") {
-                if let Ok(quit) =
-                    lib.get::<unsafe extern "C" fn()>(b"hev_socks5_tunnel_quit")
-                {
+                if let Ok(quit) = lib.get::<unsafe extern "C" fn()>(b"hev_socks5_tunnel_quit") {
                     quit();
                 }
             }

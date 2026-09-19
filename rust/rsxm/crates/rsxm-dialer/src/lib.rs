@@ -8,6 +8,7 @@
 
 pub mod hello;
 pub mod module;
+pub mod shadowsocks;
 pub mod tls13;
 pub mod vless;
 
@@ -17,6 +18,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 
 pub use hello::RealityAuth;
+pub use shadowsocks::{SsSession, SsTarget};
 pub use vless::{VlessCommand, VlessDestination, VlessRequest};
 
 #[derive(Debug)]
