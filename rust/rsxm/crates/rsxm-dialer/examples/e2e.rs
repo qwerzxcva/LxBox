@@ -35,7 +35,7 @@ fn main() {
         destination: VlessDestination::Domain(url_host.clone(), url_port),
         flow: String::new(),
     };
-    let mut conn = dial(&target, &request).expect("dial");
+    let mut conn = dial(&target, &request, None).expect("dial");
     eprintln!("[e2e] REALITY handshake + VLESS request sent");
 
     let http = format!("GET / HTTP/1.1\r\nHost: {url_host}\r\nConnection: close\r\n\r\n");

@@ -183,7 +183,22 @@ class BoxEngine internal constructor(
     /** Quick network-change recovery: drop every active connection. */
     fun closeAllForRecovery(): Result<Unit> = closeAllConnections()
 
-    fun start(state: AppState): Job = launchCommand { runStart(state) }
+    fun start(state: AppState): Job = launchCommand {
+        // Watchdog: decode/checkConfig can wedge on a pathological config;
+        // a "connecting" state that outlives this budget is surfaced as an
+        // error instead of hanging the dial forever.
+        val done = kotlinx.coroutines.withTimeoutOrNull(30_000L) {
+            runStart(state)
+        }
+        if (done == null && _state.value is BoxState.Starting) {
+            _state.value = BoxState.Error("config startup timed out (30s)")
+            safeCloseServer()
+            platform.discardTun()
+            Result.failure(IllegalStateException("startup timeout"))
+        } else {
+            done ?: Result.failure(IllegalStateException("startup timeout"))
+        }
+    }
 
     fun stop(): Job = launchCommand { runStop() }
 

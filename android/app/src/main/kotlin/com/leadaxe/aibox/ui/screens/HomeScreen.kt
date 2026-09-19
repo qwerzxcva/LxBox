@@ -158,6 +158,17 @@ fun HomeScreen(
             }
         }
 
+        // Zero-node warning (user report: "connecting" ran forever and
+        // nothing worked): with no nodes the proxy exit has only `direct`
+        // as a member — the tunnel comes up but there is nothing to
+        // proxy through. Say so before the user wastes time.
+        if (appState.outbounds.isEmpty() && boxState is BoxState.Connected) {
+            Text(
+                stringResource(R.string.home_no_nodes_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         if (boxState is BoxState.Connected) {
             val via = appState.outbounds.firstOrNull { it.tag == appState.selectedOutbound }
                 ?.name?.ifBlank { appState.selectedOutbound }

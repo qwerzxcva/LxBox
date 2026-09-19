@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.leadaxe.aibox.AIBoxApp
 import com.leadaxe.aibox.app.AppState
+import com.leadaxe.aibox.app.configFingerprint
 import com.leadaxe.aibox.app.AppStateStore
 import com.leadaxe.aibox.app.MainActivity
 import com.leadaxe.aibox.engine.share.SubscriptionFetcher
@@ -532,6 +533,7 @@ class AIVpnService : VpnService() {
         // burst of callbacks while a network settles.
         scope.launch {
             var lastFallback: Boolean? = null
+            var lastFingerprint: Int? = null
             store.state.collect { st ->
                 val fallback = st.enableIpv6 && st.ipv6FallbackActive
                 if (lastFallback != null && lastFallback != fallback) {
@@ -539,6 +541,26 @@ class AIVpnService : VpnService() {
                     handleReload()
                 }
                 lastFallback = fallback
+                // Live config application (user report: edits never took
+                // effect until disconnect/reconnect). Any change to a
+                // compiler-input field — nodes, rules, DNS, groups, knobs —
+                // recompiles and swaps the running config. Debounced hard:
+                // bursts of UI writes settle before one reload. Engine
+                // state gates it: only a live tunnel reloads.
+                val fingerprint = st.configFingerprint()
+                if (lastFingerprint != null && lastFingerprint != fingerprint) {
+                    when (engine.state.value) {
+                        is BoxState.Connected, is BoxState.Starting -> {
+                            Log.d(TAG, "config fingerprint changed — hot reload")
+                            kotlinx.coroutines.delay(600)
+                            // Re-read after the debounce: later edits in the
+                            // burst are already in this single reload.
+                            handleReload()
+                        }
+                        else -> Log.d(TAG, "config changed while idle — applied at next connect")
+                    }
+                }
+                lastFingerprint = fingerprint
             }
         }
         stateJob = scope.launch {

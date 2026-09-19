@@ -11,6 +11,7 @@ pub mod module;
 pub mod shadowsocks;
 pub mod tls13;
 pub mod vless;
+pub mod ws;
 
 pub use module::{DialerModule, OutboundInfo};
 
@@ -54,13 +55,27 @@ pub struct VlessConnection {
     tls_write: tls13::CipherState,
     /// Leftover decrypted bytes from the handshake read.
     pending: Vec<u8>,
+    /// WebSocket transport wrapping (optional): when the node is ws-based,
+    /// every VLESS record rides inside a masked binary WS frame.
+    ws: Option<ws::WsTransport>,
 }
 
 impl VlessConnection {
     /// Sends plaintext (the TLS layer frames and encrypts it).
     pub fn send(&mut self, data: &[u8]) -> std::io::Result<()> {
-        // Chunk to the TLS record limit.
+        // WebSocket transport wraps each chunk in a masked binary frame;
+        // the frame itself then rides the TLS record layer as usual.
+        let mut wire: Vec<u8> = Vec::with_capacity(data.len() + 14);
         for chunk in data.chunks(tls13::MAX_RECORD_PAYLOAD) {
+            let mut framed = Vec::new();
+            if self.ws.is_some() {
+                ws::encode_frame(chunk, &mut framed);
+            } else {
+                framed.extend_from_slice(chunk);
+            }
+            wire.extend_from_slice(&framed);
+        }
+        for chunk in wire.chunks(tls13::MAX_RECORD_PAYLOAD) {
             let mut piece = chunk.to_vec();
             let record = self
                 .tls_write
@@ -95,7 +110,21 @@ impl VlessConnection {
                             .tls_read
                             .open_record(&header, &data[tls13::RECORD_HEADER_LEN..total])
                         {
-                            Ok((_rt, plain)) => out.extend_from_slice(&plain),
+                            Ok((_rt, plain)) => {
+                                if self.ws.is_some() {
+                                    // WS transport: unpack frames from the
+                                    // decrypted stream (one record may carry
+                                    // a partial frame; the pending buffer in
+                                    // the caller keeps the rest).
+                                    let mut rest = plain.as_slice();
+                                    while let Some((consumed, payload)) = ws::decode_frame(rest) {
+                                        out.extend_from_slice(&payload);
+                                        rest = &rest[consumed..];
+                                    }
+                                } else {
+                                    out.extend_from_slice(&plain);
+                                }
+                            }
                             Err(_) => return false,
                         }
                     }
@@ -152,9 +181,16 @@ impl VlessRealityTarget {
 pub fn dial(
     target: &VlessRealityTarget,
     request: &VlessRequest,
+    ws_transport: Option<ws::WsTransport>,
 ) -> Result<VlessConnection, DialError> {
     let mut stream = TcpStream::connect((target.server.as_str(), target.server_port))?;
     stream.set_nodelay(true).ok();
+
+    // WebSocket transport (optional): the HTTP upgrade precedes any TLS —
+    // the CDNs that front ws nodes expect the upgrade handshake first.
+    if let Some(ref transport) = ws_transport {
+        stream = ws::upgrade(stream, &transport.host, &transport.path).map_err(DialError::Io)?;
+    }
 
     // ---- ClientHello with REALITY auth ----
     let suites = [
@@ -343,6 +379,7 @@ pub fn dial(
         tls_read,
         tls_write,
         pending: Vec::new(),
+        ws: ws_transport,
     })
 }
 

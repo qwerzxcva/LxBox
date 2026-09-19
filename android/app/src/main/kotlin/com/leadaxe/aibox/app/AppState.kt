@@ -1045,3 +1045,35 @@ data class ExperimentalFeatures(
     /** nekobox/karing: persistent per-node latency history (cache file). */
     val latencyHistory: Boolean = false,
 )
+
+/**
+ * A cheap fingerprint over every field the config compiler consumes. The
+ * VPN process watches this: when it changes while the tunnel is up, the
+ * running config is stale and a reload (recompile + swap) applies the
+ * edits live — no disconnect/reconnect dance. UI-only fields (theme,
+ * language, screenshot lock…) are deliberately excluded so flipping them
+ * never bounces the tunnel.
+ */
+fun AppState.configFingerprint(): Int = listOf(
+    outbounds, subscriptions, subscriptionGroups, outboundGroups,
+    routeRules, ruleSets, dnsServers, dnsRules,
+    enableFakeIp, fakeIpScope, fakeIpFilter, fakeIpFilterExclude,
+    fakeIpInet4Range, fakeIpInet6Range, fakeIpBlockHttps,
+    hijackDns, enableSniffer, snifferProtocols, snifferTimeout,
+    selectedOutbound, unknownTrafficOutbound, fallbackRouteMode,
+    finalDnsServerByExit, fallbackEcsDirect,
+    dnsClientSubnet, dnsStrategy, dnsIndependentCache, dnsCacheCapacity,
+    lbStrategy, lbTopN, lbTtl, lbHashSourceIp, lbHashDestinationIp,
+    lbHashPort, lbHashProtocol,
+    muxProtocol, muxMaxConnections, muxMinStreams, muxMaxStreams,
+    muxPadding, muxBrutalEnabled, muxBrutalUpMbps, muxEnabled,
+    enableIpv6, ipFamilyPolicy,
+    tunMtu, tunInet4Address, tunInet6Address, tunDnsAddresses,
+    perAppProxyEnabled, perAppProxyWhitelist, perAppProxyPackages,
+    healthCheckIntervalMinutes, speedTestUrl,
+    udpOverTcp, tcpKeepAliveIdleSeconds,
+    enableNtp, ntpServer, quicDisableGso, quicDisableEcn,
+    enableLocalSocks5, localSocks5Port, enableLocalHttp, localHttpPort,
+    autoEcsFromNode, nodeEcsAddress,
+    experimental,
+).hashCode()

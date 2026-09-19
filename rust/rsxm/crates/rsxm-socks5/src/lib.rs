@@ -327,21 +327,18 @@ fn serve_udp(mut control: TcpStream, udp: std::net::UdpSocket, _dialer: Arc<dyn 
         }
         // Relay upstream replies (single-target association).
         if let (Some(src), Some(target)) = (last_client, udppeek_target()) {
-            match udp.recv_from(&mut buf) {
-                Ok((n, from)) => {
-                    if from == target {
-                        let mut out = vec![0u8, 0, 0];
-                        out.push(0x01);
-                        match target.ip() {
-                            std::net::IpAddr::V4(v4) => out.extend_from_slice(&v4.octets()),
-                            std::net::IpAddr::V6(v6) => out.extend_from_slice(&v6.octets()),
-                        }
-                        out.extend_from_slice(&target.port().to_be_bytes());
-                        out.extend_from_slice(&buf[..n]);
-                        let _ = udp.send_to(&out, src);
+            if let Ok((n, from)) = udp.recv_from(&mut buf) {
+                if from == target {
+                    let mut out = vec![0u8, 0, 0];
+                    out.push(0x01);
+                    match target.ip() {
+                        std::net::IpAddr::V4(v4) => out.extend_from_slice(&v4.octets()),
+                        std::net::IpAddr::V6(v6) => out.extend_from_slice(&v6.octets()),
                     }
+                    out.extend_from_slice(&target.port().to_be_bytes());
+                    out.extend_from_slice(&buf[..n]);
+                    let _ = udp.send_to(&out, src);
                 }
-                Err(_) => {}
             }
         }
     }
