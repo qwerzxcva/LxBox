@@ -8,6 +8,7 @@ members = [
     "rsxm/crates/rsxm-dns",
     "rsxm/crates/rsxm-dialer",
     "rsxm/crates/rsxm-tun",
+    "rsxm/crates/rsxm-socks5",
     "rsxm/crates/rsxm-stats",
     "rsxm/crates/rsxm-power",
     "rsxm/crates/rsxm-security",

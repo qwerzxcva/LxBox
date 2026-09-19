@@ -25,6 +25,8 @@ pub struct TunConfig {
     pub ipv6: Option<String>,
     /// Enable ICMP echo replies (ping through the tunnel).
     pub icmp: bool,
+    /// Loopback port of the rsxm SOCKS5 server HEV dials into.
+    pub socks_port: u16,
 }
 
 impl Default for TunConfig {
@@ -34,6 +36,7 @@ impl Default for TunConfig {
             ipv4: "198.18.0.1".into(),
             ipv6: None,
             icmp: false,
+            socks_port: 7891,
         }
     }
 }
@@ -42,6 +45,10 @@ impl Default for TunConfig {
 pub struct TunModule {
     config: std::sync::RwLock<TunConfig>,
     running: std::sync::atomic::AtomicBool,
+    /// The tun fd handed over by Android, consumed by HEV at start.
+    tun_fd: std::sync::RwLock<Option<i32>>,
+    /// Join handle for the HEV main thread.
+    hev_thread: std::sync::RwLock<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl TunModule {
@@ -49,7 +56,25 @@ impl TunModule {
         Self {
             config: std::sync::RwLock::new(config),
             running: std::sync::atomic::AtomicBool::new(false),
+            tun_fd: std::sync::RwLock::new(None),
+            hev_thread: std::sync::RwLock::new(None),
         }
+    }
+
+    /// Android hands the tunnel fd over before [rsxm_core::Module::start].
+    pub fn set_tun_fd(&self, fd: i32) {
+        *self
+            .tun_fd
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(fd);
+    }
+
+    /// The loopback port of the rsxm SOCKS5 server (HEV's upstream).
+    pub fn socks_port(&self) -> u16 {
+        self.config
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .socks_port
     }
 
     pub fn config(&self) -> std::sync::RwLockReadGuard<'_, TunConfig> {
@@ -75,6 +100,12 @@ impl TunModule {
             "  icmp: '{}'\n",
             if cfg.icmp { "reply" } else { "off" }
         ));
+        // HEV dials the rsxm SOCKS5 server — the data path's only hop.
+        yaml.push_str("socks5:\n");
+        yaml.push_str(&format!("  port: {}\n", cfg.socks_port));
+        yaml.push_str("  address: 127.0.0.1\n");
+        yaml.push_str("misc:\n");
+        yaml.push_str("  log-level: warn\n");
         yaml
     }
 }
@@ -108,18 +139,70 @@ impl rsxm_core::Module for TunModule {
         if let Some(v6) = value.get("tunInet6Address").and_then(|v| v.as_str()) {
             cfg.ipv6 = Some(v6.to_string());
         }
+        if let Some(port) = value.get("rsxmSocksPort").and_then(|v| v.as_u64()) {
+            cfg.socks_port = port as u16;
+        }
         Ok(())
     }
 
     fn start(&self) -> Result<(), String> {
-        // The runtime crate binds this to the native engine's start; the
-        // module itself only tracks lifecycle during the migration.
+        let fd = self
+            .tun_fd
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .ok_or("tun fd not provided")?;
+        let yaml =
+            std::ffi::CString::new(self.render_engine_config()).map_err(|_| "yaml contains NUL")?;
+        let yaml_len = yaml.as_bytes().len() as u32;
+        let yaml_ptr = yaml.as_ptr();
+        let lib = unsafe { libloading::Library::new("libhev_tun.so") }
+            .map_err(|_| "libhev_tun.so not found")?;
+        // SAFETY: the symbol is resolved from the just-loaded library; the
+        // Library handle is leaked so the symbols outlive the call — one
+        // handle per process is exactly what a tunnel is. The yaml CString
+        // is leaked too (one-shot per tunnel lifetime); the raw pointer is
+        // Send as a plain usize.
+        let main_from_str = unsafe {
+            *lib.get::<unsafe extern "C" fn(*const u8, u32, i32) -> i32>(
+                b"hev_socks5_tunnel_main_from_str",
+            )
+            .map_err(|e| format!("hev main symbol: {e}"))?
+        };
+        std::mem::forget(lib);
+        let yaml_addr = yaml_ptr as usize;
+        let handle = std::thread::spawn(move || {
+            // SAFETY: see above — leaked yaml outlives the call.
+            unsafe { main_from_str(yaml_addr as *const u8, yaml_len, fd) };
+        });
+        *self
+            .hev_thread
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(handle);
         self.running
             .store(true, std::sync::atomic::Ordering::Release);
         Ok(())
     }
 
     fn stop(&self) -> Result<(), String> {
+        // SAFETY: dlopen/dlsym of the shipped lib; quit() is the same ABI
+        // as the main call above.
+        unsafe {
+            if let Ok(lib) = libloading::Library::new("libhev_tun.so") {
+                if let Ok(quit) =
+                    lib.get::<unsafe extern "C" fn()>(b"hev_socks5_tunnel_quit")
+                {
+                    quit();
+                }
+            }
+        }
+        if let Some(handle) = self
+            .hev_thread
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = handle.join();
+        }
         self.running
             .store(false, std::sync::atomic::Ordering::Release);
         Ok(())
@@ -140,13 +223,23 @@ mod tests {
     use rsxm_core::Module;
 
     #[test]
-    fn lifecycle_tracks_health() {
+    fn lifecycle_requires_a_tun_fd() {
         let module = TunModule::new(TunConfig::default());
         assert!(matches!(module.health(), Health::Down(_)));
-        module.start().unwrap();
-        assert_eq!(module.health(), Health::Up);
-        module.stop().unwrap();
+        // No fd handed over: start must fail with the explicit reason (and
+        // not touch HEV at all).
+        let err = module.start().unwrap_err();
+        assert!(err.contains("tun fd not provided"));
         assert!(matches!(module.health(), Health::Down(_)));
+    }
+
+    #[test]
+    fn yaml_points_hev_at_the_rsxm_socks_server() {
+        let module = TunModule::new(TunConfig::default());
+        let yaml = module.render_engine_config();
+        assert!(yaml.contains("socks5:"));
+        assert!(yaml.contains("port: 7891"));
+        assert!(yaml.contains("address: 127.0.0.1"));
     }
 
     #[test]

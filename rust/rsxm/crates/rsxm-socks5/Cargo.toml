@@ -1,9 +1,8 @@
 [package]
-name = "rsxm-tun"
+name = "rsxm-socks5"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-libloading = "0.8"
-rsxm-core = { path = "../rsxm-core" }
+rsxm-dialer = { path = "../rsxm-dialer" }
