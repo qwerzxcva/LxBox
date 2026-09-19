@@ -24,6 +24,7 @@ use crate::ConnectionInfo;
 static KERNEL: OnceLock<Arc<std::sync::Mutex<rsxm_core::Conductor>>> = OnceLock::new();
 static STATS: OnceLock<Arc<rsxm_stats::StatsModule>> = OnceLock::new();
 static POWER: OnceLock<Arc<rsxm_power::PowerModule>> = OnceLock::new();
+static DNS: OnceLock<Arc<rsxm_dns::DnsModule>> = OnceLock::new();
 
 fn kernel() -> Option<&'static Arc<std::sync::Mutex<rsxm_core::Conductor>>> {
     KERNEL.get()
@@ -153,11 +154,14 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStart(
         let _ = STATS.set(stats.clone());
         let power = Arc::new(rsxm_power::PowerModule::new());
         let _ = POWER.set(power.clone());
+        let dns = Arc::new(rsxm_dns::DnsModule::new());
+        let _ = DNS.set(dns.clone());
         let mut conductor = rsxm_core::Conductor::new();
         conductor.register(Arc::new(rsxm_rules::RulesModule::new()));
         conductor.register(Arc::new(rsxm_dns::DnsModule::new()));
         conductor.register(Arc::new(rsxm_dialer::DialerModule::new()));
         conductor.register(power);
+        conductor.register(dns);
         conductor.register(Arc::new(rsxm_security::SecurityModule::new()));
         conductor.register(stats);
         conductor.register(Arc::new(rsxm_tun::TunModule::new(
@@ -214,6 +218,70 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelPowerE
             directive.as_str().to_string()
         }
         None => "off".to_string(),
+    };
+    to_jstring(&env, out)
+}
+
+/// Asks the Rust DNS engine for a decision on one query name. This is the
+/// shadow-DNS-to-real step: fakeip allocation, cache hits, hosts overrides
+/// and rule-based reject/steer all happen here, in Rust. Returns
+/// `{"action":"...","address":"..."?, "server":"..."?}` or `{}` when the
+/// kernel is not running. Currently a decision-mirror (the Go engine still
+/// executes); it lets the UI route-check page and future data-path
+/// verifiers compare both stacks side by side.
+#[no_mangle]
+pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelDnsDecide(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: JString,
+    qtype: JString,
+) -> jstring {
+    let name_s = jstr_to_string(&mut env, &name);
+    let qtype_s = jstr_to_string(&mut env, &qtype);
+    let out = match DNS.get() {
+        Some(d) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            let qtype_opt = if qtype_s.is_empty() {
+                None
+            } else {
+                Some(qtype_s.as_str())
+            };
+            let family = match qtype_opt.unwrap_or("A") {
+                "AAAA" => rsxm_dns::Family::V6,
+                _ => rsxm_dns::Family::V4,
+            };
+            let decision = d.with_engine(|engine| engine.decide(&name_s, family, None, now));
+            let out_json = match decision {
+                Some(rsxm_dns::Decision::AnswerFromCache { address, stale }) => {
+                    serde_json::json!({"action": "cache", "address": address.to_string(), "stale": stale})
+                }
+                Some(rsxm_dns::Decision::AnswerFake { address }) => {
+                    serde_json::json!({"action": "fakeip", "address": address.to_string()})
+                }
+                Some(rsxm_dns::Decision::AnswerHosts { address }) => {
+                    serde_json::json!({"action": "hosts", "address": address.to_string()})
+                }
+                Some(rsxm_dns::Decision::NegativeCached) => {
+                    serde_json::json!({"action": "negative"})
+                }
+                Some(rsxm_dns::Decision::Reject) => serde_json::json!({"action": "reject"}),
+                Some(rsxm_dns::Decision::ForwardToServer { server }) => {
+                    serde_json::json!({"action": "forward", "server": server})
+                }
+                Some(rsxm_dns::Decision::QueryUpstream) => {
+                    serde_json::json!({"action": "upstream"})
+                }
+                Some(rsxm_dns::Decision::ReverseFake { name }) => {
+                    serde_json::json!({"action": "reverse", "name": name})
+                }
+                None => serde_json::json!({}),
+            };
+            out_json.to_string()
+        }
+        None => "{}".to_string(),
     };
     to_jstring(&env, out)
 }

@@ -85,6 +85,20 @@ object AiboxCore {
     }
 
     /**
+     * Asks the Rust DNS engine for its decision on one query name — the
+     * shadow-DNS-to-real step: fakeip allocation, cache hits, hosts
+     * overrides and rule-based reject/steer happen in Rust and come back
+     * as `{"action": "...", ...}`. Null when the kernel is not running.
+     * The route-check page renders this next to the Go engine's answer so
+     * both stacks can be compared live.
+     */
+    fun kernelDnsDecide(name: String, qtype: String): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelDnsDecide(name, qtype) }.getOrNull()
+    }
+
+    /**
      * Forwards a screen / charging edge to the Rust power leader and returns
      * the directive the other leaders should follow now ("run" | "throttle" |
      * "deep_pause"), or null when the kernel is not running. This is the only
@@ -110,4 +124,6 @@ object AiboxCore {
     private external fun nativeKernelHealth(): String
 
     private external fun nativeKernelPowerEvent(screenOn: Boolean, charging: Boolean): String
+
+    private external fun nativeKernelDnsDecide(name: String, qtype: String): String
 }

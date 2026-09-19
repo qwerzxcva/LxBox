@@ -946,6 +946,36 @@ private fun RouteCheckSection(state: AppState) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            // Rust stack's DNS decision for the same query
+                            // (fakeip / cache / hosts / reject / forward) —
+                            // the two-engine comparison the route check
+                            // exists for.
+                            val dnsRaw = AiboxCore.kernelDnsDecide(domain.trim(), "")
+                            val dnsLabel = dnsRaw?.let { raw ->
+                                runCatching {
+                                    val obj = kotlinx.serialization.json.Json.parseToJsonElement(raw)
+                                        .let { it as? kotlinx.serialization.json.JsonObject }
+                                    val action = (obj?.get("action") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                                    val address = (obj?.get("address") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                                    val server = (obj?.get("server") as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
+                                    when {
+                                        action == "fakeip" -> "fakeip → $address"
+                                        action == "cache" -> "cache → $address"
+                                        action == "hosts" -> "hosts → $address"
+                                        action == "reject" -> "reject"
+                                        action == "forward" -> "forward → $server"
+                                        action == "upstream" -> "upstream"
+                                        else -> ""
+                                    }
+                                }.getOrNull().orEmpty()
+                            }.orEmpty()
+                            if (dnsLabel.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.routecheck_dns_decision, dnsLabel),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
                         }
                     }
                 }
