@@ -768,7 +768,9 @@ object ConfigCompiler {
         // probes, SSDP) crosses the tun, wakes the box's event loop, and
         // goes out through the proxy chain — wasting CPU and battery for
         // no benefit.
-        putJsonArray("inet4_route_exclude_address") {
+        // route_exclude_address (1.10+ merged name): the legacy
+        // inet4_route_exclude_address hard-fails the inbound at 1.12.
+        putJsonArray("route_exclude_address") {
             add("10.0.0.0/8")
             add("172.16.0.0/12")
             add("192.168.0.0/16")
