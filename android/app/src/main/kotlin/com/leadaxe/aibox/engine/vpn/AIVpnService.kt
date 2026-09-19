@@ -456,6 +456,9 @@ class AIVpnService : VpnService() {
     }
 
     private fun handleReload() {
+        // ACTION_RELOAD may carry cross-process edits: re-read the file the
+        // UI process just wrote, then recompile from it.
+        store.refreshFromDisk()
         val state = store.current
         engine.reload(state)
     }

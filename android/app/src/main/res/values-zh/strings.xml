@@ -645,4 +645,6 @@
     <string name="subs_updated">已更新：%1$s</string>
     <string name="routecheck_dns_decision">Rust DNS：%1$s</string>
     <string name="home_no_nodes_warning">没有可用节点——请先添加订阅。隧道虽已建立但仅直连可用。</string>
+    <string name="home_probe">节点探测：%1$s</string>
+    <string name="home_probe_probing">探测中…</string>
 </resources>

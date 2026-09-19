@@ -647,4 +647,6 @@
     <string name="subs_updated">Updated: %1$s</string>
     <string name="routecheck_dns_decision">Rust DNS: %1$s</string>
     <string name="home_no_nodes_warning">No nodes available — add a subscription first. The tunnel is up but only direct connections work.</string>
+    <string name="home_probe">Probe: %1$s</string>
+    <string name="home_probe_probing">probing…</string>
 </resources>

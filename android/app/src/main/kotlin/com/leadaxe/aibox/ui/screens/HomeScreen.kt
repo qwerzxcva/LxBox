@@ -61,6 +61,7 @@ import com.leadaxe.aibox.engine.vpn.BoxController
 import com.leadaxe.aibox.engine.vpn.BoxRuntimeSnapshot
 import com.leadaxe.aibox.engine.vpn.BoxState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
@@ -119,6 +120,17 @@ fun HomeScreen(
         // made the page a second control surface.
         // Explicit connection state: the dial alone left the user guessing
         // whether the tunnel was actually up. A status chip states it.
+        // Per-second ticker (user report: the elapsed time only advanced
+        // when switching pages) — recomposes the chip once a second while
+        // connected.
+        val elapsedTick = if (boxState is BoxState.Connected) {
+            produceState(0L) {
+                while (true) {
+                    kotlinx.coroutines.delay(1_000L)
+                    value = System.currentTimeMillis()
+                }
+            }.value
+        } else 0L
         val connectedAt = (boxState as? BoxState.Connected)?.sinceEpochMillis ?: 0L
         val stateLabel = when (boxState) {
             is BoxState.Connected -> stringResource(R.string.home_status_connected)
@@ -150,7 +162,7 @@ fun HomeScreen(
                 )
                 Text(
                     text = "  $stateLabel" + if (connectedAt > 0L) {
-                        " · ${formatDuration(System.currentTimeMillis() - connectedAt)}"
+                        " · ${formatDuration(elapsedTick - connectedAt)}"
                     } else "",
                     style = MaterialTheme.typography.labelLarge,
                     color = stateColor,
@@ -179,6 +191,50 @@ fun HomeScreen(
                     text = stringResource(R.string.home_via_node, via),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Auto speed test of the current node right after connect
+            // (user report: "is it actually working?"): one probe, result
+            // inline next to the via line, cached per connect session.
+            val app2 = androidx.compose.ui.platform.LocalContext.current.applicationContext as AIBoxApp
+            var probe by remember { mutableStateOf<String?>(null) }
+            var probedAt by remember { mutableStateOf(0L) }
+            val probing = stringResource(R.string.home_probe_probing)
+            LaunchedEffect(boxState, appState.selectedOutbound) {
+                if (boxState is BoxState.Connected && appState.selectedOutbound.isNotBlank() &&
+                    System.currentTimeMillis() - probedAt > 60_000L
+                ) {
+                    probedAt = System.currentTimeMillis()
+                    probe = probing
+                    app2.vpnRelay.requestPing(
+                        appState.selectedOutbound, appState.selectedOutbound, appState.speedTestUrl,
+                    )
+                    // Wait for the settled result (or timeout through the
+                    // service's own budget), then read it once.
+                    kotlinx.coroutines.withTimeoutOrNull(12_000L) {
+                        var settled: Map.Entry<String, com.leadaxe.aibox.engine.vpn.VpnRelay.PingResult>? = null
+                        app2.vpnRelay.pings.collect { p ->
+                            val r = p[appState.selectedOutbound]
+                            if (r != null && (r.delayMillis != null || r.error != null)) {
+                                settled = java.util.AbstractMap.SimpleEntry(appState.selectedOutbound, r)
+                                throw kotlinx.coroutines.CancellationException("settled")
+                            }
+                        }
+                        settled
+                    }
+                    val result = app2.vpnRelay.pings.value[appState.selectedOutbound]
+                    probe = when {
+                        result?.delayMillis != null -> "${result.delayMillis}ms"
+                        result?.error != null -> result.error
+                        else -> "timeout"
+                    }
+                }
+            }
+            probe?.let {
+                Text(
+                    text = stringResource(R.string.home_probe, it),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
                 )
             }
             // Exit-IP check (v2rayNG/FlClash style): while the tunnel is up,

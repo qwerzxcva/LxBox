@@ -30,7 +30,7 @@ data class BackupEnvelope(
  * atomically (tmp file + rename) off the main thread.
  */
 class AppStateStore(
-    context: Context,
+    private val context: Context,
     private val scope: CoroutineScope,
 ) {
     private val file = File(context.filesDir, "lxbox-state.json")
@@ -48,6 +48,16 @@ class AppStateStore(
     val current: AppState get() = _state.value
 
     private val pendingPersist = AtomicReference<AppState?>(null)
+
+    /**
+     * Re-reads the on-disk state into this process's memory. The :vpn
+     * process calls it on ACTION_RELOAD: the UI process writes the file,
+     * and without this the VPN-side store would never see the edits
+     * (cross-process instances share the file, not the StateFlow).
+     */
+    fun refreshFromDisk() {
+        _state.value = sanitizeAppStateReferences(load())
+    }
 
     private fun load(): AppState {
         if (!file.isFile) return AppState()
@@ -71,10 +81,25 @@ class AppStateStore(
     }
 
     fun update(transform: (AppState) -> AppState) {
-        val next = transform(_state.value)
+        val before = _state.value
+        val next = transform(before)
         if (next === _state.value) return
         _state.value = sanitizeAppStateReferences(next)
         schedulePersist(next)
+        // Cross-process config push (user report: edits never applied until
+        // disconnect/reconnect): the UI process owns this store; the :vpn
+        // process holds a separate instance whose in-memory state never saw
+        // the write. When a compiler-input change lands, nudge the service
+        // — it re-reads the file and hot-swaps the config. UI-only fields
+        // are excluded by the fingerprint, so theme flips don't bounce the
+        // tunnel.
+        val appContext = context.applicationContext
+        if (before.configFingerprint() != next.configFingerprint()) {
+            appContext.startService(
+                android.content.Intent(appContext, com.leadaxe.aibox.engine.vpn.AIVpnService::class.java)
+                    .setAction(com.leadaxe.aibox.engine.vpn.AIVpnService.ACTION_RELOAD),
+            )
+        }
     }
 
     /**
