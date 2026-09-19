@@ -82,7 +82,6 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
     var showAddForm by rememberSaveable { mutableStateOf(false) }
     // Collapsed-by-default advanced DNS sections.
     var strategyExpanded by rememberSaveable { mutableStateOf(false) }
-    var fallbackExpanded by rememberSaveable { mutableStateOf(false) }
     var editingRule: DnsRule? by rememberSaveable { mutableStateOf(null) }
     var creatingRule by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.DisposableEffect(creatingRule, editingRule) {
@@ -312,32 +311,6 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                     onSelect = { v -> store.update { it.copy(dnsStrategy = v) } },
                     display = { if (it.isBlank()) stringResource(R.string.dns_strategy_inherit) else it },
                 )
-            }
-        }
-        item {
-            val overrideCount = state.finalDnsServerByExit.values.count { it.isNotBlank() }
-            CollapsibleSection(
-                title = stringResource(R.string.dns_final_server),
-                expanded = fallbackExpanded,
-                onToggle = { fallbackExpanded = !fallbackExpanded },
-                subtitle = if (overrideCount == 0) {
-                    stringResource(R.string.dns_final_auto)
-                } else {
-                    stringResource(R.string.dns_final_overrides, overrideCount)
-                },
-            ) {
-                // Per-mode picks: Rule / Global / Direct can each pin their
-                // Per-exit picks removed (user analysis: an unpicked exit
-                // already means its built-in shortcut — proxy exit resolves
-                // through the proxy, direct over the local network — so the
-                // three-option selector could only restate that default.
-                // effectiveFinalDns keeps the semantics; custom servers are
-                // chosen on the DNS server card itself.
-                // (The old global fallback row is gone: with both exits
-                // selectable there is no mode a third choice could cover,
-                // and an unpicked exit now means the kernel's automatic
-                // first-usable-server behaviour instead of a hidden
-                // duplicate knob.)
             }
         }
     }

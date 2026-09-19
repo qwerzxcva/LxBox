@@ -51,8 +51,23 @@ class AppStateStore(
 
     private fun load(): AppState {
         if (!file.isFile) return AppState()
-        return runCatching { json.decodeFromString(AppState.serializer(), file.readText()) }
-            .getOrElse { AppState() }
+        val loaded = runCatching {
+            json.decodeFromString(AppState.serializer(), file.readText())
+        }.getOrElse { AppState() }
+        // One-time migration (v2.1): the route fallback used to default to
+        // direct, which for a rules-less install meant every packet
+        // bypassed the proxy. States that still carry that old default
+        // switch to the new proxy default; a user who deliberately picked
+        // direct will have rules or re-pick it (the card is one tap away).
+        return if (loaded.routingFallbackMigration != 1) {
+            loaded.copy(
+                fallbackRouteMode = if (loaded.fallbackRouteMode == "direct") "proxy"
+                else loaded.fallbackRouteMode,
+                routingFallbackMigration = 1,
+            )
+        } else {
+            loaded
+        }
     }
 
     fun update(transform: (AppState) -> AppState) {

@@ -83,10 +83,12 @@ class ConfigCompilerFallbackTest {
             direct["route"]!!.jsonObject["final"]!!.jsonPrimitive.content,
         )
 
-        // Default: fallback = direct.
+        // Default: fallback = PROXY — a fresh install has no rules, so the
+        // default governs all traffic; direct-by-default meant "connected"
+        // with everything bypassing the proxy.
         val none = compile(AppState())
         assertEquals(
-            "direct",
+            LoadBalanceTag,
             none["route"]!!.jsonObject["final"]!!.jsonPrimitive.content,
         )
     }

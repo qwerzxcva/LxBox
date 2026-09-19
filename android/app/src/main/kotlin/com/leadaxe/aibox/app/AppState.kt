@@ -47,7 +47,19 @@ data class AppState(
      * [unknownTrafficOutbound] which keys off app attribution.
      * "direct" (default) → the direct outbound; "proxy" → the proxy exit.
      */
-    val fallbackRouteMode: String = "direct",
+    // Default PROXY: a fresh install has no rules, so whatever this says
+    // IS the routing for all traffic. Direct-by-default meant a new user
+    // "connected" and every packet bypassed the proxy — the tunnel looked
+    // up while nothing was actually proxied (user report: connected but
+    // nothing loads). Proxy-through-the-load-balancer is what "connect"
+    // promises; direct remains one tap away in the fallback card.
+    val fallbackRouteMode: String = "proxy",
+    /**
+     * One-time migration marker (see AppStateStore.load): the fallback
+     * default flipped direct→proxy, and pre-existing saved states carry
+     * the old value. Bumped once; never reused.
+     */
+    val routingFallbackMigration: Int = 0,
 
     /**
      * Load balancing for the single built-in proxy exit group (the outbound
