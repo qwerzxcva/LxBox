@@ -115,6 +115,18 @@ class ConfigCompilerFallbackTest {
     }
 
     @Test
+    fun `fake-ip pool escapes to the DNS outbound, never to direct`() {
+        // Regression for "connected but nothing resolves": the pool bypass
+        // used to route 198.18/15 to direct, blackholing every connection
+        // an app made to a cached fake address. It must land on the DNS
+        // outbound so the lookup re-enters the normal chain.
+        val config = compile(AppState(enableFakeIp = true))
+        val first = routeRulesOf(config).first()
+        assertEquals("198.18.0.0/15", first["ip_cidr"]!!.jsonArray[0].jsonPrimitive.content)
+        assertEquals(com.leadaxe.aibox.app.DnsOutboundTag, first["outbound"]!!.jsonPrimitive.content)
+    }
+
+    @Test
     fun `fallback direct ECS rides the shadow resolver`() {
         val state = AppState(
             fallbackRouteMode = FallbackRouteDirect,

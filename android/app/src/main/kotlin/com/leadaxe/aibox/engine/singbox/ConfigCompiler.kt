@@ -1101,22 +1101,30 @@ object ConfigCompiler {
     // ----------------------------------------------------------------- route
 
     private fun compileRouteRules(state: AppState): List<JsonObject> = buildList {
-        // Built-in: fake-IP bypass. Any packet addressed into the fake pool
-        // goes straight to direct — an app that cached a fake address past
-        // the tunnel's lifetime must not loop it back through the proxy.
+        // Built-in: fake-IP escape hatch. Packets addressed into the fake
+        // pool are DNS queries in disguise (an app that cached a fake
+        // address, or one that hardcodes its resolver to the pool) — they
+        // must go to the DNS outbound, which turns them back into real
+        // lookups through the normal chain. Routing them to direct (the
+        // old behaviour) sent 198.18.x.x onto the physical NIC where
+        // nothing answers: tunnel up, everything blackholed. The kernel
+        // restores the real domain from its fake-ip store for normal
+        // connections, so user rules still match by domain — this rule
+        // only catches the store-miss path (stale cache, direct-to-pool
+        // traffic).
         if (state.fakeIpBypass && state.enableFakeIp) {
             val v4 = state.fakeIpInet4Range.ifBlank { "198.18.0.0/15" }
             add(buildJsonObject {
                 putJsonArray("ip_cidr") { add(v4) }
                 put("action", "route")
-                put("outbound", DirectOutboundTag)
+                put("outbound", DnsOutboundTag)
             })
             if (state.enableIpv6) {
                 val v6 = state.fakeIpInet6Range.ifBlank { "fc00::/18" }
                 add(buildJsonObject {
                     putJsonArray("ip_cidr") { add(v6) }
                     put("action", "route")
-                    put("outbound", DirectOutboundTag)
+                    put("outbound", DnsOutboundTag)
                 })
             }
         }
