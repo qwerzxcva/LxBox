@@ -327,47 +327,12 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 },
             ) {
                 // Per-mode picks: Rule / Global / Direct can each pin their
-                // own fallback (e.g. Global resolves through the proxy exit
-                // while Rule follows the rules' servers). Empty means the
-                // global fallback below applies.
-                listOf("proxy", "direct").forEach { exit ->
-                    val modeValue = state.finalDnsServerByExit[exit].orEmpty()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = if (exit == "proxy") stringResource(R.string.dns_final_exit_proxy)
-                            else stringResource(R.string.dns_final_exit_direct),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(0.28f),
-                        )
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
-                            modifier = Modifier.weight(0.72f),
-                        ) {
-                            finalOptions.forEach { option ->
-                                FilterChip(
-                                    selected = option == modeValue,
-                                    onClick = {
-                                        store.update { st ->
-                                            val map = st.finalDnsServerByExit.toMutableMap()
-                                            if (option.isBlank()) map.remove(exit) else map[exit] = option
-                                            st.copy(finalDnsServerByExit = map)
-                                        }
-                                    },
-                                    label = {
-                                        Text(
-                                            when (option) {
-                                                "" -> stringResource(R.string.dns_final_mode_default)
-                                                else -> FinalOptionLabel(option, state)
-                                            },
-                                        )
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
+                // Per-exit picks removed (user analysis: an unpicked exit
+                // already means its built-in shortcut — proxy exit resolves
+                // through the proxy, direct over the local network — so the
+                // three-option selector could only restate that default.
+                // effectiveFinalDns keeps the semantics; custom servers are
+                // chosen on the DNS server card itself.
                 // (The old global fallback row is gone: with both exits
                 // selectable there is no mode a third choice could cover,
                 // and an unpicked exit now means the kernel's automatic

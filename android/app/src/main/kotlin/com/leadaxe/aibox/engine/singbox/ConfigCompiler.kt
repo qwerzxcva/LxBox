@@ -703,18 +703,18 @@ object ConfigCompiler {
     }
 
     private fun pickDefaultResolver(state: AppState): String? {
-        val liveOutboundTags = buildSet {
-            add(DirectOutboundTag)
-            add(ProxySelectorTag)
-            state.outbounds.forEach { add(it.tag) }
-            state.outboundGroups.filter { it.enabled }.forEach { add(it.tag) }
-        }
-        // A resolver whose detour dangles cannot serve its own lookups.
-        val usable = state.dnsServers.filter {
-            it.enabled && (it.detour.isBlank() || it.detour in liveOutboundTags)
-        }
-        return usable.firstOrNull { it.type != "local" }?.tag
-            ?: usable.firstOrNull()?.tag
+        // CRITICAL (user report: tunnel up but nothing resolves): the
+        // default_domain_resolver is what the dialer uses to resolve the
+        // proxy NODE'S OWN SERVER DOMAIN before the tunnel exists. Pointing
+        // it at a proxy-routed resolver (e.g. DoH detour=proxy) deadlocks —
+        // the node cannot resolve until the tunnel is up, and the tunnel
+        // cannot come up until the node resolves. It must be a resolver
+        // that works with NO tunnel: the local/direct one. The Go engine
+        // still routes app traffic through the final server; this only
+        // governs the bootstrap lookup.
+        val usable = state.dnsServers.filter { it.enabled }
+        return usable.firstOrNull { it.type == "local" && it.detour.isBlank() }?.tag
+            ?: usable.firstOrNull { it.type == "local" }?.tag
     }
 
     // ------------------------------------------------------------------ tun

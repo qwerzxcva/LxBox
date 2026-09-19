@@ -107,6 +107,23 @@ class ConfigCompilerFallbackTest {
     }
 
     @Test
+    fun `bootstrap resolver is local, never proxy-routed`() {
+        // Regression for "tunnel up but nothing resolves": the default
+        // domain resolver resolves the proxy node's own server domain
+        // BEFORE the tunnel exists. A proxy-routed resolver deadlocks the
+        // bootstrap — tunnel waits for the node, node waits for the tunnel.
+        val config = compile(AppState())
+        val resolver = config["route"]!!.jsonObject["default_domain_resolver"]
+            ?.jsonPrimitive?.content
+        // Must be the local/direct resolver (dns-direct is the local shadow
+        // server the compiler materialises).
+        assertTrue(
+            resolver == null || resolver == "dns-direct" ||
+                resolver.startsWith("dns-final-os"),
+        )
+    }
+
+    @Test
     fun `sanitize keeps the final dns shortcuts`() {
         val state = AppState(finalDnsServer = DnsFinalProxy)
         val sanitized = com.leadaxe.aibox.app.sanitizeAppStateReferences(state)
