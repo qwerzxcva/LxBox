@@ -182,31 +182,31 @@ fun ListField(
     // hides its content by surprise.
     var open by remember(values.isNotEmpty()) { mutableStateOf(values.isNotEmpty()) }
     val body: @Composable () -> Unit = {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            // In collapsible mode the header row already names the section;
-            // repeating it as the field's floating label doubles the text
-            // over the border (the overlap the user reported).
-            label = if (collapsible) null else { { Text(label) } },
-            placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
-            minLines = 3,
-            maxLines = 8,
-            modifier = Modifier
-                .fillMaxWidth()
-                .onFocusChanged { st ->
-                    if (!st.isFocused) {
-                        val parsed = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
-                        if (parsed != values) onValuesChange(parsed)
-                    }
-                },
-        )
-        if (supporting.isNotEmpty()) {
-            Text(
-                supporting,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, top = 2.dp),
+        Column {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                // In collapsible mode the header row already names the
+                // section; repeating it as the field's floating label
+                // doubled the text over the border. The long hint lives in
+                // the supportingText slot below the border — never inside
+                // the field where it could interleave with the value, and
+                // the example placeholder only shows while empty.
+                label = if (collapsible) null else { { Text(label) } },
+                placeholder = if (!collapsible) {
+                    placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
+                } else null,
+                supportingText = supporting.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
+                minLines = 3,
+                maxLines = 8,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { st ->
+                        if (!st.isFocused) {
+                            val parsed = text.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+                            if (parsed != values) onValuesChange(parsed)
+                        }
+                    },
             )
         }
     }
