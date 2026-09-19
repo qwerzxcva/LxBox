@@ -185,7 +185,10 @@ fun ListField(
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text(label) },
+            // In collapsible mode the header row already names the section;
+            // repeating it as the field's floating label doubles the text
+            // over the border (the overlap the user reported).
+            label = if (collapsible) null else { { Text(label) } },
             placeholder = placeholder.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
             minLines = 3,
             maxLines = 8,

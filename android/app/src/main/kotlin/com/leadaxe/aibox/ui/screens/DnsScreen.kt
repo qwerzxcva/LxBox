@@ -92,6 +92,11 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
 
     // Rule editor as a second-level page (replaces the list while open).
     // The dialog version clipped long forms and could not scroll properly.
+    // Server editor is inline (card swapped in place): back exits it back
+    // to the plain list.
+    androidx.activity.compose.BackHandler(enabled = editingServerId != null) {
+        editingServerId = null
+    }
     if (creatingRule || editingRule != null) {
         DnsRuleEditorPage(
             initial = editingRule,
@@ -316,10 +321,9 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                 expanded = fallbackExpanded,
                 onToggle = { fallbackExpanded = !fallbackExpanded },
                 subtitle = if (overrideCount == 0) {
-                    FinalOptionLabel(state.finalDnsServer, state)
+                    stringResource(R.string.dns_final_auto)
                 } else {
-                    FinalOptionLabel(state.finalDnsServer, state) + " · " +
-                        stringResource(R.string.dns_final_overrides, overrideCount)
+                    stringResource(R.string.dns_final_overrides, overrideCount)
                 },
             ) {
                 // Per-mode picks: Rule / Global / Direct can each pin their
@@ -364,21 +368,11 @@ fun DnsScreen(onEditorLock: (Boolean) -> Unit = {}) {
                         }
                     }
                 }
-                // Global fallback: used by modes without their own pick.
-                SingleChoiceChips(
-                    label = stringResource(R.string.dns_final_global_fallback),
-                    options = finalOptions,
-                    selected = state.finalDnsServer,
-                    onSelect = { v -> store.update { it.copy(finalDnsServer = v) } },
-                    display = { FinalOptionLabel(it, state) },
-                )
-                if (state.finalDnsServer == DnsFinalReject) {
-                    Text(
-                        stringResource(R.string.dns_final_reject_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                // (The old global fallback row is gone: with both exits
+                // selectable there is no mode a third choice could cover,
+                // and an unpicked exit now means the kernel's automatic
+                // first-usable-server behaviour instead of a hidden
+                // duplicate knob.)
             }
         }
     }
@@ -1047,6 +1041,9 @@ private fun DnsRuleEditorPage(
     var invert by remember { mutableStateOf(initial?.invert ?: false) }
     var enabled by remember { mutableStateOf(initial?.enabled ?: true) }
 
+    // Back gesture closes the editor (never the app).
+    androidx.activity.compose.BackHandler { onDismiss() }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Header bar: back arrow + title + save, the same shape as the
         // route-rule editor's second-level page.
@@ -1127,27 +1124,32 @@ private fun DnsRuleEditorPage(
                 values = domainSuffix,
                 onValuesChange = { domainSuffix = it },
                 placeholder = "google.com, openai.com",
+                collapsible = true,
             )
             ListField(
                 label = stringResource(R.string.routes_field_domain),
                 values = domain,
                 onValuesChange = { domain = it },
+                collapsible = true,
             )
             ListField(
                 label = stringResource(R.string.routes_field_domain_keyword),
                 values = domainKeyword,
                 onValuesChange = { domainKeyword = it },
+                collapsible = true,
             )
             ListField(
                 label = stringResource(R.string.routes_field_rule_set),
                 values = ruleSet,
                 onValuesChange = { ruleSet = it },
+                collapsible = true,
             )
             ListField(
                 label = stringResource(R.string.dns_query_type),
                 values = queryType,
                 onValuesChange = { queryType = it },
                 placeholder = "A, AAAA, HTTPS, SVCB…",
+                collapsible = true,
             )
             if (action == DnsRuleActionReject) {
                 // Response-code matching is a reject-rule concern: which
@@ -1158,12 +1160,14 @@ private fun DnsRuleEditorPage(
                     onValuesChange = { responseRcode = it },
                     placeholder = "NOERROR, NXDOMAIN, SERVFAIL",
                     supporting = stringResource(R.string.dns_response_rcode_hint),
+                collapsible = true,
                 )
             }
             ListField(
                 label = stringResource(R.string.routes_field_package),
                 values = packageName,
                 onValuesChange = { packageName = it },
+                collapsible = true,
             )
             MultiChoiceChips(
                 label = stringResource(R.string.dns_clash_mode),

@@ -210,6 +210,24 @@ object ConfigCompiler {
         // Built-in final shortcuts: a local resolver pinned to the proxy
         // exit or the direct path. `local` type dials through the detour's
         // network, so the OS resolver's queries follow the chosen exit.
+        // Last-resort availability (user report: connected but nothing
+        // resolved): with every server dropped or the list empty, the
+        // fail-closed reject below would blackhole ALL resolution while
+        // the tunnel looked "connected". Materialise an OS-resolver
+        // fallback instead — fail-open beats fail-blackhole for a client
+        // app; the explicit intercept choice still rejects.
+        val enabledCount = state.dnsServers.count { it.enabled }
+        if (usableServers.isEmpty() && effectiveFinalDns(state) != DnsFinalReject) {
+            android.util.Log.w(
+                "ConfigCompiler",
+                "no usable DNS servers — materialising an OS-resolver fallback",
+            )
+            usableServers += DnsServerState(
+                id = "final-os",
+                name = "Final (system)",
+                type = "local",
+            )
+        }
         when (effectiveFinalDns(state)) {
             DnsFinalProxy -> usableServers += DnsServerState(
                 id = "final-proxy",
@@ -252,7 +270,16 @@ object ConfigCompiler {
         // chose intercept, append an unconditional reject so a query that
         // survives every rule fails loudly instead of leaking to the first
         // (possibly system) server.
-        if (interceptFinal || usableServers.size < state.dnsServers.count { it.enabled }) {
+        val failOpenRescue = usableServers.any { it.id == "final-os" }
+        if ((interceptFinal || usableServers.size < enabledCount) && !failOpenRescue) {
+            // Loud + visible: when every query is about to be rejected, say
+            // so in the log — "connected but nothing resolves" was reported
+            // with no hint, and this is the one config shape that causes it.
+            android.util.Log.w(
+                "ConfigCompiler",
+                "fail-closed DNS: servers dropped (usable=${'$'}{usableServers.size}/" +
+                    "${'$'}{state.dnsServers.count { it.enabled }}) — all queries will be rejected",
+            )
             putJsonArray("rules") {
                 add(buildJsonObject { put("action", "reject") })
             }
@@ -635,7 +662,7 @@ object ConfigCompiler {
         }
         return usableServers.firstOrNull { it.type != "local" }?.tag
             ?: usableServers.firstOrNull()?.tag
-            ?: FakeIpServerTag
+            ?: "dns-final-os"
     }
 
     /**
@@ -661,10 +688,19 @@ object ConfigCompiler {
             DirectOutboundTag -> "direct"
             else -> ""
         }
-        if (key.isBlank()) return state.finalDnsServer
-        return state.finalDnsServerByExit[key]
-            ?.takeIf { it.isNotBlank() }
-            ?: state.finalDnsServer
+        // No exit key (unknown traffic is a concrete node): the first
+        // usable non-local server answers — the automatic behaviour, not a
+        // hidden global override (removed: with both exits selectable the
+        // third knob could never apply meaningfully).
+        if (key.isBlank()) return ""
+        return state.finalDnsServerByExit[key]?.takeIf { it.isNotBlank() }
+            // Unpicked exit: proxy resolves through the proxy exit, direct
+            // over the local network — the built-in shortcuts.
+            ?: when (key) {
+                "proxy" -> DnsFinalProxy
+                "direct" -> DnsFinalDirect
+                else -> ""
+            }
     }
 
     private fun pickDefaultResolver(state: AppState): String? {

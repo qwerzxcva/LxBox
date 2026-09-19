@@ -191,7 +191,6 @@
     <string name="dns_final_exit_direct">直连出口</string>
     <string name="dns_final_overrides">%1$d modes overridden</string>
     <string name="dns_final_mode_default">跟随全局</string>
-    <string name="dns_final_global_fallback">全局兜底（最后手段）</string>
     <string name="dns_group_members">成员服务器</string>
     <string name="dns_group_mode">选择策略</string>
     <string name="dns_group_stable">稳定（粘滞）</string>

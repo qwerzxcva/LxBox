@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -141,7 +142,14 @@ private fun RootScaffold(
         ) { page ->
             // Reserve room at the bottom so lists can scroll their last
             // item clear of the floating bar (bar height ≈ 64dp + lift).
-            Column(modifier = Modifier.fillMaxSize().padding(bottom = 96.dp)) {
+            // statusBarsPadding: edge-to-edge is on, so without this the
+            // page-title capsule sat under the system status bar.
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(bottom = 96.dp),
+            ) {
             // Page-title capsule: every page opens with its name in a
             // rounded pill, centered (user request).
             Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
