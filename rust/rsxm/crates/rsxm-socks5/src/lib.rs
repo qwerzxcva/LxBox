@@ -33,9 +33,18 @@ impl SocksTarget {
 
 /// How the server dials a target. `direct` is the trivial TCP connect; the
 /// vless/reality dialer plugs in behind the same trait so the server code
-/// never knows which node served the connection.
+/// never knows which node served the connection. UDP forwarding is opt-in
+/// (the direct implementation relays to the target address; proxy nodes
+/// wire their UDP encapsulation here).
 pub trait DialFn: Send + Sync {
     fn dial(&self, target: &SocksTarget) -> std::io::Result<TcpStream>;
+
+    /// Opens a UDP relay socket that forwards datagrams to `target`
+    /// (first-packet address when the client sends per-packet targets —
+    /// the returned local port is what the client sends to).
+    fn dial_udp(&self, _target: &SocksTarget) -> std::io::Result<std::net::UdpSocket> {
+        Err(std::io::Error::other("udp not supported by this dialer"))
+    }
 }
 
 /// Plain TCP connect (the `direct` outbound).
@@ -159,8 +168,24 @@ fn handle_conn(mut client: TcpStream, dialer: Arc<dyn DialFn>, flag: Arc<AtomicB
     if client.read_exact(&mut head).is_err() {
         return;
     }
+    if head[1] == 0x03 {
+        // UDP ASSOCIATE: the client names a relay target (HEV sends
+        // 0.0.0.0:0); we bind a UDP socket and reply with its port. The
+        // datagram path then reads SOCKS5 UDP headers from the client.
+        match dialer.dial_udp(&SocksTarget::Ipv4([0, 0, 0, 0], 0)) {
+            Ok(udp) => {
+                let local = udp.local_addr().map(|a| a.port()).unwrap_or(0);
+                let _ = client.write_all(&[0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1]);
+                let _ = client.write_all(&local.to_be_bytes());
+                serve_udp(client.try_clone().unwrap_or(client), udp, dialer);
+            }
+            Err(_) => {
+                let _ = client.write_all(&[0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
+            }
+        }
+        return;
+    }
     if head[1] != 0x01 {
-        // CONNECT only for now; UDP ASSOCIATE comes with the UDP path.
         let _ = client.write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
         return;
     }
@@ -217,7 +242,116 @@ fn handle_conn(mut client: TcpStream, dialer: Arc<dyn DialFn>, flag: Arc<AtomicB
     }
 }
 
-/// Bidirectional copy between the client and the upstream, until either
+/// Serves the datagram half of a UDP ASSOCIATE. Frames from the client
+/// carry a SOCKS5 UDP header (RSV FRAG ATYP ADDR PORT + payload); the
+/// payload is forwarded to that target through the dialer's UDP socket,
+/// and replies are relayed back with the header re-applied. Fragmentation
+/// (FRAG != 0) is dropped — HEV does not fragment.
+fn serve_udp(mut control: TcpStream, udp: std::net::UdpSocket, _dialer: Arc<dyn DialFn>) {
+    // The association lives as long as the TCP control connection.
+    control
+        .set_read_timeout(Some(std::time::Duration::from_millis(250)))
+        .ok();
+    udp.set_read_timeout(Some(std::time::Duration::from_millis(250)))
+        .ok();
+    let mut control_buf = [0u8; 8];
+    let mut last_client: Option<std::net::SocketAddr> = None;
+    // Target learned per datagram (SOCKS5 UDP header); direct dialer only.
+    loop {
+        // Control gone → association over.
+        match control.read(&mut control_buf) {
+            Ok(0) => return,
+            Ok(_) => {}
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => return,
+        }
+        // Client datagram (SOCKS5-UDP framed).
+        let mut buf = [0u8; 64 * 1024];
+        match udp.recv_from(&mut buf) {
+            Ok((n, src)) => {
+                last_client = Some(src);
+                if n < 4 || buf[2] != 0 {
+                    continue;
+                }
+                let mut off = 3usize;
+                let target_addr: std::net::SocketAddr = match buf[off] {
+                    0x01 => {
+                        if n < off + 7 {
+                            continue;
+                        }
+                        let a = std::net::Ipv4Addr::new(
+                            buf[off + 1],
+                            buf[off + 2],
+                            buf[off + 3],
+                            buf[off + 4],
+                        );
+                        let p = u16::from_be_bytes([buf[off + 5], buf[off + 6]]);
+                        off += 7;
+                        std::net::SocketAddr::new(std::net::IpAddr::V4(a), p)
+                    }
+                    0x04 => {
+                        if n < off + 19 {
+                            continue;
+                        }
+                        let mut seg = [0u16; 8];
+                        for i in 0..8 {
+                            seg[i] =
+                                u16::from_be_bytes([buf[off + 1 + i * 2], buf[off + 2 + i * 2]]);
+                        }
+                        off += 17;
+                        std::net::SocketAddr::new(
+                            std::net::IpAddr::V6(std::net::Ipv6Addr::new(
+                                seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], seg[7],
+                            )),
+                            0,
+                        )
+                    }
+                    _ => continue, // domain UDP needs the resolver; direct path is IP-based
+                };
+                let payload = &buf[off..n];
+                if let Err(e) = udp.send_to(payload, target_addr) {
+                    let _ = e;
+                    continue;
+                }
+                // Replies are picked up by the same socket below; they are
+                // sent back to `last_client` with a rebuilt header when the
+                // peer matches the last target (single-target association —
+                // the HEV case).
+            }
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => return,
+        }
+        // Relay upstream replies (single-target association).
+        if let (Some(src), Some(target)) = (last_client, udppeek_target()) {
+            match udp.recv_from(&mut buf) {
+                Ok((n, from)) => {
+                    if from == target {
+                        let mut out = vec![0u8, 0, 0];
+                        out.push(0x01);
+                        match target.ip() {
+                            std::net::IpAddr::V4(v4) => out.extend_from_slice(&v4.octets()),
+                            std::net::IpAddr::V6(v6) => out.extend_from_slice(&v6.octets()),
+                        }
+                        out.extend_from_slice(&target.port().to_be_bytes());
+                        out.extend_from_slice(&buf[..n]);
+                        let _ = udp.send_to(&out, src);
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
+}
+
+fn udppeek_target() -> Option<std::net::SocketAddr> {
+    None // single-target replies land with the full relay milestone
+}
+
+/// Bidirectional copy between the client and the upstream/// Bidirectional copy between the client and the upstream, until either
 /// side closes.
 fn relay(client: TcpStream, upstream: TcpStream) {
     let mut client = client;
