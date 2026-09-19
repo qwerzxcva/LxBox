@@ -115,15 +115,26 @@ class ConfigCompilerFallbackTest {
     }
 
     @Test
-    fun `fake-ip pool escapes to the DNS outbound, never to direct`() {
+    fun `fake-ip pool escape is a hijack-dns action`() {
         // Regression for "connected but nothing resolves": the pool bypass
         // used to route 198.18/15 to direct, blackholing every connection
-        // an app made to a cached fake address. It must land on the DNS
-        // outbound so the lookup re-enters the normal chain.
+        // an app made to a cached fake address. It then briefly pointed at
+        // the legacy `dns` outbound, which sing-box 1.13 removed (config
+        // failed at decode). The pool must be answered by the hijack-dns
+        // RULE ACTION.
         val config = compile(AppState(enableFakeIp = true))
         val first = routeRulesOf(config).first()
         assertEquals("198.18.0.0/15", first["ip_cidr"]!!.jsonArray[0].jsonPrimitive.content)
-        assertEquals(com.leadaxe.aibox.app.DnsOutboundTag, first["outbound"]!!.jsonPrimitive.content)
+        assertEquals("hijack-dns", first["action"]?.jsonPrimitive?.content)
+        assertNull(first["outbound"])
+    }
+
+    @Test
+    fun `legacy dns outbound is never emitted`() {
+        // sing-box 1.13 hard-rejects the `dns` outbound type at decode.
+        val config = compile(AppState(enableFakeIp = true))
+        val types = config["outbounds"]!!.jsonArray.map { it.jsonObject["type"]?.jsonPrimitive?.content }
+        assertTrue("no dns outbound may be emitted", "dns" !in types)
     }
 
     @Test

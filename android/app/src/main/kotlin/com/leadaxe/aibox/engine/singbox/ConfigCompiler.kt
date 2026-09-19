@@ -7,7 +7,6 @@ import com.leadaxe.aibox.app.ClashModeGlobal
 import com.leadaxe.aibox.app.ClashModeRule
 import com.leadaxe.aibox.app.LoadBalanceTag
 import com.leadaxe.aibox.app.DirectOutboundTag
-import com.leadaxe.aibox.app.DnsOutboundTag
 import com.leadaxe.aibox.app.DnsFinalDirect
 import com.leadaxe.aibox.app.DnsFinalProxy
 import com.leadaxe.aibox.app.DnsFinalReject
@@ -881,10 +880,8 @@ object ConfigCompiler {
                 put("tag", BlockOutboundTag)
             })
         }
-        add(buildJsonObject {
-            put("type", "dns")
-            put("tag", DnsOutboundTag)
-        })
+        // (The legacy `dns` outbound is not emitted: removed in
+        // sing-box 1.13; hijack-dns rule actions cover its role.)
     }
 
     /**
@@ -1103,28 +1100,25 @@ object ConfigCompiler {
     private fun compileRouteRules(state: AppState): List<JsonObject> = buildList {
         // Built-in: fake-IP escape hatch. Packets addressed into the fake
         // pool are DNS queries in disguise (an app that cached a fake
-        // address, or one that hardcodes its resolver to the pool) — they
-        // must go to the DNS outbound, which turns them back into real
-        // lookups through the normal chain. Routing them to direct (the
-        // old behaviour) sent 198.18.x.x onto the physical NIC where
-        // nothing answers: tunnel up, everything blackholed. The kernel
-        // restores the real domain from its fake-ip store for normal
-        // connections, so user rules still match by domain — this rule
-        // only catches the store-miss path (stale cache, direct-to-pool
-        // traffic).
+        // address, or one that hardcodes its resolver to the pool); the
+        // hijack-dns ACTION answers them through the normal DNS chain.
+        // The pre-1.11 equivalent was the `dns` outbound, removed in
+        // sing-box 1.13 — routing the pool there failed the whole config
+        // at decode. Routing it to direct (older still) blackholed every
+        // connection. The kernel restores the real domain from its fake-ip
+        // store for normal connections, so user rules match by domain;
+        // this rule only catches the store-miss path.
         if (state.fakeIpBypass && state.enableFakeIp) {
             val v4 = state.fakeIpInet4Range.ifBlank { "198.18.0.0/15" }
             add(buildJsonObject {
                 putJsonArray("ip_cidr") { add(v4) }
-                put("action", "route")
-                put("outbound", DnsOutboundTag)
+                put("action", "hijack-dns")
             })
             if (state.enableIpv6) {
                 val v6 = state.fakeIpInet6Range.ifBlank { "fc00::/18" }
                 add(buildJsonObject {
                     putJsonArray("ip_cidr") { add(v6) }
-                    put("action", "route")
-                    put("outbound", DnsOutboundTag)
+                    put("action", "hijack-dns")
                 })
             }
         }
