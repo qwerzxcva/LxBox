@@ -7,6 +7,7 @@
 //! frame format verified against `sing-vmess`'s Go sources.
 
 pub mod hello;
+pub mod httpupgrade;
 pub mod module;
 pub mod shadowsocks;
 pub mod tls13;
@@ -58,9 +59,19 @@ pub struct VlessConnection {
     /// WebSocket transport wrapping (optional): when the node is ws-based,
     /// every VLESS record rides inside a masked binary WS frame.
     ws: Option<ws::WsTransport>,
+    /// httpupgrade transport (optional): raw byte passthrough after the
+    /// 101 — no framing. The struct carries the post-upgrade prefix bytes
+    /// that arrived with the 101.
+    httpupgrade: Option<httpupgrade::HttpUpgradeTransport>,
 }
 
 impl VlessConnection {
+    /// True when the connection rides a raw-byte transport (httpupgrade):
+    /// no per-record framing beyond TLS itself.
+    pub fn is_raw_transport(&self) -> bool {
+        self.httpupgrade.is_some()
+    }
+
     /// Sends plaintext (the TLS layer frames and encrypts it).
     pub fn send(&mut self, data: &[u8]) -> std::io::Result<()> {
         // WebSocket transport wraps each chunk in a masked binary frame;
@@ -182,6 +193,7 @@ pub fn dial(
     target: &VlessRealityTarget,
     request: &VlessRequest,
     ws_transport: Option<ws::WsTransport>,
+    httpupgrade_transport: Option<httpupgrade::HttpUpgradeTransport>,
 ) -> Result<VlessConnection, DialError> {
     let mut stream = TcpStream::connect((target.server.as_str(), target.server_port))?;
     stream.set_nodelay(true).ok();
@@ -191,6 +203,18 @@ pub fn dial(
     if let Some(ref transport) = ws_transport {
         stream = ws::upgrade(stream, &transport.host, &transport.path).map_err(DialError::Io)?;
     }
+    // httpupgrade transport (optional): same shape as ws but raw bytes
+    // after the 101.
+    let httpupgrade_transport = match httpupgrade_transport {
+        Some(mut t) => {
+            let (upgraded, leftover) =
+                httpupgrade::upgrade(stream, &t.host, &t.path).map_err(DialError::Io)?;
+            stream = upgraded;
+            t.pending = leftover;
+            Some(t)
+        }
+        None => None,
+    };
 
     // ---- ClientHello with REALITY auth ----
     let suites = [
@@ -380,6 +404,7 @@ pub fn dial(
         tls_write,
         pending: Vec::new(),
         ws: ws_transport,
+        httpupgrade: httpupgrade_transport,
     })
 }
 
