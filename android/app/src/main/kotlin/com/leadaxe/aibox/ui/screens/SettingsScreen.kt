@@ -567,6 +567,12 @@ fun SettingsScreen() {
                             checked = state.experimental.latencyHistory,
                             onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(latencyHistory = v)) } },
                         )
+                        SwitchRow(
+                            label = stringResource(R.string.settings_exp_rsxm_plane),
+                            supporting = stringResource(R.string.settings_exp_rsxm_plane_desc),
+                            checked = state.experimental.rsxmDataPlane,
+                            onCheckedChange = { v -> store.update { it.copy(experimental = it.experimental.copy(rsxmDataPlane = v)) } },
+                        )
                     }
                 }
             }

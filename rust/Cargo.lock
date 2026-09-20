@@ -58,6 +58,7 @@ dependencies = [
  "rsxm-power",
  "rsxm-rules",
  "rsxm-security",
+ "rsxm-socks5",
  "rsxm-stats",
  "rsxm-tun",
  "serde",

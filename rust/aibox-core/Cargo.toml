@@ -20,3 +20,4 @@ rsxm-power = { path = "../rsxm/crates/rsxm-power" }
 rsxm-security = { path = "../rsxm/crates/rsxm-security" }
 rsxm-stats = { path = "../rsxm/crates/rsxm-stats" }
 rsxm-tun = { path = "../rsxm/crates/rsxm-tun" }
+rsxm-socks5 = { path = "../rsxm/crates/rsxm-socks5" }

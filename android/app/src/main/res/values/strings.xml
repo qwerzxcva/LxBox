@@ -649,4 +649,6 @@
     <string name="home_no_nodes_warning">No nodes available — add a subscription first. The tunnel is up but only direct connections work.</string>
     <string name="home_probe">Probe: %1$s</string>
     <string name="home_probe_probing">probing…</string>
+    <string name="settings_exp_rsxm_plane">rsxm data plane (independent kernel)</string>
+    <string name="settings_exp_rsxm_plane_desc">Routes the tun through the Rust micro-kernel: HEV packet engine -> rsxm SOCKS5 -> rsxm dialer (vless/reality), bypassing the sing-box data path. Direct outbound only for now.</string>
 </resources>

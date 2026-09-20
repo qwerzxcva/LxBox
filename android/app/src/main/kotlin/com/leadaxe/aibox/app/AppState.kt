@@ -1056,6 +1056,15 @@ data class ExperimentalFeatures(
 
     /** nekobox/karing: persistent per-node latency history (cache file). */
     val latencyHistory: Boolean = false,
+
+    /**
+     * rsxm data plane (independent kernel): the tun fd is handed to the
+     * Rust micro-kernel (HEV packet engine -> rsxm SOCKS5 -> rsxm dialer),
+     * bypassing the sing-box data path entirely. The Go engine keeps
+     * running for its config surface; the packets never touch it. The
+     * rsxm SOCKS5 server must be started first (kernelStart does).
+     */
+    val rsxmDataPlane: Boolean = false,
 )
 
 /**

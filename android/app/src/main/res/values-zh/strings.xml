@@ -647,4 +647,6 @@
     <string name="home_no_nodes_warning">没有可用节点——请先添加订阅。隧道虽已建立但仅直连可用。</string>
     <string name="home_probe">节点探测：%1$s</string>
     <string name="home_probe_probing">探测中…</string>
+    <string name="settings_exp_rsxm_plane">rsxm 数据面（独立内核）</string>
+    <string name="settings_exp_rsxm_plane_desc">TUN 流量走 Rust 微内核：HEV 包引擎 → rsxm SOCKS5 → rsxm 拨号器（vless/reality），完全绕开 sing-box 数据路径。当前仅支持直连出站。</string>
 </resources>

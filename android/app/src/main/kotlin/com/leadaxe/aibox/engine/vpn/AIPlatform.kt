@@ -55,7 +55,12 @@ class AIPlatform(private val context: Context) : PlatformInterface {
     private var currentTun: ParcelFileDescriptor? = null
 
     /** Set by the VPN service right after `VpnService.Builder#establish()`. */
+    /** The tunnel fd, handed to the rsxm packet engine in data-plane mode. */
+    var tunFd: Int? = null
+        private set
+
     internal fun setTun(fd: ParcelFileDescriptor) {
+        tunFd = fd.fd
         currentTun = fd
     }
 

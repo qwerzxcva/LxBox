@@ -69,6 +69,14 @@ impl TunModule {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(fd);
     }
 
+    /// Sets the rsxm SOCKS5 port (HEV's upstream) from the config slice.
+    pub fn set_socks_port(&self, port: u16) {
+        self.config
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .socks_port = port;
+    }
+
     /// The loopback port of the rsxm SOCKS5 server (HEV's upstream).
     pub fn socks_port(&self) -> u16 {
         self.config

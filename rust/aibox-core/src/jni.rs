@@ -1,3 +1,4 @@
+
 //! JNI entry points called from Kotlin (System.loadLibrary("aibox_core")).
 //!
 //!  - snapshotFingerprint: the connection-snapshot delta path (phase 1).
@@ -15,7 +16,9 @@
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jstring};
 use jni::JNIEnv;
-use std::sync::{Arc, OnceLock};
+use rsxm_core::Module;
+use rsxm_socks5::{DirectDialer, SocksServer};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::ConnectionInfo;
 
@@ -25,6 +28,9 @@ static KERNEL: OnceLock<Arc<std::sync::Mutex<rsxm_core::Conductor>>> = OnceLock:
 static STATS: OnceLock<Arc<rsxm_stats::StatsModule>> = OnceLock::new();
 static POWER: OnceLock<Arc<rsxm_power::PowerModule>> = OnceLock::new();
 static DNS: OnceLock<Arc<rsxm_dns::DnsModule>> = OnceLock::new();
+static TUN: OnceLock<Arc<rsxm_tun::TunModule>> = OnceLock::new();
+static SOCKS: Mutex<Option<SocksServer>> = Mutex::new(None);
+const RSXM_SOCKS_PORT: i32 = 7891;
 
 fn kernel() -> Option<&'static Arc<std::sync::Mutex<rsxm_core::Conductor>>> {
     KERNEL.get()
@@ -164,10 +170,32 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStart(
         conductor.register(dns);
         conductor.register(Arc::new(rsxm_security::SecurityModule::new()));
         conductor.register(stats);
-        conductor.register(Arc::new(rsxm_tun::TunModule::new(
-            rsxm_tun::TunConfig::default(),
-        )));
+        let tun = Arc::new(rsxm_tun::TunModule::new(rsxm_tun::TunConfig::default()));
+        let _ = TUN.set(tun.clone());
+        conductor.register(tun);
         conductor.distribute(envelope);
+        // The rsxm SOCKS5 server is the data path's local entry: HEV dials
+        // it, the dialer dials out. Direct dialer for this milestone
+        // (vless/reality dialer plugs behind the same DialFn seam).
+        {
+            let mut guard = SOCKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if guard.is_none() {
+                match SocksServer::start(RSXM_SOCKS_PORT as u16, Arc::new(DirectDialer)) {
+                    Ok(server) => {
+                        *guard = Some(server);
+                        conductor.reporter().send(rsxm_core::Report::new(
+                            "rsxm",
+                            rsxm_core::ReportKind::Info,
+                            "socks5 listening on 127.0.0.1:7891",
+                        ));
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                        // Already running from a previous connect — fine.
+                    }
+                    Err(e) => return Err(format!("rsxm socks5 bind: {e}")),
+                }
+            }
+        }
         let failures: Vec<String> = conductor
             .start_all()
             .into_iter()
@@ -196,6 +224,12 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStop(
         },
         (),
     );
+    {
+        let mut guard = SOCKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(mut server) = guard.take() {
+            server.shutdown();
+        }
+    }
     to_jstring(&env, "ok".into())
 }
 
@@ -282,6 +316,51 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelDnsDec
             out_json.to_string()
         }
         None => "{}".to_string(),
+    };
+    to_jstring(&env, out)
+}
+
+/// Hands the tun fd to the Rust packet engine: rsxm-tun starts HEV with a
+/// YAML that points its SOCKS5 hop at the rsxm server (the dialer serves
+/// it), so the data path is tun -> HEV -> rsxm -> node, no sing-box. The
+/// socks port must match the port the rsxm SOCKS5 server is bound to.
+/// Returns "ok" or an error string; "no kernel" when kernelStart has not
+/// run.
+#[no_mangle]
+pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelTunStart(
+    env: JNIEnv,
+    _class: JClass,
+    tun_fd: i32,
+    socks_port: i32,
+) -> jstring {
+    let out = match TUN.get() {
+        Some(t) => {
+            t.set_tun_fd(tun_fd);
+            // The SOCKS port is the rsxm server's fixed loopback port.
+            let _ = socks_port;
+            t.set_socks_port(RSXM_SOCKS_PORT as u16);
+            match t.start() {
+                Ok(()) => "ok".to_string(),
+                Err(e) => format!("error: {e}"),
+            }
+        }
+        None => "no kernel".to_string(),
+    };
+    to_jstring(&env, out)
+}
+
+/// Stops the HEV packet engine.
+#[no_mangle]
+pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelTunStop(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let out = match TUN.get() {
+        Some(t) => match t.stop() {
+            Ok(()) => "ok".to_string(),
+            Err(e) => format!("error: {e}"),
+        },
+        None => "no kernel".to_string(),
     };
     to_jstring(&env, out)
 }

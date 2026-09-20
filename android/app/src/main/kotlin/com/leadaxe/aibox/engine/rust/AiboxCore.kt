@@ -99,6 +99,25 @@ object AiboxCore {
     }
 
     /**
+     * Hands the tun fd to the Rust packet engine: HEV starts with its
+     * SOCKS5 hop aimed at the rsxm server, so the data path is
+     * tun -> HEV -> rsxm -> node with no sing-box hop. Returns "ok" or an
+     * error string.
+     */
+    fun kernelTunStart(tunFd: Int, socksPort: Int): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelTunStart(tunFd, socksPort) }.getOrNull()
+    }
+
+    /** Stops the HEV packet engine (rsxm data plane). */
+    fun kernelTunStop(): String? = if (!available) {
+        null
+    } else {
+        runCatching { nativeKernelTunStop() }.getOrNull()
+    }
+
+    /**
      * Forwards a screen / charging edge to the Rust power leader and returns
      * the directive the other leaders should follow now ("run" | "throttle" |
      * "deep_pause"), or null when the kernel is not running. This is the only
@@ -126,4 +145,8 @@ object AiboxCore {
     private external fun nativeKernelPowerEvent(screenOn: Boolean, charging: Boolean): String
 
     private external fun nativeKernelDnsDecide(name: String, qtype: String): String
+
+    private external fun nativeKernelTunStart(tunFd: Int, socksPort: Int): String
+
+    private external fun nativeKernelTunStop(): String
 }

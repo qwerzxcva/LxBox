@@ -280,7 +280,27 @@ class AIVpnService : VpnService() {
         // with no "connecting" phase. It re-cancels stateJob internally, so
         // calling it again later is safe.
         observeState()
+        // rsxm data plane (experimental): the tunnel fd goes to the Rust
+        // packet engine instead of the Go engine's tun inbound. The config
+        // still compiles (DNS rules, groups) but the packets ride
+        // HEV -> rsxm SOCKS5 -> rsxm dialer. kernelStart must have run for
+        // the SOCKS server to exist; ordering here guarantees that.
+        val rsxmPlane = store.current.experimental.enabled &&
+            store.current.experimental.rsxmDataPlane
         engine.start(state)
+        if (rsxmPlane) {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    platform.tunFd?.let { fd ->
+                        val result = com.leadaxe.aibox.engine.rust.AiboxCore
+                            .kernelTunStart(fd, 7891)
+                        android.util.Log.i(TAG, "rsxm data plane: $result")
+                    } ?: android.util.Log.w(TAG, "rsxm data plane: no tun fd")
+                }.onFailure {
+                    android.util.Log.w(TAG, "rsxm data plane start failed: ${it.message}")
+                }
+            }
+        }
         // Boot the Rust micro-kernel conductor alongside the Go engine. It
         // registers every leader (rules / dns / dialer / power / security /
         // stats / tun) and gives each its opaque config slice; failures are
