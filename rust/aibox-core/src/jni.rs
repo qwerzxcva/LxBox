@@ -1,4 +1,3 @@
-
 //! JNI entry points called from Kotlin (System.loadLibrary("aibox_core")).
 //!
 //!  - snapshotFingerprint: the connection-snapshot delta path (phase 1).
@@ -178,7 +177,9 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStart(
         // it, the dialer dials out. Direct dialer for this milestone
         // (vless/reality dialer plugs behind the same DialFn seam).
         {
-            let mut guard = SOCKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut guard = SOCKS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if guard.is_none() {
                 match SocksServer::start(RSXM_SOCKS_PORT as u16, Arc::new(DirectDialer)) {
                     Ok(server) => {
@@ -225,7 +226,9 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStop(
         (),
     );
     {
-        let mut guard = SOCKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = SOCKS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(mut server) = guard.take() {
             server.shutdown();
         }

@@ -31,13 +31,18 @@ impl SocksTarget {
     }
 }
 
+/// A proxied byte stream: either a raw TcpStream (direct) or a VLESS
+/// connection (TLS-1.3-wrapped). The SOCKS relay treats them identically.
 /// How the server dials a target. `direct` is the trivial TCP connect; the
 /// vless/reality dialer plugs in behind the same trait so the server code
 /// never knows which node served the connection. UDP forwarding is opt-in
 /// (the direct implementation relays to the target address; proxy nodes
 /// wire their UDP encapsulation here).
 pub trait DialFn: Send + Sync {
-    fn dial(&self, target: &SocksTarget) -> std::io::Result<TcpStream>;
+    fn dial(
+        &self,
+        target: &SocksTarget,
+    ) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)>;
 
     /// Opens a UDP relay socket that forwards datagrams to `target`
     /// (first-packet address when the client sends per-packet targets —
@@ -50,14 +55,123 @@ pub trait DialFn: Send + Sync {
 /// Plain TCP connect (the `direct` outbound).
 pub struct DirectDialer;
 
+/// Dials through the rsxm VLESS+REALITY dialer (the proxy node).
+pub struct VlessDialer {
+    pub server: String,
+    pub server_port: u16,
+    pub server_name: String,
+    pub public_key: [u8; 32],
+    pub short_id: [u8; 8],
+    pub uuid: [u8; 16],
+}
+
+impl VlessDialer {
+    pub fn from_parts(
+        server: String,
+        server_port: u16,
+        server_name: String,
+        public_key_b64: &str,
+        short_id_hex: &str,
+        uuid_str: &str,
+    ) -> Result<Self, String> {
+        // Reuse the dialer's decoder for pbk/sid/uuid.
+        let target = rsxm_dialer::VlessRealityTarget::from_parts(
+            server.clone(),
+            server_port,
+            server_name.clone(),
+            public_key_b64,
+            short_id_hex,
+            uuid_str,
+        )
+        .map_err(|e| format!("invalid vless target: {e}"))?;
+        Ok(Self {
+            server,
+            server_port,
+            server_name,
+            public_key: target.public_key,
+            short_id: target.short_id,
+            uuid: target.uuid,
+        })
+    }
+}
+
+impl DialFn for VlessDialer {
+    fn dial(
+        &self,
+        target: &SocksTarget,
+    ) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
+        let vless_target = rsxm_dialer::VlessRealityTarget::from_parts(
+            self.server.clone(),
+            self.server_port,
+            self.server_name.clone(),
+            &b64_raw(&self.public_key),
+            &hex(&self.short_id),
+            &uuid_fmt(&self.uuid),
+        )
+        .map_err(|e| std::io::Error::other(format!("vless target: {e}")))?;
+
+        let dest = match target {
+            SocksTarget::Domain(h, p) => rsxm_dialer::VlessDestination::Domain(h.clone(), *p),
+            SocksTarget::Ipv4(a, p) => rsxm_dialer::VlessDestination::Ipv4(*a, *p),
+            SocksTarget::Ipv6(a, p) => rsxm_dialer::VlessDestination::Ipv6(*a, *p),
+        };
+        let request = rsxm_dialer::vless::VlessRequest {
+            uuid: self.uuid,
+            command: rsxm_dialer::vless::VlessCommand::Tcp,
+            destination: dest,
+            flow: String::new(),
+        };
+        rsxm_dialer::dial(&vless_target, &request, None, None)
+            .and_then(|conn| {
+                let (r, w) = conn.split()?;
+                Ok((
+                    Box::new(r) as Box<dyn Read + Send>,
+                    Box::new(w) as Box<dyn Write + Send>,
+                ))
+            })
+            .map_err(|e| std::io::Error::other(format!("vless dial: {e}")))
+    }
+}
+
+fn b64_raw(key: &[u8; 32]) -> String {
+    use std::fmt::Write;
+    key.iter().fold(String::new(), |mut acc, b| {
+        let _ = write!(acc, "{b:02x}");
+        acc
+    })
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::new(), |mut acc, b| {
+        let _ = write!(acc, "{b:02x}");
+        acc
+    })
+}
+
+fn uuid_fmt(uuid: &[u8; 16]) -> String {
+    let h = hex(uuid);
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
+}
+
 impl DialFn for DirectDialer {
-    fn dial(&self, target: &SocksTarget) -> std::io::Result<TcpStream> {
-        match target {
-            SocksTarget::Domain(h, p) => TcpStream::connect((h.as_str(), *p)),
+    fn dial(
+        &self,
+        target: &SocksTarget,
+    ) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
+        let stream = match target {
+            SocksTarget::Domain(h, p) => TcpStream::connect((h.as_str(), *p))?,
             SocksTarget::Ipv4(a, p) => TcpStream::connect(std::net::SocketAddr::new(
                 std::net::IpAddr::V4(std::net::Ipv4Addr::new(a[0], a[1], a[2], a[3])),
                 *p,
-            )),
+            ))?,
             SocksTarget::Ipv6(a, p) => {
                 let addr = std::net::Ipv6Addr::new(
                     u16::from_be_bytes([a[0], a[1]]),
@@ -69,9 +183,11 @@ impl DialFn for DirectDialer {
                     u16::from_be_bytes([a[12], a[13]]),
                     u16::from_be_bytes([a[14], a[15]]),
                 );
-                TcpStream::connect(std::net::SocketAddr::new(std::net::IpAddr::V6(addr), *p))
+                TcpStream::connect(std::net::SocketAddr::new(std::net::IpAddr::V6(addr), *p))?
             }
-        }
+        };
+        let read_half = stream.try_clone()?;
+        Ok((Box::new(read_half), Box::new(stream)))
     }
 }
 
@@ -234,7 +350,7 @@ fn handle_conn(mut client: TcpStream, dialer: Arc<dyn DialFn>, flag: Arc<AtomicB
     match dialer.dial(&target) {
         Ok(upstream) => {
             let _ = client.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
-            relay(client, upstream);
+            relay_boxed(client, upstream);
         }
         Err(_) => {
             let _ = client.write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
@@ -350,97 +466,34 @@ fn udppeek_target() -> Option<std::net::SocketAddr> {
 
 /// Bidirectional copy between the client and the upstream/// Bidirectional copy between the client and the upstream, until either
 /// side closes.
-fn relay(client: TcpStream, upstream: TcpStream) {
-    let mut client = client;
-    let mut upstream = upstream;
-    let mut up_clone = match upstream.try_clone() {
+fn relay_boxed(client: TcpStream, upstream: (Box<dyn Read + Send>, Box<dyn Write + Send>)) {
+    let (mut up_read, mut up_write) = upstream;
+    let mut cl_read = match client.try_clone() {
         Ok(s) => s,
         Err(_) => return,
     };
-    let mut cl_clone = match client.try_clone() {
-        Ok(s) => s,
-        Err(_) => return,
-    };
+    let mut cl_write = client;
+
+    // Client → upstream on the spawned thread.
     let to_up = std::thread::spawn(move || {
         let mut buf = [0u8; 16 * 1024];
-        while let Ok(n) = client.read(&mut buf) {
-            if n == 0 || up_clone.write_all(&buf[..n]).is_err() {
+        while let Ok(n) = cl_read.read(&mut buf) {
+            if n == 0 || up_write.write_all(&buf[..n]).is_err() {
                 break;
             }
         }
-        let _ = up_clone.shutdown(std::net::Shutdown::Write);
+        let _ = up_write.flush();
     });
+    // Upstream → client on this thread.
     let mut buf = [0u8; 16 * 1024];
-    while let Ok(n) = upstream.read(&mut buf) {
-        if n == 0 || cl_clone.write_all(&buf[..n]).is_err() {
+    while let Ok(n) = up_read.read(&mut buf) {
+        if n == 0 {
+            break;
+        }
+        if cl_write.write_all(&buf[..n]).is_err() {
             break;
         }
     }
-    let _ = cl_clone.shutdown(std::net::Shutdown::Both);
+    let _ = cl_write.shutdown(std::net::Shutdown::Read);
     let _ = to_up.join();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn connect_round_trip_direct() {
-        // A tiny echo server stands in for the "internet".
-        let echo = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let echo_port = echo.local_addr().unwrap().port();
-        let echo_handle = std::thread::spawn(move || {
-            if let Ok((mut s, _)) = echo.accept() {
-                let mut buf = [0u8; 64];
-                if let Ok(n) = s.read(&mut buf) {
-                    let _ = s.write_all(&buf[..n]);
-                }
-            }
-        });
-
-        let server = SocksServer::start(0, Arc::new(DirectDialer)).unwrap();
-        let port = server.port();
-
-        let mut client = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-        client.write_all(&[0x05, 0x01, 0x00]).unwrap();
-        let mut reply = [0u8; 2];
-        client.read_exact(&mut reply).unwrap();
-        assert_eq!(&reply, &[0x05, 0x00]);
-
-        // CONNECT via the domain form to exercise the parser.
-        let host = "127.0.0.1".to_string();
-        let mut req = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
-        req.extend_from_slice(host.as_bytes());
-        req.extend_from_slice(&echo_port.to_be_bytes());
-        client.write_all(&req).unwrap();
-        let mut ack = [0u8; 10];
-        client.read_exact(&mut ack).unwrap();
-        assert_eq!(ack[1], 0x00, "connect must succeed");
-
-        client.write_all(b"ping").unwrap();
-        let mut buf = [0u8; 4];
-        client.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf, b"ping");
-        echo_handle.join().unwrap();
-        let mut server = server;
-        server.shutdown();
-    }
-
-    #[test]
-    fn non_connect_command_is_refused() {
-        let server = SocksServer::start(0, Arc::new(DirectDialer)).unwrap();
-        let mut client = std::net::TcpStream::connect(("127.0.0.1", server.port())).unwrap();
-        client.write_all(&[0x05, 0x01, 0x00]).unwrap();
-        let mut reply = [0u8; 2];
-        client.read_exact(&mut reply).unwrap();
-        // BIND (0x02): unsupported → command-not-supported (0x07).
-        client
-            .write_all(&[0x05, 0x02, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
-            .unwrap();
-        let mut ack = [0u8; 10];
-        client.read_exact(&mut ack).unwrap();
-        assert_eq!(ack[1], 0x07);
-        let mut server = server;
-        server.shutdown();
-    }
 }

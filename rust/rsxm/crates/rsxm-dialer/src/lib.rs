@@ -72,6 +72,27 @@ impl VlessConnection {
         self.httpupgrade.is_some()
     }
 
+    /// Splits the connection into independent read/write halves: TLS 1.3
+    /// keeps separate cipher states per direction, so each half owns one
+    /// direction exclusively and the two can live on different threads.
+    /// The underlying TcpStream is duplicated (try_clone).
+    pub fn split(self) -> Result<(VlessReadHalf, VlessWriteHalf), std::io::Error> {
+        let stream = self.stream.try_clone()?;
+        Ok((
+            VlessReadHalf {
+                stream,
+                tls_read: self.tls_read,
+                pending: self.pending,
+                ws_framed: self.ws.is_some(),
+            },
+            VlessWriteHalf {
+                stream: self.stream,
+                tls_write: self.tls_write,
+                ws: self.ws.is_some(),
+            },
+        ))
+    }
+
     /// Sends plaintext (the TLS layer frames and encrypts it).
     pub fn send(&mut self, data: &[u8]) -> std::io::Result<()> {
         // WebSocket transport wraps each chunk in a masked binary frame;
@@ -406,6 +427,141 @@ pub fn dial(
         ws: ws_transport,
         httpupgrade: httpupgrade_transport,
     })
+}
+
+/// The read half of a split VLESS connection.
+pub struct VlessReadHalf {
+    stream: TcpStream,
+    tls_read: tls13::CipherState,
+    pending: Vec<u8>,
+    ws_framed: bool,
+}
+
+/// The write half of a split VLESS connection.
+pub struct VlessWriteHalf {
+    stream: TcpStream,
+    tls_write: tls13::CipherState,
+    ws: bool,
+}
+
+impl Read for VlessReadHalf {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if !self.pending.is_empty() {
+            let n = buf.len().min(self.pending.len());
+            buf[..n].copy_from_slice(&self.pending[..n]);
+            self.pending.drain(..n);
+            return Ok(n);
+        }
+        let mut out = Vec::new();
+        let mut src = [0u8; tls13::MAX_RECORD_PAYLOAD + tls13::RECORD_HEADER_LEN + 64];
+        let n = self.stream.read(&mut src)?;
+        if n == 0 {
+            return Ok(0);
+        }
+        let mut data = &src[..n];
+        while data.len() >= tls13::RECORD_HEADER_LEN {
+            let len = u16::from_be_bytes([data[3], data[4]]) as usize;
+            let total = tls13::RECORD_HEADER_LEN + len;
+            if data.len() < total {
+                self.pending.extend_from_slice(data);
+                break;
+            }
+            let t = data[0];
+            let mut header = [0u8; tls13::RECORD_HEADER_LEN];
+            header.copy_from_slice(&data[..tls13::RECORD_HEADER_LEN]);
+            if t == tls13::CONTENT_APP_DATA {
+                match self
+                    .tls_read
+                    .open_record(&header, &data[tls13::RECORD_HEADER_LEN..total])
+                {
+                    Ok((_rt, plain)) => {
+                        if !self.ws_framed {
+                            out.extend_from_slice(&plain);
+                        } else {
+                            // ws framed — the write half handles frames, the
+                            // read half here mirrors the connection's recv:
+                            // for ws the plain bytes ARE ws frames; unpack.
+                            let mut rest = plain.as_slice();
+                            while let Some((consumed, payload)) = crate::ws::decode_frame(rest) {
+                                out.extend_from_slice(&payload);
+                                rest = &rest[consumed..];
+                            }
+                        }
+                    }
+                    Err(_) => return Ok(0),
+                }
+            }
+            data = &data[total..];
+        }
+        let n2 = out.len().min(buf.len());
+        buf[..n2].copy_from_slice(&out[..n2]);
+        if out.len() > n2 {
+            self.pending.extend_from_slice(&out[n2..]);
+        }
+        Ok(n2)
+    }
+}
+
+impl Write for VlessWriteHalf {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut wire: Vec<u8> = Vec::with_capacity(buf.len() + 14);
+        let mut framed = Vec::new();
+        if self.ws {
+            crate::ws::encode_frame(buf, &mut framed);
+        } else {
+            framed.extend_from_slice(buf);
+        }
+        for chunk in framed.chunks(tls13::MAX_RECORD_PAYLOAD) {
+            let mut piece = chunk.to_vec();
+            let record = self
+                .tls_write
+                .seal_record(tls13::CONTENT_APP_DATA, &mut piece);
+            wire.extend_from_slice(&record);
+        }
+        self.stream.write_all(&wire)?;
+        self.stream.flush()?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+/// Standard IO over the VLESS connection: `read` drains the decrypted
+/// stream (driving TLS record reads), `write` seals and sends. This lets
+/// the SOCKS relay treat a proxied connection exactly like a plain
+/// TcpStream.
+impl std::io::Read for VlessConnection {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Serve the pending buffer first.
+        if !self.pending.is_empty() {
+            let n = buf.len().min(self.pending.len());
+            buf[..n].copy_from_slice(&self.pending[..n]);
+            self.pending.drain(..n);
+            return Ok(n);
+        }
+        let mut out = Vec::new();
+        if !self.recv(&mut out) {
+            return Ok(0);
+        }
+        let n = out.len().min(buf.len());
+        buf[..n].copy_from_slice(&out[..n]);
+        // Stash whatever did not fit.
+        if out.len() > n {
+            self.pending.extend_from_slice(&out[n..]);
+        }
+        Ok(n)
+    }
+}
+
+impl std::io::Write for VlessConnection {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.send(buf)?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.flush()
+    }
 }
 
 /// Concatenates the ClientHello and ServerHello transcript fragments.
