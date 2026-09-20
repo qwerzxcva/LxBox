@@ -16,7 +16,7 @@ use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jstring};
 use jni::JNIEnv;
 use rsxm_core::Module;
-use rsxm_socks5::{DirectDialer, SocksServer};
+use rsxm_socks5::SocksServer;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::ConnectionInfo;
@@ -181,7 +181,8 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_kernelStart(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if guard.is_none() {
-                match SocksServer::start(RSXM_SOCKS_PORT as u16, Arc::new(DirectDialer)) {
+                let dialer: Arc<dyn rsxm_socks5::DialFn> = pick_dialer(&doc);
+                match SocksServer::start(RSXM_SOCKS_PORT as u16, dialer) {
                     Ok(server) => {
                         *guard = Some(server);
                         conductor.reporter().send(rsxm_core::Report::new(
@@ -473,4 +474,88 @@ pub extern "system" fn Java_com_leadaxe_aibox_engine_rust_AiboxCore_statsSnapsho
         .map(|s| serde_json::to_string(&s.snapshot()).unwrap_or_else(|_| "{}".into()))
         .unwrap_or_else(|| "{}".into());
     to_jstring(&env, out)
+}
+
+/// Chooses the SOCKS server's dialer from the AppState document: the
+/// selected node's type decides (vless -> VLESS+REALITY, shadowsocks ->
+/// SS AEAD, none -> direct). The node config JSON is the same document the
+/// Go kernel compiles, so the fields match what the compiler reads.
+fn pick_dialer(doc: &serde_json::Value) -> Arc<dyn rsxm_socks5::DialFn> {
+    let selected = doc
+        .get("selectedOutbound")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let nodes = doc.get("outbounds").and_then(|v| v.as_array());
+    if let Some(nodes) = nodes {
+        if let Some(node) = nodes
+            .iter()
+            .find(|n| n.get("tag").and_then(|v| v.as_str()) == Some(selected))
+        {
+            let kind = node.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let config = node.get("config").and_then(|v| v.as_str()).unwrap_or("");
+            let parsed: serde_json::Value =
+                serde_json::from_str(config).unwrap_or(serde_json::Value::Null);
+            let server = parsed
+                .get("server")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let server_for_ss = server.clone();
+            let port = parsed
+                .get("server_port")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(443) as u16;
+            if kind == "vless" {
+                let uuid = parsed.get("uuid").and_then(|v| v.as_str()).unwrap_or("");
+                let tls = parsed.get("tls").and_then(|v| v.as_object());
+                let reality = tls
+                    .and_then(|t| t.get("reality"))
+                    .and_then(|r| r.as_object());
+                let sni = tls
+                    .and_then(|t| t.get("server_name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if let (Some(reality), true) = (reality, !sni.is_empty()) {
+                    let pbk = reality
+                        .get("public_key")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let sid = reality
+                        .get("short_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let uuid_clean = uuid.replace('-', "");
+                    if let Ok(uuid_bytes) = (0..16)
+                        .map(|i| u8::from_str_radix(&uuid_clean[i * 2..i * 2 + 2], 16))
+                        .collect::<Result<Vec<u8>, _>>()
+                    {
+                        let mut uuid_arr = [0u8; 16];
+                        uuid_arr.copy_from_slice(&uuid_bytes);
+                        if let Ok(d) =
+                            rsxm_socks5::VlessDialer::from_parts(server, port, sni, pbk, sid, uuid)
+                        {
+                            return Arc::new(d);
+                        }
+                    }
+                }
+            }
+            if kind == "shadowsocks" {
+                let method = parsed.get("method").and_then(|v| v.as_str()).unwrap_or("");
+                let password = parsed
+                    .get("password")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if rsxm_dialer::shadowsocks::cipher_from_method(method).is_some() {
+                    return Arc::new(rsxm_socks5::SsDialer {
+                        server: server_for_ss,
+                        port,
+                        method: method.to_string(),
+                        password: password.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Arc::new(rsxm_socks5::DirectDialer)
 }

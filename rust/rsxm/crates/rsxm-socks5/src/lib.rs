@@ -161,6 +161,43 @@ fn uuid_fmt(uuid: &[u8; 16]) -> String {
     )
 }
 
+/// Dials through a shadowsocks AEAD node.
+pub struct SsDialer {
+    pub server: String,
+    pub port: u16,
+    pub method: String,
+    pub password: String,
+}
+
+impl DialFn for SsDialer {
+    fn dial(
+        &self,
+        target: &SocksTarget,
+    ) -> std::io::Result<(Box<dyn Read + Send>, Box<dyn Write + Send>)> {
+        let ss = rsxm_dialer::SsTarget::from_parts(
+            self.server.clone(),
+            self.port,
+            &self.method,
+            self.password.clone(),
+        )
+        .ok_or_else(|| std::io::Error::other("unsupported ss method"))?;
+        let dest = match target {
+            SocksTarget::Domain(h, p) => rsxm_dialer::VlessDestination::Domain(h.clone(), *p),
+            SocksTarget::Ipv4(a, p) => rsxm_dialer::VlessDestination::Ipv4(*a, *p),
+            SocksTarget::Ipv6(a, p) => rsxm_dialer::VlessDestination::Ipv6(*a, *p),
+        };
+        rsxm_dialer::shadowsocks::dial(&ss, &dest, &[])
+            .map(|(stream, _session)| {
+                let read_half = stream.try_clone()?;
+                Ok((
+                    Box::new(read_half) as Box<dyn Read + Send>,
+                    Box::new(stream) as Box<dyn Write + Send>,
+                ))
+            })
+            .map_err(|e| std::io::Error::other(format!("ss dial: {e}")))?
+    }
+}
+
 impl DialFn for DirectDialer {
     fn dial(
         &self,
